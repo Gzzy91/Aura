@@ -1,0 +1,120 @@
+{
+  "entities": {
+    "UserStats": {
+      "title": "UserStats",
+      "description": "User's overall progress and skill levels",
+      "type": "object",
+      "properties": {
+        "level": { "type": "integer" },
+        "xp": { "type": "integer" },
+        "xpToNextLevel": { "type": "integer" },
+        "streak": { "type": "integer" },
+        "skills": {
+          "type": "object",
+          "properties": {
+            "Fitness": { "$ref": "SkillStats" },
+            "Fokus": { "$ref": "SkillStats" },
+            "Disziplin": { "$ref": "SkillStats" },
+            "Wissen": { "$ref": "SkillStats" },
+            "Soziales": { "$ref": "SkillStats" }
+          }
+        },
+        "avatar": {
+          "type": "object",
+          "properties": {
+            "equipped": { "type": "object" },
+            "inventory": { "type": "array", "items": { "type": "string" } },
+            "unlockedSkins": { "type": "array", "items": { "type": "string" } },
+            "currentSkin": { "type": "string" }
+          }
+        }
+      },
+      "required": ["level", "xp", "xpToNextLevel", "streak", "skills", "avatar"]
+    },
+    "SkillStats": {
+      "title": "SkillStats",
+      "description": "Stats for a specific skill",
+      "type": "object",
+      "properties": {
+        "level": { "type": "integer" },
+        "xp": { "type": "integer" },
+        "xpToNextLevel": { "type": "integer" }
+      },
+      "required": ["level", "xp", "xpToNextLevel"]
+    },
+    "Quest": {
+      "title": "Quest",
+      "description": "A task or habit for the user to complete",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "skill": { "type": "string" },
+        "xpReward": { "type": "integer" },
+        "completed": { "type": "boolean" },
+        "failed": { "type": "boolean" },
+        "type": { "type": "string", "enum": ["daily", "habit"] },
+        "habitDirection": { "type": "string", "enum": ["positive", "negative", "both"] },
+        "createdAt": { "type": "integer" },
+        "completedAt": { "type": "integer" },
+        "dueDate": { "type": "integer" },
+        "hasTime": { "type": "boolean" },
+        "reminderTiming": { "type": "string" },
+        "recurrence": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+        "subtasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "completed": { "type": "boolean" }
+            }
+          }
+        },
+        "completions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "date": { "type": "integer" },
+              "direction": { "type": "string", "enum": ["positive", "negative"] }
+            }
+          }
+        }
+      },
+      "required": ["id", "title", "skill", "xpReward", "completed", "type", "createdAt"]
+    },
+    "DiaryEntry": {
+      "title": "DiaryEntry",
+      "description": "A daily reflection entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "integer" },
+        "mood": { "type": "integer" },
+        "notes": { "type": "string" },
+        "progress": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "date", "mood", "notes", "progress", "tags"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserStats",
+      "description": "User's profile and stats"
+    },
+    "/users/{userId}/quests/{questId}": {
+      "schema": "Quest",
+      "description": "User's quests and habits"
+    },
+    "/users/{userId}/diaryEntries/{diaryEntryId}": {
+      "schema": "DiaryEntry",
+      "description": "User's diary entries"
+    }
+  }
+}
