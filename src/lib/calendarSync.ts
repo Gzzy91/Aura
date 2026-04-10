@@ -45,20 +45,20 @@ export function downloadICS(quests: Quest[], filename: string = 'lifequest.ics')
   URL.revokeObjectURL(url);
 }
 
-export function getGoogleCalendarLink(quest: Quest): string | null {
-  if (!quest.dueDate) return null;
-
-  const startDate = new Date(quest.dueDate);
-  const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
-
-  const formatGoogleDate = (date: Date) => {
-    return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-  };
-
+export function getGoogleCalendarLink(quest: Quest): string {
   const url = new URL('https://calendar.google.com/calendar/render');
   url.searchParams.append('action', 'TEMPLATE');
   url.searchParams.append('text', quest.title);
-  url.searchParams.append('dates', `${formatGoogleDate(startDate)}/${formatGoogleDate(endDate)}`);
+  
+  if (quest.dueDate) {
+    const startDate = new Date(quest.dueDate);
+    const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+
+    const formatGoogleDate = (date: Date) => {
+      return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    };
+    url.searchParams.append('dates', `${formatGoogleDate(startDate)}/${formatGoogleDate(endDate)}`);
+  }
   
   if (quest.description) {
     url.searchParams.append('details', quest.description);

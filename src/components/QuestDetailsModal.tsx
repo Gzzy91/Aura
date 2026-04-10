@@ -146,7 +146,7 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
             {!quest.completed && (
               <div className="pt-3 mt-3 border-t border-neutral-800 flex flex-col gap-2">
                 <a 
-                  href={getGoogleCalendarLink(quest) || '#'} 
+                  href={getGoogleCalendarLink(quest)} 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="flex items-center justify-center gap-2 w-full py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg text-sm text-neutral-300 hover:text-white transition-colors"
@@ -154,13 +154,15 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
                   <ExternalLink className="w-4 h-4" />
                   Zu Google Kalender hinzufügen
                 </a>
-                <button 
-                  onClick={() => downloadICS([quest], `${quest.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`)}
-                  className="flex items-center justify-center gap-2 w-full py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg text-sm text-neutral-300 hover:text-white transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                  Als .ics herunterladen (Apple/Outlook)
-                </button>
+                {quest.dueDate && (
+                  <button 
+                    onClick={() => downloadICS([quest], `${quest.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`)}
+                    className="flex items-center justify-center gap-2 w-full py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg text-sm text-neutral-300 hover:text-white transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Als .ics herunterladen (Apple/Outlook)
+                  </button>
+                )}
               </div>
             )}
           </div>

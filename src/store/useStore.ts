@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { UserStats, Quest, SkillType, DiaryEntry } from '../types';
 import { User } from 'firebase/auth';
 import { db, auth } from '../firebase';
+import { toast } from 'sonner';
 import { 
   doc, 
   setDoc, 
@@ -12,8 +13,55 @@ import {
   onSnapshot, 
   query, 
   where,
-  getDoc
+  getDoc,
+  deleteField
 } from 'firebase/firestore';
+
+const cleanData = <T>(data: T): T => {
+  if (data === null || data === undefined) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => cleanData(item)) as unknown as T;
+  }
+  if (typeof data === 'object') {
+    const cleaned: any = {};
+    for (const key in data) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        const value = (data as any)[key];
+        if (value !== undefined) {
+          cleaned[key] = cleanData(value);
+        }
+      }
+    }
+    return cleaned as T;
+  }
+  return data;
+};
+
+const cleanUpdateData = <T>(data: T): T => {
+  if (data === null || data === undefined) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => cleanData(item)) as unknown as T; // Use cleanData for arrays, deleteField is not allowed in arrays
+  }
+  if (typeof data === 'object') {
+    const cleaned: any = {};
+    for (const key in data) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        const value = (data as any)[key];
+        if (value === undefined) {
+          cleaned[key] = deleteField();
+        } else {
+          cleaned[key] = cleanData(value); // Nested objects use cleanData because deleteField is only for top-level or nested update paths, but let's keep it simple
+        }
+      }
+    }
+    return cleaned as T;
+  }
+  return data;
+};
 
 interface AppState {
   user: User | null;
@@ -87,7 +135,7 @@ export const useStore = create<AppState>()(
         set({ widgetOrder: order });
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), { widgetOrder: order });
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ widgetOrder: order }));
         }
       },
 
@@ -102,7 +150,7 @@ export const useStore = create<AppState>()(
         };
         set({ stats: newStats });
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), { stats: newStats });
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
         }
       },
 
@@ -114,7 +162,7 @@ export const useStore = create<AppState>()(
         };
         set({ stats: newStats });
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), { stats: newStats });
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
         }
       },
 
@@ -128,7 +176,7 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          setDoc(doc(db, 'users', user.uid, 'quests', id), quest);
+          setDoc(doc(db, 'users', user.uid, 'quests', id), cleanData(quest));
         }
       },
 
@@ -142,7 +190,7 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          setDoc(doc(db, 'users', user.uid, 'diaryEntries', id), entry);
+          setDoc(doc(db, 'users', user.uid, 'diaryEntries', id), cleanData(entry));
         }
       },
 
@@ -155,7 +203,7 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid, 'diaryEntries', id), updates);
+          updateDoc(doc(db, 'users', user.uid, 'diaryEntries', id), cleanUpdateData(updates));
         }
       },
 
@@ -223,17 +271,20 @@ export const useStore = create<AppState>()(
           } : q);
           
           if (user) {
-            updateDoc(doc(db, 'users', user.uid, 'quests', id), {
+            updateDoc(doc(db, 'users', user.uid, 'quests', id), cleanUpdateData({
               completions: nextQuests.find(q => q.id === id)?.completions
-            });
+            }));
           }
         } else {
           nextQuests = state.quests.map(q => q.id === id ? { ...q, completed: true, completedAt: Date.now() } : q);
           
           if (user) {
-            updateDoc(doc(db, 'users', user.uid, 'quests', id), {
+            updateDoc(doc(db, 'users', user.uid, 'quests', id), cleanUpdateData({
               completed: true,
               completedAt: Date.now()
+            })).catch(error => {
+              console.error("Firestore update failed:", error);
+              toast.error("Fehler beim Speichern der Quest");
             });
           }
 
@@ -295,14 +346,14 @@ export const useStore = create<AppState>()(
             nextQuests.push(recurringQuest);
             
             if (user) {
-              setDoc(doc(db, 'users', user.uid, 'quests', recurringQuest.id), recurringQuest);
+              setDoc(doc(db, 'users', user.uid, 'quests', recurringQuest.id), cleanData(recurringQuest));
             }
           }
         }
 
         set({ quests: nextQuests, stats: newStats });
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), { stats: newStats });
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
         }
       },
 
@@ -318,9 +369,9 @@ export const useStore = create<AppState>()(
         if (user) {
           const quest = quests.find(q => q.id === questId);
           if (quest) {
-            updateDoc(doc(db, 'users', user.uid, 'quests', questId), {
+            updateDoc(doc(db, 'users', user.uid, 'quests', questId), cleanUpdateData({
               subtasks: quest.subtasks
-            });
+            }));
           }
         }
       },
@@ -358,7 +409,7 @@ export const useStore = create<AppState>()(
         const { user } = get();
         if (user) {
           deleteDoc(doc(db, 'users', user.uid, 'quests', id));
-          updateDoc(doc(db, 'users', user.uid), { stats: newStats });
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
         }
       },
 
@@ -392,9 +443,9 @@ export const useStore = create<AppState>()(
         if (user) {
           updateDoc(doc(db, 'users', user.uid, 'quests', id), {
             completed: false,
-            completedAt: null
+            completedAt: deleteField()
           });
-          updateDoc(doc(db, 'users', user.uid), { stats: newStats });
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
         }
       },
 
@@ -405,7 +456,7 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid, 'quests', id), updates);
+          updateDoc(doc(db, 'users', user.uid, 'quests', id), cleanUpdateData(updates));
         }
       },
 
@@ -459,8 +510,8 @@ export const useStore = create<AppState>()(
         set({ quests: newQuests, stats: newStats });
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid, 'quests', questId), { completions: newCompletions });
-          updateDoc(doc(db, 'users', user.uid), { stats: newStats });
+          updateDoc(doc(db, 'users', user.uid, 'quests', questId), cleanUpdateData({ completions: newCompletions }));
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
         }
       },
 
@@ -484,7 +535,7 @@ export const useStore = create<AppState>()(
         set({ stats: newStats });
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), { stats: newStats });
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
         }
       },
 
@@ -492,7 +543,7 @@ export const useStore = create<AppState>()(
         set((state) => ({ notifiedQuestIds: [...state.notifiedQuestIds, id] }));
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), { notifiedQuestIds: get().notifiedQuestIds });
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ notifiedQuestIds: get().notifiedQuestIds }));
         }
       },
 
@@ -505,13 +556,13 @@ export const useStore = create<AppState>()(
         getDoc(userDocRef).then((docSnap) => {
           if (!docSnap.exists()) {
             const state = get();
-            setDoc(userDocRef, {
+            setDoc(userDocRef, cleanData({
               stats: state.stats,
               widgetOrder: state.widgetOrder,
               notifiedQuestIds: state.notifiedQuestIds
-            });
-            state.quests.forEach(q => setDoc(doc(questsColRef, q.id), q));
-            state.diaryEntries.forEach(e => setDoc(doc(diaryColRef, e.id), e));
+            }));
+            state.quests.forEach(q => setDoc(doc(questsColRef, q.id), cleanData(q)));
+            state.diaryEntries.forEach(e => setDoc(doc(diaryColRef, e.id), cleanData(e)));
           }
         });
 
