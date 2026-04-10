@@ -64,7 +64,6 @@ export interface Quest {
   skill: SkillType;
   xpReward: number;
   completed: boolean;
-  failed?: boolean;
   type: 'daily' | 'habit';
   habitDirection?: 'positive' | 'negative' | 'both';
   createdAt: number;
@@ -76,6 +75,5 @@ export interface Quest {
   recurrence?: Recurrence;
   recurrenceDays?: number[]; // 0-6, where 0 is Sunday
   tags?: string[];
-  priority?: 'low' | 'medium' | 'high';
   completions?: { date: number; direction: 'positive' | 'negative' }[];
 }

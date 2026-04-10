@@ -170,24 +170,6 @@ export function Habits() {
                       <p className="text-sm text-neutral-400 line-clamp-2 mb-2">{habit.description}</p>
                     )}
                     <div className="flex items-center gap-3 text-sm">
-                      {habit.priority && (
-                        <>
-                          <span className={cn(
-                            "flex items-center gap-1 font-bold",
-                            habit.priority === 'high' ? "text-red-500" :
-                            habit.priority === 'medium' ? "text-amber-500" :
-                            "text-blue-500"
-                          )}>
-                            {habit.priority === 'high' ? <ArrowUp className="w-3 h-3" /> :
-                             habit.priority === 'medium' ? <ArrowRight className="w-3 h-3" /> :
-                             <ArrowDown className="w-3 h-3" />}
-                            {habit.priority === 'high' ? 'Hoch' :
-                             habit.priority === 'medium' ? 'Mittel' :
-                             'Niedrig'}
-                          </span>
-                          <span className="text-neutral-500">•</span>
-                        </>
-                      )}
                       <span className="font-mono text-amber-500">
                         {habit.habitDirection === 'both' ? `±${habit.xpReward}` : habit.habitDirection === 'negative' ? `-${habit.xpReward}` : `+${habit.xpReward}`} EP
                       </span>

@@ -22,7 +22,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const { stats, quests, failQuest, setUser, syncWithFirestore } = useStore();
+  const { stats, quests, setUser, syncWithFirestore } = useStore();
   const prevLevelRef = useRef(stats.level);
 
   useEffect(() => {
@@ -47,25 +47,6 @@ export default function App() {
       if (unsubSync) unsubSync();
     };
   }, [setUser, syncWithFirestore]);
-
-  useEffect(() => {
-    const checkOverdueQuests = () => {
-      const now = Date.now();
-      const currentQuests = useStore.getState().quests;
-      currentQuests.forEach(quest => {
-        if (!quest.completed && quest.type !== 'habit' && quest.dueDate && quest.dueDate < now) {
-          failQuest(quest.id);
-          toast.error(`Quest fehlgeschlagen: ${quest.title} (-5 EP)`, {
-            icon: '❌',
-          });
-        }
-      });
-    };
-
-    checkOverdueQuests();
-    const interval = setInterval(checkOverdueQuests, 60000); // Check every minute
-    return () => clearInterval(interval);
-  }, [failQuest]);
 
   useEffect(() => {
     if (stats.level > prevLevelRef.current) {

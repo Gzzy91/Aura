@@ -29,7 +29,8 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
     recurrence: 'none' as Recurrence,
     recurrenceDays: [] as number[],
     tags: [] as string[],
-    priority: 'medium' as 'low' | 'medium' | 'high'
+    completedAtDate: '',
+    completedAtTime: ''
   });
 
   useEffect(() => {
@@ -38,6 +39,10 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
       const dueDateStr = dateObj ? dateObj.toISOString().slice(0, 10) : '';
       const dueTimeStr = (dateObj && initialQuest.hasTime) ? dateObj.toISOString().slice(11, 16) : '';
       
+      const completedDateObj = initialQuest.completedAt ? new Date(initialQuest.completedAt) : null;
+      const completedAtDateStr = completedDateObj ? completedDateObj.toISOString().slice(0, 10) : '';
+      const completedAtTimeStr = completedDateObj ? completedDateObj.toISOString().slice(11, 16) : '';
+
       setNewQuest({
         title: initialQuest.title,
         description: initialQuest.description,
@@ -53,7 +58,8 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
         recurrence: initialQuest.recurrence || 'none',
         recurrenceDays: initialQuest.recurrenceDays || [],
         tags: initialQuest.tags || [],
-        priority: initialQuest.priority || 'medium'
+        completedAtDate: completedAtDateStr,
+        completedAtTime: completedAtTimeStr
       });
     } else if (initialDate) {
       const year = initialDate.getFullYear();
@@ -74,7 +80,8 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
         recurrence: 'none',
         recurrenceDays: [],
         tags: [],
-        priority: 'medium'
+        completedAtDate: '',
+        completedAtTime: ''
       });
     } else {
       setNewQuest({
@@ -92,7 +99,8 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
         recurrence: 'none',
         recurrenceDays: [],
         tags: [],
-        priority: 'medium'
+        completedAtDate: '',
+        completedAtTime: ''
       });
     }
   }, [initialDate, initialQuest, isOpen]);
@@ -148,10 +156,20 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
       }
     }
 
+    let finalCompletedAt = initialQuest?.completedAt;
+    if (initialQuest?.completed && newQuest.completedAtDate) {
+      if (newQuest.completedAtTime) {
+        finalCompletedAt = new Date(`${newQuest.completedAtDate}T${newQuest.completedAtTime}`).getTime();
+      } else {
+        finalCompletedAt = new Date(`${newQuest.completedAtDate}T12:00:00`).getTime();
+      }
+    }
+
     onSave({
       ...newQuest,
       dueDate: finalDueDate,
-      hasTime: newQuest.hasTime
+      hasTime: newQuest.hasTime,
+      completedAt: finalCompletedAt
     });
     onClose();
   };
@@ -248,20 +266,6 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-neutral-400 mb-1">Priorität</label>
-              <select 
-                value={newQuest.priority}
-                onChange={e => setNewQuest({...newQuest, priority: e.target.value as 'low' | 'medium' | 'high'})}
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
-              >
-                <option value="low">Niedrig</option>
-                <option value="medium">Mittel</option>
-                <option value="high">Hoch</option>
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 sm:col-span-1">
               <label className="block text-sm font-medium text-neutral-400 mb-1 flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
@@ -307,6 +311,33 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
               </select>
             </div>
           </div>
+          {initialQuest?.completed && (
+            <div className="grid grid-cols-2 gap-4 p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-sm font-medium text-green-400 mb-1 flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  Abgeschlossen am
+                </label>
+                <input 
+                  type="date" 
+                  value={newQuest.completedAtDate}
+                  onChange={e => setNewQuest({...newQuest, completedAtDate: e.target.value})}
+                  className="w-full bg-neutral-950 border border-green-500/30 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-500"
+                />
+              </div>
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-sm font-medium text-green-400 mb-1">
+                  Uhrzeit
+                </label>
+                <input 
+                  type="time" 
+                  value={newQuest.completedAtTime}
+                  onChange={e => setNewQuest({...newQuest, completedAtTime: e.target.value})}
+                  className="w-full bg-neutral-950 border border-green-500/30 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-500"
+                />
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-neutral-400 mb-1">Wiederholung</label>

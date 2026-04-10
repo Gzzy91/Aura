@@ -72,17 +72,20 @@ service cloud.firestore {
     // Domain Validators
     // ===============================================================
 
-    function isValidUserStats(data) {
-      return data.level is int && data.level >= 1 &&
-             data.xp is int && data.xp >= 0 &&
-             data.xpToNextLevel is int && data.xpToNextLevel > 0 &&
-             data.streak is int && data.streak >= 0 &&
-             data.skills is map &&
-             data.avatar is map &&
-             data.avatar.equipped is map &&
-             data.avatar.inventory is list &&
-             data.avatar.unlockedSkins is list &&
-             data.avatar.currentSkin is string;
+    function isValidUserStats(stats) {
+      return stats.level is int && stats.level >= 1 &&
+             stats.xp is int && stats.xp >= 0 &&
+             stats.xpToNextLevel is int && stats.xpToNextLevel > 0 &&
+             stats.streak is int && stats.streak >= 0 &&
+             stats.skills is map &&
+             (!('equippedItems' in stats) || stats.equippedItems is map) &&
+             (!('activeSkinId' in stats) || stats.activeSkinId is string);
+    }
+
+    function isValidUserDoc(data) {
+      return (!('stats' in data) || isValidUserStats(data.stats)) &&
+             (!('widgetOrder' in data) || data.widgetOrder is list) &&
+             (!('notifiedQuestIds' in data) || data.notifiedQuestIds is list);
     }
 
     function isValidQuest(data) {
@@ -110,8 +113,8 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && isValidUserStats(request.resource.data);
-      allow update: if isOwner(userId) && isValidUserStats(request.resource.data);
+      allow create: if isOwner(userId) && isValidUserDoc(request.resource.data);
+      allow update: if isOwner(userId) && isValidUserDoc(request.resource.data);
       allow delete: if isAdmin();
 
       match /quests/{questId} {

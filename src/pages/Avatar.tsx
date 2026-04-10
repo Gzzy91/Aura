@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Equipment, Skin } from '@/types';
+import { AvatarVisual, getAvatarTier } from '@/components/AvatarVisual';
 
 const EQUIPMENT: Equipment[] = [
   {
@@ -329,12 +330,7 @@ export function Avatar() {
           
           {/* Character Silhouette */}
           <div className="relative w-64 h-64 flex items-center justify-center mt-8">
-            <div className={cn(
-              "w-48 h-48 rounded-full flex items-center justify-center transition-colors duration-500 z-0",
-              SKINS.find(s => s.id === stats.activeSkinId)?.previewColor || 'bg-neutral-800'
-            )}>
-              <UserIcon className="w-32 h-32 text-white/20" />
-            </div>
+            <AvatarVisual level={stats.level} size="xl" />
 
             {/* Equipped Items Overlay (Visual representation) */}
             <AnimatePresence>

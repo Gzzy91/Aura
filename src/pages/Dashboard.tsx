@@ -57,6 +57,8 @@ const MOOD_ICONS: Record<number, any> = {
   5: { icon: Star, color: 'text-amber-500', bg: 'bg-amber-500/10' },
 };
 
+import { AvatarVisual } from '@/components/AvatarVisual';
+
 export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
   const { stats, quests, diaryEntries, widgetOrder, updateWidgetOrder } = useStore();
   
@@ -76,7 +78,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
   // Calculate streak dynamically
   const activeDates = new Set<number>();
   quests.forEach(q => {
-    if (q.completed && !q.failed && q.completedAt) {
+    if (q.completed && q.completedAt) {
       activeDates.add(startOfDay(new Date(q.completedAt)).getTime());
     }
     if (q.completions) {
@@ -174,7 +176,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
     const completed: Quest[] = [];
     
     quests.forEach(q => {
-      if (q.completed && !q.failed && q.completedAt && isSameDay(new Date(q.completedAt), today)) {
+      if (q.completed && q.completedAt && isSameDay(new Date(q.completedAt), today)) {
         completed.push(q);
       }
       if (q.completions) {
@@ -228,7 +230,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
       };
 
       quests.forEach(q => {
-        if (q.completed && !q.failed && q.completedAt && isSameDay(new Date(q.completedAt), day)) {
+        if (q.completed && q.completedAt && isSameDay(new Date(q.completedAt), day)) {
           if (q.type === 'habit' && q.habitDirection === 'negative') {
             dayData[q.skill] -= q.xpReward;
           } else {
@@ -251,30 +253,6 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
       return dayData;
     });
   }, [quests, chartDate]);
-
-  const completedQuestsPerSkill = useMemo(() => {
-    const counts: Record<SkillType, number> = {
-      Fitness: 0,
-      Fokus: 0,
-      Disziplin: 0,
-      Wissen: 0,
-      Soziales: 0,
-    };
-    
-    quests.forEach(q => {
-      if (q.type === 'habit') return;
-      
-      if (q.completed && !q.failed) {
-        counts[q.skill]++;
-      }
-    });
-
-    return (Object.entries(counts) as [SkillType, number][]).map(([skill, count]) => ({
-      name: skill,
-      count,
-      fill: CHART_COLORS[skill as SkillType]
-    }));
-  }, [quests]);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -356,10 +334,8 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                   return (
                     <SortableWidget key="avatar" id="avatar" className="col-span-1">
                       <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 flex flex-col items-center justify-center text-center h-full relative group/avatar">
-                        <div className="w-20 h-20 bg-neutral-800 rounded-full flex items-center justify-center mb-2">
-                          <UserIcon className="w-10 h-10 text-amber-500" />
-                        </div>
-                        <div className="mt-4">
+                        <AvatarVisual level={stats.level} size="md" className="mb-4" />
+                        <div className="mt-2">
                           <div className="text-sm font-bold text-neutral-400 uppercase tracking-widest mb-1">Dein Held</div>
                           <div className="text-lg font-black text-white">Level {stats.level}</div>
                         </div>
@@ -555,48 +531,6 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                       </div>
                     </SortableWidget>
                   );
-                case 'completed':
-                  return (
-                    <SortableWidget key="completed" id="completed" className="col-span-1 md:col-span-2 lg:col-span-2">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full">
-                        <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-                          <Target className="w-5 h-5 text-amber-500" />
-                          Abgeschlossene Quests pro Skill
-                        </h3>
-                        <div className="h-[300px] w-full">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={completedQuestsPerSkill} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#262626" vertical={false} />
-                              <XAxis 
-                                dataKey="name" 
-                                stroke="#737373" 
-                                fontSize={12} 
-                                tickLine={false} 
-                                axisLine={false} 
-                              />
-                              <YAxis 
-                                stroke="#737373" 
-                                fontSize={12} 
-                                tickLine={false} 
-                                axisLine={false} 
-                                allowDecimals={false}
-                              />
-                              <Tooltip 
-                                cursor={{ fill: '#262626', opacity: 0.4 }} 
-                                contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '8px' }}
-                                itemStyle={{ color: '#fff' }}
-                              />
-                              <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                                {completedQuestsPerSkill.map((entry, index) => (
-                                  <Cell key={`cell-${index}`} fill={entry.fill} />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    </SortableWidget>
-                  );
                 case 'today':
                   return (
                     <SortableWidget key="today" id="today" className="col-span-1">
@@ -621,21 +555,6 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                                       <div className="flex flex-col">
                                         <span className="text-sm text-neutral-300 font-medium flex items-center gap-2">
                                           {quest.title}
-                                          {quest.priority && (
-                                            <span className={cn(
-                                              "flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-neutral-900 border border-neutral-800",
-                                              quest.priority === 'high' ? "text-red-500" :
-                                              quest.priority === 'medium' ? "text-amber-500" :
-                                              "text-blue-500"
-                                            )}>
-                                              {quest.priority === 'high' ? <ArrowUp className="w-2.5 h-2.5" /> :
-                                               quest.priority === 'medium' ? <ArrowRight className="w-2.5 h-2.5" /> :
-                                               <ArrowDown className="w-2.5 h-2.5" />}
-                                              {quest.priority === 'high' ? 'Hoch' :
-                                               quest.priority === 'medium' ? 'Mittel' :
-                                               'Niedrig'}
-                                            </span>
-                                          )}
                                         </span>
                                       </div>
                                       <span className="ml-auto text-xs font-mono text-neutral-500">
@@ -667,18 +586,6 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                                 <div>
                                   <div className="font-bold text-white flex items-center gap-2">
                                     {quest.title}
-                                    {quest.priority && (
-                                      <span className={cn(
-                                        "flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-neutral-900 border border-neutral-800",
-                                        quest.priority === 'high' ? "text-red-500" :
-                                        quest.priority === 'medium' ? "text-amber-500" :
-                                        "text-blue-500"
-                                      )}>
-                                        {quest.priority === 'high' ? <ArrowUp className="w-2.5 h-2.5" /> :
-                                         quest.priority === 'medium' ? <ArrowRight className="w-2.5 h-2.5" /> :
-                                         <ArrowDown className="w-2.5 h-2.5" />}
-                                      </span>
-                                    )}
                                   </div>
                                   <div className={cn(
                                     "text-xs flex items-center gap-1 mt-1",

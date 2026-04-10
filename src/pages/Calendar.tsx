@@ -117,7 +117,6 @@ export function Calendar() {
 
   const getQuestsForDay = (day: Date) => {
     return quests.filter(q => {
-      if (q.failed) return false;
       const completedOnDay = q.completedAt && isSameDay(new Date(q.completedAt), day);
       const dueOnDay = q.dueDate && isSameDay(new Date(q.dueDate), day);
       const createdOnDay = !q.completed && !q.dueDate && isSameDay(new Date(q.createdAt), day);
@@ -309,24 +308,6 @@ export function Calendar() {
                             {quest.title}
                           </h4>
                           <div className="flex items-center gap-2 text-[10px] text-neutral-500 mt-0.5">
-                            {quest.priority && (
-                              <>
-                                <span className={cn(
-                                  "flex items-center gap-0.5 font-bold",
-                                  quest.priority === 'high' ? "text-red-500" :
-                                  quest.priority === 'medium' ? "text-amber-500" :
-                                  "text-blue-500"
-                                )}>
-                                  {quest.priority === 'high' ? <ArrowUp className="w-2.5 h-2.5" /> :
-                                   quest.priority === 'medium' ? <ArrowRight className="w-2.5 h-2.5" /> :
-                                   <ArrowDown className="w-2.5 h-2.5" />}
-                                  {quest.priority === 'high' ? 'Hoch' :
-                                   quest.priority === 'medium' ? 'Mittel' :
-                                   'Niedrig'}
-                                </span>
-                                <span>•</span>
-                              </>
-                            )}
                             <span className="text-amber-500/70">+{quest.xpReward} EP</span>
                             <span>•</span>
                             <span>{quest.skill}</span>

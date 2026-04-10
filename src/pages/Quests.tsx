@@ -10,13 +10,13 @@ import { QuestModal } from '@/components/QuestModal';
 import { isSameDay, isSameWeek, isSameMonth, isSameYear } from 'date-fns';
 
 type TimeFilter = 'all' | 'today' | 'week' | 'month' | 'year';
-type SortOption = 'date' | 'xp' | 'priority';
+type SortOption = 'date' | 'xp';
 
 export function Quests() {
   const { quests, addQuest, completeQuest, toggleSubtask, deleteQuest, reopenQuest, updateQuest } = useStore();
   const [isAdding, setIsAdding] = useState(false);
   const [editingQuest, setEditingQuest] = useState<Quest | null>(null);
-  const [view, setView] = useState<'active' | 'upcoming' | 'history' | 'failed'>('active');
+  const [view, setView] = useState<'active' | 'upcoming' | 'history'>('active');
   const [selectedQuestId, setSelectedQuestId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [completingId, setCompletingId] = useState<string | null>(null);
@@ -81,19 +81,14 @@ export function Quests() {
     return due.getTime() <= today.getTime();
   };
 
-  const sortQuests = (questsToSort: Quest[], viewType: 'active' | 'upcoming' | 'history' | 'failed') => {
+  const sortQuests = (questsToSort: Quest[], viewType: 'active' | 'upcoming' | 'history') => {
     return [...questsToSort].sort((a, b) => {
-      if (sortOption === 'priority') {
-        const p = { high: 3, medium: 2, low: 1, undefined: 0 };
-        const diff = (p[b.priority || 'undefined'] || 0) - (p[a.priority || 'undefined'] || 0);
-        if (diff !== 0) return diff;
-      }
       if (sortOption === 'xp') {
         const diff = b.xpReward - a.xpReward;
         if (diff !== 0) return diff;
       }
       // Default to date
-      if (viewType === 'history' || viewType === 'failed') {
+      if (viewType === 'history') {
         return (b.completedAt || b.createdAt) - (a.completedAt || a.createdAt);
       } else {
         const dateA = a.dueDate || Number.MAX_SAFE_INTEGER;
@@ -106,8 +101,7 @@ export function Quests() {
 
   const activeQuests = sortQuests(filteredQuests.filter(q => !q.completed && (!q.dueDate || isDueTodayOrEarlier(q.dueDate))), 'active');
   const upcomingQuests = sortQuests(filteredQuests.filter(q => !q.completed && q.dueDate && !isDueTodayOrEarlier(q.dueDate)), 'upcoming');
-  const completedQuests = sortQuests(filteredQuests.filter(q => q.completed && !q.failed), 'history');
-  const failedQuests = sortQuests(filteredQuests.filter(q => q.failed), 'failed');
+  const completedQuests = sortQuests(filteredQuests.filter(q => q.completed), 'history');
 
   const handleRepeat = (quest: Quest) => {
     const { id, completed, createdAt, completedAt, subtasks, ...rest } = quest;
@@ -252,7 +246,6 @@ export function Quests() {
                 className="bg-neutral-900 border border-neutral-800 rounded-lg px-2 py-1 text-xs text-neutral-300 focus:outline-none focus:border-amber-500"
               >
                 <option value="date">Nach Datum</option>
-                <option value="priority">Nach Priorität</option>
                 <option value="xp">Nach EP-Belohnung</option>
               </select>
             </div>
@@ -315,13 +308,6 @@ export function Quests() {
               <History className="w-4 h-4 shrink-0" />
               Verlauf
             </button>
-            <button
-              onClick={() => setView('failed')}
-              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'failed' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'}`}
-            >
-              <X className="w-4 h-4 shrink-0" />
-              Fehlgeschlagen
-            </button>
           </div>
           {(view === 'active' || view === 'upcoming') && (
             <button 
@@ -337,8 +323,7 @@ export function Quests() {
 
 
       {view === 'active' || view === 'upcoming' ? (
-        <>
-          <div className="space-y-4">
+        <div className="space-y-4">
             <AnimatePresence mode="popLayout">
               {(view === 'active' ? activeQuests : upcomingQuests).length === 0 && !isAdding && (
                 <motion.div 
@@ -412,24 +397,6 @@ export function Quests() {
                           isCompleting ? "text-green-400" : "text-white"
                         )}>{quest.title}</h4>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm mt-1">
-                          {quest.priority && (
-                            <>
-                              <span className={cn(
-                                "flex items-center gap-1 font-bold",
-                                quest.priority === 'high' ? "text-red-500" :
-                                quest.priority === 'medium' ? "text-amber-500" :
-                                "text-blue-500"
-                              )}>
-                                {quest.priority === 'high' ? <ArrowUp className="w-3 h-3" /> :
-                                 quest.priority === 'medium' ? <ArrowRight className="w-3 h-3" /> :
-                                 <ArrowDown className="w-3 h-3" />}
-                                {quest.priority === 'high' ? 'Hoch' :
-                                 quest.priority === 'medium' ? 'Mittel' :
-                                 'Niedrig'}
-                              </span>
-                              <span className="text-neutral-500">•</span>
-                            </>
-                          )}
                           {quest.type === 'habit' ? (
                             <span className={cn(
                               "font-mono transition-colors",
@@ -553,7 +520,6 @@ export function Quests() {
               })}
             </AnimatePresence>
           </div>
-        </>
       ) : view === 'history' ? (
         <div className="space-y-4">
           <AnimatePresence mode="popLayout">
@@ -583,24 +549,6 @@ export function Quests() {
                   <div className="flex-1">
                     <h4 className="font-bold text-lg line-through text-neutral-400">{quest.title}</h4>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm mt-1">
-                      {quest.priority && (
-                        <>
-                          <span className={cn(
-                            "flex items-center gap-1 font-bold opacity-70",
-                            quest.priority === 'high' ? "text-red-500" :
-                            quest.priority === 'medium' ? "text-amber-500" :
-                            "text-blue-500"
-                          )}>
-                            {quest.priority === 'high' ? <ArrowUp className="w-3 h-3" /> :
-                             quest.priority === 'medium' ? <ArrowRight className="w-3 h-3" /> :
-                             <ArrowDown className="w-3 h-3" />}
-                            {quest.priority === 'high' ? 'Hoch' :
-                             quest.priority === 'medium' ? 'Mittel' :
-                             'Niedrig'}
-                          </span>
-                          <span className="text-neutral-600">•</span>
-                        </>
-                      )}
                       {quest.type === 'habit' ? (
                         <span className="text-neutral-500 font-mono">
                           {quest.habitDirection === 'both' ? `±${quest.xpReward}` : quest.habitDirection === 'negative' ? `-${quest.xpReward}` : `+${quest.xpReward}`} EP
@@ -671,81 +619,68 @@ export function Quests() {
       ) : (
         <div className="space-y-4">
           <AnimatePresence mode="popLayout">
-            {failedQuests.length === 0 ? (
+            {completedQuests.length === 0 ? (
               <motion.div 
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="text-center py-12 text-neutral-500 border border-dashed border-neutral-800 rounded-2xl"
               >
                 {searchQuery 
-                  ? `Keine fehlgeschlagenen Quests gefunden für "${searchQuery}"` 
-                  : "Keine fehlgeschlagenen Quests. Sehr gut!"}
+                  ? `Keine abgeschlossenen Quests gefunden für "${searchQuery}"` 
+                  : "Noch keine Quests abgeschlossen. Bleib dran!"}
               </motion.div>
             ) : (
-              failedQuests.map(quest => (
-                <motion.div 
-                  layout
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  key={quest.id} 
-                  onClick={() => setSelectedQuestId(quest.id)}
-                  className={cn(
-                    "bg-neutral-900 p-4 rounded-xl border-l-4 border-y border-r border-y-neutral-800 border-r-neutral-800 flex items-center gap-4 opacity-75 hover:opacity-100 transition-all cursor-pointer",
-                    "border-l-red-500"
-                  )}
-                >
-                  <X className="w-6 h-6 text-red-500" />
-                  <div className="flex-1">
-                    <h4 className="font-bold text-lg line-through text-neutral-400">{quest.title}</h4>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm mt-1">
-                      {quest.priority && (
-                        <>
-                          <span className={cn(
-                            "flex items-center gap-1 font-bold opacity-70",
-                            quest.priority === 'high' ? "text-red-500" :
-                            quest.priority === 'medium' ? "text-amber-500" :
-                            "text-blue-500"
-                          )}>
-                            {quest.priority === 'high' ? <ArrowUp className="w-3 h-3" /> :
-                             quest.priority === 'medium' ? <ArrowRight className="w-3 h-3" /> :
-                             <ArrowDown className="w-3 h-3" />}
-                            {quest.priority === 'high' ? 'Hoch' :
-                             quest.priority === 'medium' ? 'Mittel' :
-                             'Niedrig'}
-                          </span>
-                          <span className="text-neutral-600">•</span>
-                        </>
-                      )}
-                      <span className="text-red-500 font-mono">-5 EP</span>
-                      <span className="text-neutral-600">•</span>
-                      <span className={cn(SKILL_COLORS[quest.skill], "opacity-70")}>{quest.skill}</span>
-                      <span className="text-neutral-600">•</span>
-                      <span className="text-neutral-500">
-                        {new Date(quest.completedAt || quest.createdAt).toLocaleDateString('de-DE', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric'
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); reopenQuest(quest.id); }}
-                        className="p-2 text-neutral-500 hover:text-amber-500 hover:bg-amber-500/10 rounded-lg transition-all"
-                        title="Quest wieder eröffnen"
-                      >
-                        <RotateCcw className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleRepeat(quest); }}
-                        className="p-2 text-neutral-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition-all"
-                        title="Quest wiederholen"
-                      >
-                        <Plus className="w-5 h-5" />
-                      </button>
-                    </div>
-                </motion.div>
-              ))
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+                <ul className="divide-y divide-neutral-800">
+                  {completedQuests.map(quest => (
+                    <li 
+                      key={quest.id}
+                      onClick={() => setSelectedQuestId(quest.id)}
+                      className="p-4 hover:bg-neutral-800/50 transition-colors cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                    >
+                      <div className="flex items-start sm:items-center gap-3 overflow-hidden">
+                        <CheckCircle2 className={cn("w-5 h-5 shrink-0 mt-0.5 sm:mt-0", SKILL_COLORS[quest.skill])} />
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-medium text-neutral-300 line-through truncate">{quest.title}</h4>
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs">
+                            <span className={cn("px-1.5 py-0.5 rounded bg-neutral-950 border border-neutral-800", SKILL_COLORS[quest.skill])}>
+                              {quest.skill}
+                            </span>
+                            <span className="text-neutral-600">•</span>
+                            <span className="text-neutral-500">
+                              {new Date(quest.completedAt || quest.createdAt).toLocaleDateString('de-DE', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </span>
+                            <span className="text-neutral-600">•</span>
+                            <span className="font-mono text-amber-500">+{quest.xpReward} EP</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center justify-end gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity ml-8 sm:ml-0">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); reopenQuest(quest.id); }}
+                          className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-neutral-400 hover:text-amber-500 hover:bg-amber-500/10 rounded-lg transition-all"
+                          title="Quest wieder eröffnen"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          <span className="sm:hidden">Wiedereröffnen</span>
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleRepeat(quest); }}
+                          className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-neutral-400 hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition-all"
+                          title="Quest wiederholen"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span className="sm:hidden">Wiederholen</span>
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </AnimatePresence>
         </div>

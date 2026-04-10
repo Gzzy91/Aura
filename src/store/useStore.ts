@@ -28,7 +28,6 @@ interface AppState {
   setInitialized: (val: boolean) => void;
   addQuest: (quest: Omit<Quest, 'id' | 'completed' | 'createdAt'>) => void;
   completeQuest: (id: string, isNegativeHabit?: boolean) => void;
-  failQuest: (id: string) => void;
   toggleSubtask: (questId: string, subtaskId: string) => void;
   deleteQuest: (id: string) => void;
   reopenQuest: (id: string) => void;
@@ -79,7 +78,7 @@ export const useStore = create<AppState>()(
       quests: [],
       diaryEntries: [],
       notifiedQuestIds: [],
-      widgetOrder: ['level', 'streak', 'chart', 'calendar', 'completed', 'today', 'reminders', 'settings'],
+      widgetOrder: ['level', 'streak', 'chart', 'calendar', 'today', 'reminders', 'settings'],
       
       setUser: (user) => set({ user, loading: false }),
       setInitialized: (val) => set({ isInitialized: val }),
@@ -307,111 +306,6 @@ export const useStore = create<AppState>()(
         }
       },
 
-      failQuest: (id) => {
-        const state = get();
-        const quest = state.quests.find(q => q.id === id);
-        if (!quest || quest.completed) return;
-
-        const { user } = get();
-        let nextQuests = state.quests.map(q => q.id === id ? { ...q, completed: true, failed: true, completedAt: Date.now() } : q);
-        let newStats = { ...state.stats, skills: { ...state.stats.skills } };
-        const penalty = 5;
-
-        newStats.xp -= penalty;
-        while (newStats.xp < 0 && newStats.level > 1) {
-          newStats.level -= 1;
-          newStats.xpToNextLevel = Math.ceil(newStats.xpToNextLevel / 1.5);
-          newStats.xp += newStats.xpToNextLevel;
-        }
-        if (newStats.xp < 0) newStats.xp = 0;
-
-        const skillStats = { ...newStats.skills[quest.skill] };
-        skillStats.xp -= penalty;
-        while (skillStats.xp < 0 && skillStats.level > 1) {
-          skillStats.level -= 1;
-          skillStats.xpToNextLevel = Math.ceil(skillStats.xpToNextLevel / 1.5);
-          skillStats.xp += skillStats.xpToNextLevel;
-        }
-        if (skillStats.xp < 0) skillStats.xp = 0;
-        newStats.skills[quest.skill] = skillStats;
-
-        if (user) {
-          updateDoc(doc(db, 'users', user.uid, 'quests', id), {
-            completed: true,
-            failed: true,
-            completedAt: Date.now()
-          });
-        }
-
-        if (quest.recurrence && quest.recurrence !== 'none') {
-          const date = new Date(quest.dueDate || Date.now());
-          if (quest.recurrence === 'daily') date.setDate(date.getDate() + 1);
-          else if (quest.recurrence === 'weekly') {
-            if (quest.recurrenceDays && quest.recurrenceDays.length > 0) {
-              // Find next selected weekday
-              let found = false;
-              for (let i = 1; i <= 7; i++) {
-                const nextDate = new Date(date);
-                nextDate.setDate(date.getDate() + i);
-                if (quest.recurrenceDays.includes(nextDate.getDay())) {
-                  date.setTime(nextDate.getTime());
-                  found = true;
-                  break;
-                }
-              }
-              if (!found) date.setDate(date.getDate() + 7);
-            } else {
-              date.setDate(date.getDate() + 7);
-            }
-          }
-          else if (quest.recurrence === 'monthly') {
-            if (quest.recurrenceDays && quest.recurrenceDays.length > 0) {
-              let found = false;
-              for (let i = 0; i < 12; i++) {
-                const nextMonth = new Date(date);
-                nextMonth.setMonth(date.getMonth() + i);
-                const sortedDays = [...quest.recurrenceDays].sort((a, b) => a - b);
-                for (const day of sortedDays) {
-                  const candidate = new Date(nextMonth);
-                  const lastDayOfMonth = new Date(candidate.getFullYear(), candidate.getMonth() + 1, 0).getDate();
-                  candidate.setDate(Math.min(day, lastDayOfMonth));
-                  if (candidate.getTime() > date.getTime()) {
-                    date.setTime(candidate.getTime());
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              if (!found) date.setMonth(date.getMonth() + 1);
-            } else {
-              date.setMonth(date.getMonth() + 1);
-            }
-          }
-
-          const recurringQuest: Quest = {
-            ...quest,
-            id: crypto.randomUUID(),
-            completed: false,
-            failed: false,
-            completedAt: undefined,
-            createdAt: Date.now(),
-            dueDate: date.getTime(),
-            subtasks: quest.subtasks?.map(s => ({ ...s, completed: false }))
-          };
-          nextQuests.push(recurringQuest);
-          
-          if (user) {
-            setDoc(doc(db, 'users', user.uid, 'quests', recurringQuest.id), recurringQuest);
-          }
-        }
-
-        set({ quests: nextQuests, stats: newStats });
-        if (user) {
-          updateDoc(doc(db, 'users', user.uid), { stats: newStats });
-        }
-      },
-
       toggleSubtask: (questId, subtaskId) => {
         set((state) => ({
           quests: state.quests.map(q => q.id === questId ? {
@@ -438,40 +332,22 @@ export const useStore = create<AppState>()(
 
         let newStats = { ...state.stats, skills: { ...state.stats.skills } };
         if (quest.completed) {
-          if (quest.failed) {
-            const amount = 5;
-            newStats.xp += amount;
-            while (newStats.xp >= newStats.xpToNextLevel) {
-              newStats.xp -= newStats.xpToNextLevel;
-              newStats.level += 1;
-              newStats.xpToNextLevel = Math.floor(newStats.xpToNextLevel * 1.5);
-            }
-            const skillStats = { ...newStats.skills[quest.skill] };
-            skillStats.xp += amount;
-            while (skillStats.xp >= skillStats.xpToNextLevel) {
-              skillStats.xp -= skillStats.xpToNextLevel;
-              skillStats.level += 1;
-              skillStats.xpToNextLevel = Math.floor(skillStats.xpToNextLevel * 1.5);
-            }
-            newStats.skills[quest.skill] = skillStats;
-          } else {
-            newStats.xp -= quest.xpReward;
-            while (newStats.xp < 0 && newStats.level > 1) {
-              newStats.level -= 1;
-              newStats.xpToNextLevel = Math.ceil(newStats.xpToNextLevel / 1.5);
-              newStats.xp += newStats.xpToNextLevel;
-            }
-            if (newStats.xp < 0) newStats.xp = 0;
-            const skillStats = { ...newStats.skills[quest.skill] };
-            skillStats.xp -= quest.xpReward;
-            while (skillStats.xp < 0 && skillStats.level > 1) {
-              skillStats.level -= 1;
-              skillStats.xpToNextLevel = Math.ceil(skillStats.xpToNextLevel / 1.5);
-              skillStats.xp += skillStats.xpToNextLevel;
-            }
-            if (skillStats.xp < 0) skillStats.xp = 0;
-            newStats.skills[quest.skill] = skillStats;
+          newStats.xp -= quest.xpReward;
+          while (newStats.xp < 0 && newStats.level > 1) {
+            newStats.level -= 1;
+            newStats.xpToNextLevel = Math.ceil(newStats.xpToNextLevel / 1.5);
+            newStats.xp += newStats.xpToNextLevel;
           }
+          if (newStats.xp < 0) newStats.xp = 0;
+          const skillStats = { ...newStats.skills[quest.skill] };
+          skillStats.xp -= quest.xpReward;
+          while (skillStats.xp < 0 && skillStats.level > 1) {
+            skillStats.level -= 1;
+            skillStats.xpToNextLevel = Math.ceil(skillStats.xpToNextLevel / 1.5);
+            skillStats.xp += skillStats.xpToNextLevel;
+          }
+          if (skillStats.xp < 0) skillStats.xp = 0;
+          newStats.skills[quest.skill] = skillStats;
         }
 
         set({
@@ -492,49 +368,30 @@ export const useStore = create<AppState>()(
         if (!quest || !quest.completed) return;
 
         let newStats = { ...state.stats, skills: { ...state.stats.skills } };
-        if (quest.failed) {
-          const amount = 5;
-          newStats.xp += amount;
-          while (newStats.xp >= newStats.xpToNextLevel) {
-            newStats.xp -= newStats.xpToNextLevel;
-            newStats.level += 1;
-            newStats.xpToNextLevel = Math.floor(newStats.xpToNextLevel * 1.5);
-          }
-          const skillStats = { ...newStats.skills[quest.skill] };
-          skillStats.xp += amount;
-          while (skillStats.xp >= skillStats.xpToNextLevel) {
-            skillStats.xp -= skillStats.xpToNextLevel;
-            skillStats.level += 1;
-            skillStats.xpToNextLevel = Math.floor(skillStats.xpToNextLevel * 1.5);
-          }
-          newStats.skills[quest.skill] = skillStats;
-        } else {
-          newStats.xp -= quest.xpReward;
-          while (newStats.xp < 0 && newStats.level > 1) {
-            newStats.level -= 1;
-            newStats.xpToNextLevel = Math.ceil(newStats.xpToNextLevel / 1.5);
-            newStats.xp += newStats.xpToNextLevel;
-          }
-          if (newStats.xp < 0) newStats.xp = 0;
-          const skillStats = { ...newStats.skills[quest.skill] };
-          skillStats.xp -= quest.xpReward;
-          while (skillStats.xp < 0 && skillStats.level > 1) {
-            skillStats.level -= 1;
-            skillStats.xpToNextLevel = Math.ceil(skillStats.xpToNextLevel / 1.5);
-            skillStats.xp += skillStats.xpToNextLevel;
-          }
-          if (skillStats.xp < 0) skillStats.xp = 0;
-          newStats.skills[quest.skill] = skillStats;
+        newStats.xp -= quest.xpReward;
+        while (newStats.xp < 0 && newStats.level > 1) {
+          newStats.level -= 1;
+          newStats.xpToNextLevel = Math.ceil(newStats.xpToNextLevel / 1.5);
+          newStats.xp += newStats.xpToNextLevel;
         }
+        if (newStats.xp < 0) newStats.xp = 0;
+        const skillStats = { ...newStats.skills[quest.skill] };
+        skillStats.xp -= quest.xpReward;
+        while (skillStats.xp < 0 && skillStats.level > 1) {
+          skillStats.level -= 1;
+          skillStats.xpToNextLevel = Math.ceil(skillStats.xpToNextLevel / 1.5);
+          skillStats.xp += skillStats.xpToNextLevel;
+        }
+        if (skillStats.xp < 0) skillStats.xp = 0;
+        newStats.skills[quest.skill] = skillStats;
 
-        const newQuests = state.quests.map(q => q.id === id ? { ...q, completed: false, failed: false, completedAt: undefined } : q);
+        const newQuests = state.quests.map(q => q.id === id ? { ...q, completed: false, completedAt: undefined } : q);
         set({ quests: newQuests, stats: newStats });
 
         const { user } = get();
         if (user) {
           updateDoc(doc(db, 'users', user.uid, 'quests', id), {
             completed: false,
-            failed: false,
             completedAt: null
           });
           updateDoc(doc(db, 'users', user.uid), { stats: newStats });

@@ -20,7 +20,7 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <h3 className="text-2xl font-bold text-white">{quest.title}</h3>
-              {!quest.completed && onEditRequest && (
+              {onEditRequest && (
                 <button 
                   onClick={onEditRequest}
                   className="p-1.5 text-neutral-500 hover:text-amber-500 transition-colors"
@@ -89,7 +89,7 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
           </div>
         )}
 
-        <div className={cn("grid gap-4", quest.priority ? "grid-cols-3" : "grid-cols-2")}>
+        <div className="grid gap-4 grid-cols-2">
           <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 flex flex-col items-center justify-center text-center">
             <span className="text-sm text-neutral-500 mb-1">Skill</span>
             <span className={cn("font-bold text-lg", SKILL_COLORS[quest.skill])}>{quest.skill}</span>
@@ -98,21 +98,6 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
             <span className="text-sm text-neutral-500 mb-1">{quest.completed ? 'EP verdient' : 'EP Belohnung'}</span>
             <span className="font-bold text-lg text-amber-500">+{quest.xpReward} EP</span>
           </div>
-          {quest.priority && (
-            <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 flex flex-col items-center justify-center text-center">
-              <span className="text-sm text-neutral-500 mb-1">Priorität</span>
-              <span className={cn(
-                "font-bold text-lg",
-                quest.priority === 'high' ? "text-red-500" :
-                quest.priority === 'medium' ? "text-amber-500" :
-                "text-blue-500"
-              )}>
-                {quest.priority === 'high' ? 'Hoch' :
-                 quest.priority === 'medium' ? 'Mittel' :
-                 'Niedrig'}
-              </span>
-            </div>
-          )}
         </div>
 
         {quest.dueDate && (
