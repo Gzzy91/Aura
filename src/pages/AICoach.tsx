@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { Sparkles, Send, Loader2 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import ReactMarkdown from 'react-markdown';
 
 export function AICoach() {
-  const { stats, quests } = useStore();
+  const { stats, quests, addQuest } = useStore();
   const [messages, setMessages] = useState<{role: 'user' | 'coach', content: string}[]>([
     { role: 'coach', content: "Sei gegrüßt, Held. Ich bin dein KI-Coach. Ich habe deine Statistiken analysiert. Wie kann ich dir heute auf deiner Reise helfen?" }
   ]);
@@ -33,17 +33,88 @@ Skills: ${JSON.stringify(stats.skills)}
 Active Quests: ${JSON.stringify(quests.filter(q => !q.completed).map(q => q.title))}
 
 Provide concise, motivating, and actionable advice. Speak like a wise mentor or RPG guide. Suggest specific quests if appropriate.
-IMPORTANT: Respond in GERMAN. Use "Du" to address the user.`;
+IMPORTANT: Respond in GERMAN. Use "Du" to address the user.
+You have the ability to create quests for the user using the createQuest tool. Use it when the user explicitly asks you to create a quest, or when they agree to a quest you suggested.`;
+
+      const createQuestDeclaration = {
+        name: "createQuest",
+        description: "Erstellt eine neue Quest für den Benutzer. Verwende dies, wenn der Benutzer dich bittet, eine Quest zu erstellen, oder wenn du eine vorschlägst und er zustimmt.",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            title: {
+              type: Type.STRING,
+              description: "Der Titel der Quest (kurz und prägnant)."
+            },
+            description: {
+              type: Type.STRING,
+              description: "Eine detaillierte Beschreibung der Quest."
+            },
+            skill: {
+              type: Type.STRING,
+              description: "Der Skill, der trainiert wird. Muss einer dieser Werte sein: Fitness, Fokus, Disziplin, Wissen, Soziales.",
+              enum: ["Fitness", "Fokus", "Disziplin", "Wissen", "Soziales"]
+            },
+            xpReward: {
+              type: Type.INTEGER,
+              description: "Die EP-Belohnung (z.B. 10 für einfach, 20 für normal, 50 für schwer)."
+            },
+            type: {
+              type: Type.STRING,
+              description: "Der Typ der Quest. 'daily' für einmalige oder tägliche Aufgaben, 'habit' für Gewohnheiten.",
+              enum: ["daily", "habit"]
+            }
+          },
+          required: ["title", "description", "skill", "xpReward", "type"]
+        }
+      };
+
+      const history: any[] = messages.map(msg => ({
+        role: msg.role === 'coach' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+      }));
+      history.push({ role: 'user', parts: [{ text: userMsg }] });
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: userMsg,
+        contents: history,
         config: {
           systemInstruction: systemPrompt,
+          tools: [{ functionDeclarations: [createQuestDeclaration] }]
         }
       });
 
-      setMessages(prev => [...prev, { role: 'coach', content: response.text || "Ich denke über deinen Pfad nach..." }]);
+      if (response.functionCalls && response.functionCalls.length > 0) {
+        const call = response.functionCalls[0];
+        if (call.name === 'createQuest') {
+          const args = call.args as any;
+          addQuest({
+            title: args.title,
+            description: args.description,
+            skill: args.skill,
+            xpReward: args.xpReward,
+            type: args.type,
+            ...(args.type === 'habit' ? { habitDirection: 'positive' } : {})
+          });
+          
+          const followUpResponse = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: [
+              ...history,
+              { role: 'model', parts: [{ functionCall: call }] },
+              { role: 'user', parts: [{ functionResponse: { name: 'createQuest', response: { success: true } } }] }
+            ],
+            config: {
+              systemInstruction: systemPrompt,
+              tools: [{ functionDeclarations: [createQuestDeclaration] }]
+            }
+          });
+          
+          setMessages(prev => [...prev, { role: 'coach', content: followUpResponse.text || "Die Quest wurde erfolgreich erstellt!" }]);
+        }
+      } else {
+        setMessages(prev => [...prev, { role: 'coach', content: response.text || "Ich denke über deinen Pfad nach..." }]);
+      }
     } catch (error) {
       console.error(error);
       setMessages(prev => [...prev, { role: 'coach', content: "Die Verbindung zum Orakel wurde unterbrochen. Bitte überprüfe deinen API-Key und versuche es erneut." }]);
