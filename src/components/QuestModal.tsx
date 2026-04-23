@@ -191,17 +191,18 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-lg w-full space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center">
-          <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Target className="w-6 h-6 text-amber-500" />
-            {initialQuest ? 'Quest bearbeiten' : 'Neue Quest erstellen'}
-          </h3>
-          <button onClick={onClose} className="text-neutral-500 hover:text-white transition-colors">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 overflow-y-auto" onClick={onClose}>
+      <div className="flex min-h-full items-end sm:items-center justify-center p-4 sm:p-6 pb-24 sm:pb-6">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-lg w-full space-y-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
+          <div className="flex justify-between items-center">
+            <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+              <Target className="w-6 h-6 text-amber-500" />
+              {initialQuest ? 'Quest bearbeiten' : 'Neue Quest erstellen'}
+            </h3>
+            <button onClick={onClose} className="text-neutral-500 hover:text-white transition-colors">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -512,6 +513,7 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

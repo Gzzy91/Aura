@@ -61,16 +61,17 @@ export function VisionModal({ isOpen, onClose, visionId }: VisionModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-        <header className="flex justify-between items-center p-6 border-b border-neutral-800">
-          <h3 className="text-xl font-bold flex items-center gap-2">
-            {visionId ? 'Ziel anpassen' : 'Neues Lebensziel'}
-          </h3>
-          <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors text-neutral-400 hover:text-white">
-            <X className="w-5 h-5" />
-          </button>
-        </header>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 overflow-y-auto">
+      <div className="flex min-h-full items-end sm:items-center justify-center p-4 sm:p-6 pb-24 sm:pb-6">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-lg shadow-2xl relative">
+          <header className="flex justify-between items-center p-6 border-b border-neutral-800">
+            <h3 className="text-xl font-bold flex items-center gap-2">
+              {visionId ? 'Ziel anpassen' : 'Neues Lebensziel'}
+            </h3>
+            <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors text-neutral-400 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+          </header>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           <div>
@@ -153,6 +154,7 @@ export function VisionModal({ isOpen, onClose, visionId }: VisionModalProps) {
             )}
           </div>
         </form>
+        </div>
       </div>
     </div>
   );
