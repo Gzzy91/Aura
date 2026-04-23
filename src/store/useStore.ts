@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserStats, Quest, SkillType, DiaryEntry } from '../types';
+import { UserStats, Quest, SkillType, DiaryEntry, Vision, FocusSession } from '../types';
 import { User } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import { toast } from 'sonner';
@@ -70,6 +70,8 @@ interface AppState {
   stats: UserStats;
   quests: Quest[];
   diaryEntries: DiaryEntry[];
+  visions: Vision[];
+  focusSessions: FocusSession[];
   notifiedQuestIds: string[];
   widgetOrder: string[];
   setUser: (user: User | null) => void;
@@ -86,6 +88,10 @@ interface AppState {
   addDiaryEntry: (entry: Omit<DiaryEntry, 'id'>) => void;
   updateDiaryEntry: (id: string, updates: Partial<Omit<DiaryEntry, 'id'>>) => void;
   deleteDiaryEntry: (id: string) => void;
+  addVision: (vision: Omit<Vision, 'id' | 'createdAt' | 'completed'>) => void;
+  updateVision: (id: string, updates: Partial<Vision>) => void;
+  deleteVision: (id: string) => void;
+  addFocusSession: (session: Omit<FocusSession, 'id'>) => void;
   updateWidgetOrder: (order: string[]) => void;
   equipItem: (category: 'head' | 'body' | 'legs' | 'feet' | 'weapon' | 'shield' | 'accessory', itemId: string | null) => void;
   setActiveSkin: (skinId: string) => void;
@@ -125,6 +131,8 @@ export const useStore = create<AppState>()(
       stats: INITIAL_STATS,
       quests: [],
       diaryEntries: [],
+      visions: [],
+      focusSessions: [],
       notifiedQuestIds: [],
       widgetOrder: ['level', 'streak', 'chart', 'calendar', 'today', 'reminders', 'settings'],
       
@@ -136,6 +144,46 @@ export const useStore = create<AppState>()(
         const { user } = get();
         if (user) {
           updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ widgetOrder: order }));
+        }
+      },
+
+      addVision: (visionData) => {
+        const id = crypto.randomUUID();
+        const vision: Vision = { ...visionData, id, completed: false, createdAt: Date.now() };
+        set(state => ({ visions: [...state.visions, vision] }));
+        const { user } = get();
+        if (user) {
+          setDoc(doc(db, 'users', user.uid, 'visions', id), cleanData(vision));
+        }
+      },
+
+      updateVision: (id, updates) => {
+        set(state => ({
+          visions: state.visions.map(v => v.id === id ? { ...v, ...updates } : v)
+        }));
+        const { user } = get();
+        if (user) {
+          updateDoc(doc(db, 'users', user.uid, 'visions', id), cleanUpdateData(updates));
+        }
+      },
+
+      deleteVision: (id) => {
+        set(state => ({
+          visions: state.visions.filter(v => v.id !== id)
+        }));
+        const { user } = get();
+        if (user) {
+          deleteDoc(doc(db, 'users', user.uid, 'visions', id));
+        }
+      },
+
+      addFocusSession: (sessionData) => {
+        const id = crypto.randomUUID();
+        const session: FocusSession = { ...sessionData, id };
+        set(state => ({ focusSessions: [...state.focusSessions, session] }));
+        const { user } = get();
+        if (user) {
+          setDoc(doc(db, 'users', user.uid, 'focusSessions', id), cleanData(session));
         }
       },
 
@@ -551,6 +599,8 @@ export const useStore = create<AppState>()(
         const userDocRef = doc(db, 'users', userId);
         const questsColRef = collection(db, 'users', userId, 'quests');
         const diaryColRef = collection(db, 'users', userId, 'diaryEntries');
+        const visionsColRef = collection(db, 'users', userId, 'visions');
+        const focusColRef = collection(db, 'users', userId, 'focusSessions');
 
         // Initial check: if user doc doesn't exist, upload current local state
         getDoc(userDocRef).then((docSnap) => {
@@ -563,6 +613,8 @@ export const useStore = create<AppState>()(
             }));
             state.quests.forEach(q => setDoc(doc(questsColRef, q.id), cleanData(q)));
             state.diaryEntries.forEach(e => setDoc(doc(diaryColRef, e.id), cleanData(e)));
+            state.visions.forEach(v => setDoc(doc(visionsColRef, v.id), cleanData(v)));
+            state.focusSessions.forEach(f => setDoc(doc(focusColRef, f.id), cleanData(f)));
           }
         });
 
@@ -589,10 +641,24 @@ export const useStore = create<AppState>()(
           set({ diaryEntries: diaryEntries.sort((a, b) => b.date - a.date) });
         });
 
+        const unsubVisions = onSnapshot(visionsColRef, (snapshot) => {
+          const visions: Vision[] = [];
+          snapshot.forEach((doc) => visions.push(doc.data() as Vision));
+          set({ visions });
+        });
+
+        const unsubFocus = onSnapshot(focusColRef, (snapshot) => {
+          const focusSessions: FocusSession[] = [];
+          snapshot.forEach((doc) => focusSessions.push(doc.data() as FocusSession));
+          set({ focusSessions });
+        });
+
         return () => {
           unsubUser();
           unsubQuests();
           unsubDiary();
+          unsubVisions();
+          unsubFocus();
         };
       }
     }),

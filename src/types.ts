@@ -57,6 +57,25 @@ export interface DiaryEntry {
 export type ReminderTiming = 'none' | '0m' | '1h' | '2h' | '1d' | '2d';
 export type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 
+export interface Vision {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  targetDate?: number;
+  completed: boolean;
+  createdAt: number;
+  completedAt?: number;
+}
+
+export interface FocusSession {
+  id: string;
+  durationMinutes: number;
+  skill: SkillType;
+  completedAt: number;
+  notes?: string;
+}
+
 export interface Quest {
   id: string;
   title: string;
@@ -76,4 +95,5 @@ export interface Quest {
   recurrenceDays?: number[]; // 0-6, where 0 is Sunday
   tags?: string[];
   completions?: { date: number; direction: 'positive' | 'negative' }[];
+  visionId?: string;
 }

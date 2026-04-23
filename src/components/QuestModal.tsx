@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { X, Plus, Calendar, Bell, Target, Save } from 'lucide-react';
+import { X, Plus, Calendar, Bell, Target, Save, Compass } from 'lucide-react';
 import { SkillType, Subtask, ReminderTiming, Quest, Recurrence } from '@/types';
 import { cn } from '@/lib/utils';
+import { useStore } from '@/store/useStore';
 
 interface QuestModalProps {
   isOpen: boolean;
@@ -12,6 +13,7 @@ interface QuestModalProps {
 }
 
 export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest }: QuestModalProps) {
+  const { visions } = useStore();
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [newTag, setNewTag] = useState('');
   const [newQuest, setNewQuest] = useState({
@@ -30,7 +32,8 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
     recurrenceDays: [] as number[],
     tags: [] as string[],
     completedAtDate: '',
-    completedAtTime: ''
+    completedAtTime: '',
+    visionId: ''
   });
 
   useEffect(() => {
@@ -59,7 +62,8 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
         recurrenceDays: initialQuest.recurrenceDays || [],
         tags: initialQuest.tags || [],
         completedAtDate: completedAtDateStr,
-        completedAtTime: completedAtTimeStr
+        completedAtTime: completedAtTimeStr,
+        visionId: initialQuest.visionId || ''
       });
     } else if (initialDate) {
       const year = initialDate.getFullYear();
@@ -81,7 +85,8 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
         recurrenceDays: [],
         tags: [],
         completedAtDate: '',
-        completedAtTime: ''
+        completedAtTime: '',
+        visionId: ''
       });
     } else {
       setNewQuest({
@@ -100,7 +105,8 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
         recurrenceDays: [],
         tags: [],
         completedAtDate: '',
-        completedAtTime: ''
+        completedAtTime: '',
+        visionId: ''
       });
     }
   }, [initialDate, initialQuest, isOpen]);
@@ -264,6 +270,24 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
                 <option value={100}>100 EP (Schwer)</option>
               </select>
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-neutral-400 mb-1 flex items-center gap-2">
+              <Compass className="w-4 h-4" />
+              Lebensziel (Optional)
+            </label>
+            <select 
+              value={newQuest.visionId}
+              onChange={e => setNewQuest({...newQuest, visionId: e.target.value})}
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
+            >
+              <option value="">Kein Ziel ausgewählt</option>
+              {visions.filter(v => !v.completed).map(vision => (
+                <option key={vision.id} value={vision.id}>
+                  {vision.icon} {vision.title}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 sm:col-span-1">

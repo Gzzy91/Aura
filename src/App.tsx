@@ -13,6 +13,8 @@ import { Avatar } from './pages/Avatar';
 import { AICoach } from './pages/AICoach';
 import { Calendar } from './pages/Calendar';
 import { Diary } from './pages/Diary';
+import { Visions } from './pages/Visions';
+import { Focus } from './pages/Focus';
 import { Toaster, toast } from 'sonner';
 import { NotificationManager } from './components/NotificationManager';
 import { useStore } from './store/useStore';
@@ -65,8 +67,10 @@ export default function App() {
       <NotificationManager />
       <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
         {activeTab === 'dashboard' && <Dashboard setActiveTab={setActiveTab} />}
+        {activeTab === 'visions' && <Visions />}
         {activeTab === 'quests' && <Quests />}
         {activeTab === 'habits' && <Habits />}
+        {activeTab === 'focus' && <Focus />}
         {activeTab === 'skills' && <Skills />}
         {activeTab === 'avatar' && <Avatar />}
         {activeTab === 'calendar' && <Calendar />}

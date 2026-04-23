@@ -7,6 +7,9 @@
 }
 
 @layer base {
+  html, body, #root {
+    height: 100%;
+  }
   body {
     @apply bg-neutral-950 text-neutral-100 font-sans antialiased;
   }
@@ -15,6 +18,12 @@
 @layer utilities {
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe-offset {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
   }
 }
 
