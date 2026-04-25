@@ -15,6 +15,7 @@ import { Calendar } from './pages/Calendar';
 import { Diary } from './pages/Diary';
 import { Visions } from './pages/Visions';
 import { Focus } from './pages/Focus';
+import { Mentaltraining } from './pages/Mentaltraining';
 import { Toaster, toast } from 'sonner';
 import { NotificationManager } from './components/NotificationManager';
 import { useStore } from './store/useStore';
@@ -75,6 +76,7 @@ export default function App() {
         {activeTab === 'avatar' && <Avatar />}
         {activeTab === 'calendar' && <Calendar />}
         {activeTab === 'diary' && <Diary />}
+        {activeTab === 'mentaltraining' && <Mentaltraining setActiveTab={setActiveTab} />}
         {activeTab === 'coach' && <AICoach />}
       </Layout>
     </>

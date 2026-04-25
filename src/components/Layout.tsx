@@ -1,5 +1,5 @@
 import { ReactNode, useState, useEffect } from 'react';
-import { User as UserIcon, Target, Brain, Sparkles, Calendar, Book, Repeat, LogIn, LogOut, LayoutDashboard, Shield, Timer, Compass, Menu, X } from 'lucide-react';
+import { User as UserIcon, Target, Brain, Sparkles, Calendar, Book, Repeat, LogIn, LogOut, LayoutDashboard, Shield, Timer, Compass, Menu, X, Lightbulb } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from './Logo';
 import { useStore } from '@/store/useStore';
@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { id: 'quests', icon: Target, label: 'Quests' },
   { id: 'habits', icon: Repeat, label: 'Habits' },
   { id: 'focus', icon: Timer, label: 'Fokus' },
+  { id: 'mentaltraining', icon: Lightbulb, label: 'Mentaltraining' },
   { id: 'avatar', icon: UserIcon, label: 'Avatar' },
   { id: 'calendar', icon: Calendar, label: 'Kalender' },
   { id: 'diary', icon: Book, label: 'Tagebuch' },
