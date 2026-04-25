@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Lightbulb, Target, ArrowRight, Brain, Dumbbell, BookOpen, Shield, Activity, Moon, Dna } from 'lucide-react';
+import { Lightbulb, Target, ArrowRight, Brain, Dumbbell, BookOpen, Shield, Activity, Moon, Dna, History, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { SkillType } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -282,14 +282,36 @@ function renderMarkdown(text: string) {
 
 export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
   const [currentDate] = useState(() => new Date());
-  const [activeSubTab, setActiveSubTab] = useState<'impulse' | 'tiefentraining'>('impulse');
+  const [activeSubTab, setActiveSubTab] = useState<'impulse' | 'tiefentraining' | 'archiv'>('impulse');
   const [expandedTraining, setExpandedTraining] = useState<string | null>(null);
+  const [selectedArchiveDate, setSelectedArchiveDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d;
+  });
+
+  const archiveDays = useMemo(() => {
+    const days = [];
+    for (let i = 1; i <= 30; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push(d);
+    }
+    return days;
+  }, []);
+
+  const getIndicesForDate = (date: Date) => {
+    const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+    return getDailyIndices(seed);
+  };
 
   const dailyIndices = useMemo(() => {
-    // Generate a unique seed for the current day (E.g. 20260423)
-    const seed = currentDate.getFullYear() * 10000 + (currentDate.getMonth() + 1) * 100 + currentDate.getDate();
-    return getDailyIndices(seed);
+    return getIndicesForDate(currentDate);
   }, [currentDate]);
+
+  const archiveIndices = useMemo(() => {
+    return getIndicesForDate(selectedArchiveDate);
+  }, [selectedArchiveDate]);
 
   const skillKeys: SkillType[] = ['Fitness', 'Fokus', 'Disziplin', 'Wissen', 'Soziales'];
 
@@ -307,7 +329,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
       </header>
 
       {/* Tabs */}
-      <div className="flex gap-2 p-1 bg-neutral-900 rounded-xl max-w-sm mb-6 border border-neutral-800">
+      <div className="flex gap-2 p-1 bg-neutral-900 rounded-xl max-w-md mb-6 border border-neutral-800">
         <button
           onClick={() => setActiveSubTab('impulse')}
           className={cn(
@@ -329,6 +351,17 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
           )}
         >
           Tiefentraining
+        </button>
+        <button
+          onClick={() => setActiveSubTab('archiv')}
+          className={cn(
+            "flex-1 py-2 text-sm font-medium rounded-lg transition-all",
+            activeSubTab === 'archiv' 
+              ? "bg-amber-500 text-black shadow-md shadow-amber-500/20" 
+              : "text-neutral-400 hover:text-white"
+          )}
+        >
+          Archiv
         </button>
       </div>
 
@@ -434,6 +467,97 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                  );
                })}
              </div>
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'archiv' && (
+        <div className="animate-in fade-in duration-300 space-y-6">
+          <div className="flex flex-col md:flex-row gap-6">
+            {/* Date Selector Sidebar */}
+            <div className="w-full md:w-64 flex-shrink-0 space-y-2">
+              <h3 className="text-sm font-bold text-neutral-500 uppercase tracking-wider px-2 mb-4 flex items-center gap-2">
+                <History className="w-4 h-4" /> Letzte 30 Tage
+              </h3>
+              <div className="max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar space-y-1">
+                {archiveDays.map((date) => {
+                  const isSelected = date.toDateString() === selectedArchiveDate.toDateString();
+                  return (
+                    <button
+                      key={date.toISOString()}
+                      onClick={() => setSelectedArchiveDate(date)}
+                      className={cn(
+                        "w-full text-left px-4 py-3 rounded-xl transition-all border flex items-center justify-between group",
+                        isSelected 
+                          ? "bg-amber-500/10 border-amber-500 text-amber-500 shadow-lg shadow-amber-500/5" 
+                          : "bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-white"
+                      )}
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium opacity-60">
+                          {date.toLocaleDateString(undefined, { weekday: 'short' })}
+                        </span>
+                        <span className="font-bold">
+                          {date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                        </span>
+                      </div>
+                      <ChevronRight className={cn("w-4 h-4 transition-transform", isSelected ? "translate-x-1" : "opacity-0 group-hover:opacity-100")} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Archive Content Area */}
+            <div className="flex-1 space-y-6">
+              <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-amber-500/10 p-2 rounded-lg">
+                      <CalendarIcon className="w-5 h-5 text-amber-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-white">Rückblick: {selectedArchiveDate.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</h3>
+                      <p className="text-sm text-neutral-400">Vergangene Impulse und Trainings</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  {skillKeys.map((skill) => {
+                    const index = archiveIndices[skill];
+                    const tipData = DAILY_TIPS[skill][index];
+                    return (
+                      <div key={skill} className="bg-neutral-950 border border-neutral-800 rounded-2xl p-4 hover:border-amber-500/20 transition-colors">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500/70">{skill}</span>
+                        </div>
+                        <blockquote className="text-sm font-medium text-white mb-3 italic">
+                          "{tipData.quote}"
+                        </blockquote>
+                        <div className="bg-neutral-900/50 rounded-xl p-3 border border-neutral-800/50">
+                          <h4 className="text-xs font-bold text-neutral-400 mb-1 flex items-center gap-1">
+                            <Target className="w-3 h-3" /> Die Lektion
+                          </h4>
+                          <p className="text-xs text-neutral-300 leading-relaxed">
+                            {tipData.tip}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-amber-500/5 border border-amber-500/10 rounded-3xl p-6">
+                <h4 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                  <Brain className="w-5 h-5 text-amber-500" /> Coaching-Tipp fürs Archiv
+                </h4>
+                <p className="text-neutral-400 text-sm leading-relaxed">
+                  Reflexion ist einer der am meisten unterschätzten Hebel für Erfolg. Schau dir regelmäßig alte Impulse an. Oft verstehst du eine Lektion erst dann wirklich, wenn du sie in einem anderen Kontext oder nach einer gewissen Zeit erneut liest. Wissen muss reifen.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}
