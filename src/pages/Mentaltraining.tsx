@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Lightbulb, Target, ArrowRight, Brain, Dumbbell, BookOpen, Shield } from 'lucide-react';
+import { Lightbulb, Target, ArrowRight, Brain, Dumbbell, BookOpen, Shield, Activity, Moon, Dna } from 'lucide-react';
 import { SkillType } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -155,6 +155,69 @@ const DEEP_TRAINings = [
       Stelle dir gelegentlich vor, Dinge zu verlieren, die du liebst. Das klingt makaber, aber es impft dich gegen Enttäuschungen und erzeugt vor allem eines: Tiefe Dankbarkeit für den jetzigen Moment.
       
       **Dein Coaching-Auftrag:** Wenn du das nächste Mal wütend oder gestresst bist, frage dich: "Ist das in meiner direkten Kontrolle?" Wenn nein, atme tief ein und lass es geistig los.
+    `
+  },
+  {
+    id: 'bodylanguage',
+    title: 'Embodied Cognition & Körpersprache',
+    category: 'Soziales & Fokus',
+    icon: Activity,
+    content: `
+      ### Die Neurowissenschaft der Haltung
+      Die Forschung zur "Embodied Cognition" beweist: Unser Gehirn ist nicht isoliert, sondern denkt mit dem gesamten Körper. Wie wir uns bewegen und stehen, verändert nicht nur, wie andere uns sehen, sondern direkt unsere eigene Gehirnchemie.
+      
+      **1. Das propriozeptive Feedback-System**
+      Dein Gehirn liest ständig die Spannung deiner Muskeln ab, um auf deinen emotionalen Zustand zu schließen. Eine eingesunkene Haltung mit hängenden Schultern signalisiert dem Gehirn "Niederlage" oder "Bedrohung", was die Ausschüttung von Cortisol (Stresshormon) begünstigt. 
+      
+      **2. Offene Expansion (Power Poses)**
+      Auch wenn die frühe Forschung von Amy Cuddy debattiert wurde, zeigen neuere Meta-Analysen: Eine offene, expansive Körperhaltung über nur 2 Minuten (Brust raus, Schultern zurück, Blick nach vorne) senkt die subjektive Stresswahrnehmung und erhöht die Risikobereitschaft und das Gefühl von Handlungsfähigkeit (Agency).
+      
+      **3. Der Vagus-Nerv und Mikro-Expressions**
+      Der Vagusnerv verbindet Gehirn, Herz und Darm. Eine ruhige, tiefe Bauchatmung und offene Gesichtsmimik (Entspannung der Kiefer- und Augenmuskulatur) aktivieren den ventralen Vaguskomplex (Social Engagement System). Du strahlst Sicherheit aus, weil dein Nervensystem buchstäblich im "Sicherheits-Modus" ist – was über Spiegelneuronen sofort dein Gegenüber beruhigt.
+      
+      **Dein Coaching-Auftrag:** Achte heute bewusst auf deinen Nacken und deine Schultern, wenn du am Handy bist ("Tech-Neck"). Richte dich auf, atme dreimal tief in den Bauch und spüre, wie sich dein mentaler Zustand allein durch die biomechanische Anpassung verändert.
+    `
+  },
+  {
+    id: 'sleep',
+    title: 'Zirkadianer Rhythmus & Schlafarchitektur',
+    category: 'Fitness & Disziplin',
+    icon: Moon,
+    content: `
+      ### Die Basis jeglicher Leistung
+      Nach dem aktuellsten Stand der Schlafforschung (z.B. Dr. Matthew Walker, Stanford's Andrew Huberman) ist Schlaf keine Ruhepause, sondern ein hochaktiver neurologischer und metabolischer Prozess. Ohne optimierten Schlaf ist jegliches Mentaltraining wirkungslos.
+      
+      **1. Die Cortisol-Melatonin-Wippe**
+      Dein Wach-Schlaf-Rhythmus wird durch Licht gesteuert. Morgendliches Sonnenlicht in den Augen (innerhalb von 30-60 Minuten nach dem Aufwachen) setzt einen Timer für die Melatoninausschüttung 14-16 Stunden später und gibt den evolutionären Startschuss für gesundes Cortisol (Wachheit/Fokus). Verpasst du dieses Signal, verschiebt sich deine innere Uhr.
+      
+      **2. Das glymphatische System**
+      Nur im Tiefschlaf (Slow-Wave-Sleep) öffnet sich das glymphatische System in deinem Gehirn und wäscht neurotoxische Abfallprodukte aus. Ein Mangel an Tiefschlaf (oft durch abendlichen Alkohol oder zu spätes Essen) blockiert diese Gehirnwäsche.
+      
+      **3. REM-Schlaf als emotionale Therapie**
+      Während der REM-Phase (Traumschlaf) verarbeitet das Gehirn emotionale Erlebnisse in einer noradrenalin-freien (stressfreien) Umgebung. Es ist eine nächtliche Therapie-Sitzung. Da REM-Schlaf stark in der zweiten Nachthälfte kumuliert, verlierst du bei Verknappung von 8 auf 6 Stunden Schlaf nicht 25% deines Schlafs, sondern bis zu 60-70% deiner REM-Phasen!
+      
+      **Dein Coaching-Auftrag:** Trinke kein Koffein mehr nach 14 Uhr (Halbwertszeit von Koffein bindet Adenosin-Rezeptoren zu lange) und gehe 3 Tage lang exakt zur gleichen Zeit ins Bett.
+    `
+  },
+  {
+    id: 'gutbrain',
+    title: 'Darm-Hirn-Achse (Psychobiom)',
+    category: 'Wissen & Fitness',
+    icon: Dna,
+    content: `
+      ### Ernährungspsychiatrie der Zukunft
+      Die Trennung zwischen Körper und Geist ist in der modernen Forschung obsolet. Das Epizentrum deiner mentalen Gesundheit und Resilienz liegt nicht nur im Kopf, sondern zu einem Großteil in deinem Darm.
+      
+      **1. Das Mikrobiom als Neurotransmitter-Fabrik**
+      Über 90% des Serotonins (Glückshormon) und 50% des Dopamins in deinem Körper werden im Darmtrakt gebildet – gesteuert durch Billionen von Darmbakterien. Ein dysbiotisches Mikrobiom (durch hochverarbeitete Lebensmittel, Zucker und Stress) sendet über den Vagusnerv Alarmsignale, was sich unmittelbar als "Brain Fog", innere Unruhe oder mangelnder Antrieb äußert.
+      
+      **2. Neuroinflammation (Die Stille Zündung)**
+      Modernste Psychiatriestudien zeigen: Depressive Verstimmungen und chronische Müdigkeit sind stark mit Entzündungsprozessen verknüpft. Eine Ernährung reich an Omega-3-Fettsäuren (Fisch, Alken), Polyphenolen (Beeren, Olivenöl) und Ballaststoffen senkt Entzündungsmarker (wie Zytokine) messbar ab und schützt das Gehirn.
+      
+      **3. Blutzucker und der Kognitive Crash**
+      Extreme Glukose-Spitzen (z.B. durch Croissants oder Smoothies auf nüchternen Magen) und die daraus folgenden Abstürze ruinieren deinen Fokus. Eine Stabilisierung deines Blutzuckers durch herzhafte, proteinreiche erste Mahlzeiten ist der effektivste Hebel für konstante mentale Energie und um "Heißhunger-Entscheidungen" vorzubeugen.
+      
+      **Dein Coaching-Auftrag:** Integriere heute bewusst prä- oder probiotische Lebensmittel (z.B. Kefir, Kimchi oder reichlich pflanzliche Ballaststoffe) und starte den Tag proteinreich (ca. 30g), um den Blutzucker für die ersten Arbeitsstunden wie auf Schienen fahren zu lassen.
     `
   }
 ];
