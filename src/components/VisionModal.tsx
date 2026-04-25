@@ -61,81 +61,86 @@ export function VisionModal({ isOpen, onClose, visionId }: VisionModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 overflow-y-auto">
-      <div className="flex min-h-full items-end sm:items-center justify-center p-4 sm:p-6 pb-24 sm:pb-6">
-        <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-lg shadow-2xl relative">
-          <header className="flex justify-between items-center p-6 border-b border-neutral-800">
-            <h3 className="text-xl font-bold flex items-center gap-2">
-              {visionId ? 'Ziel anpassen' : 'Neues Lebensziel'}
-            </h3>
-            <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors text-neutral-400 hover:text-white">
-              <X className="w-5 h-5" />
-            </button>
-          </header>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pb-28 md:pb-8">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-lg shadow-2xl relative z-10 flex flex-col max-h-full overflow-hidden">
+        <header className="flex-shrink-0 flex justify-between items-center p-6 border-b border-neutral-800">
+          <h3 className="text-xl font-bold flex items-center gap-2">
+            {visionId ? 'Ziel anpassen' : 'Neues Lebensziel'}
+          </h3>
+          <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors text-neutral-400 hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </header>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-neutral-400 mb-2">Symbol</label>
-            <div className="flex flex-wrap gap-2">
-              {EMOJI_OPTIONS.map(emoji => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => setVision({ ...vision, icon: emoji })}
-                  className={`w-12 h-12 rounded-xl text-2xl flex items-center justify-center transition-all ${
-                    vision.icon === emoji ? 'bg-blue-500/20 border border-blue-500 scale-110' : 'bg-neutral-800 border border-transparent hover:bg-neutral-700'
-                  }`}
-                >
-                  {emoji}
-                </button>
-              ))}
+        <div className="overflow-y-auto p-6 flex-1">
+          <form id="vision-form" onSubmit={handleSubmit} className="space-y-6 pb-2">
+            <div>
+              <label className="block text-sm font-medium text-neutral-400 mb-2">Symbol</label>
+              <div className="flex flex-wrap gap-2">
+                {EMOJI_OPTIONS.map(emoji => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => setVision({ ...vision, icon: emoji })}
+                    className={`w-12 h-12 rounded-xl text-2xl flex items-center justify-center transition-all ${
+                      vision.icon === emoji ? 'bg-blue-500/20 border border-blue-500 scale-110' : 'bg-neutral-800 border border-transparent hover:bg-neutral-700'
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-neutral-400 mb-2">Titel</label>
-            <input
-              type="text"
-              required
-              value={vision.title}
-              onChange={e => setVision({ ...vision, title: e.target.value })}
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-              placeholder="z.B. Einen Marathon laufen"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-neutral-400 mb-2">Beschreibung</label>
-            <textarea
-              required
-              value={vision.description}
-              onChange={e => setVision({ ...vision, description: e.target.value })}
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[100px] resize-none"
-              placeholder="Warum ist dir dieses Ziel wichtig?"
-            />
-          </div>
-
-          {visionId && (
-            <label className="flex items-center gap-3 p-4 bg-neutral-950/50 border border-neutral-800 rounded-xl cursor-pointer hover:bg-neutral-800 transition-colors">
+            <div>
+              <label className="block text-sm font-medium text-neutral-400 mb-2">Titel</label>
               <input
-                type="checkbox"
-                checked={vision.completed}
-                onChange={e => setVision({ 
-                  ...vision, 
-                  completed: e.target.checked,
-                  completedAt: e.target.checked ? Date.now() : undefined
-                })}
-                className="w-5 h-5 rounded border-neutral-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-neutral-900 bg-neutral-900"
+                type="text"
+                required
+                value={vision.title}
+                onChange={e => setVision({ ...vision, title: e.target.value })}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                placeholder="z.B. Einen Marathon laufen"
               />
-              <span className="font-medium flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-neutral-400" />
-                Ziel als "Erreicht" markieren
-              </span>
-            </label>
-          )}
+            </div>
 
-          <div className="flex gap-3 pt-4">
+            <div>
+              <label className="block text-sm font-medium text-neutral-400 mb-2">Beschreibung</label>
+              <textarea
+                required
+                value={vision.description}
+                onChange={e => setVision({ ...vision, description: e.target.value })}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[100px] resize-none"
+                placeholder="Warum ist dir dieses Ziel wichtig?"
+              />
+            </div>
+
+            {visionId && (
+              <label className="flex items-center gap-3 p-4 bg-neutral-950/50 border border-neutral-800 rounded-xl cursor-pointer hover:bg-neutral-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={vision.completed}
+                  onChange={e => setVision({ 
+                    ...vision, 
+                    completed: e.target.checked,
+                    completedAt: e.target.checked ? Date.now() : undefined
+                  })}
+                  className="w-5 h-5 rounded border-neutral-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-neutral-900 bg-neutral-900"
+                />
+                <span className="font-medium flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-neutral-400" />
+                  Ziel als "Erreicht" markieren
+                </span>
+              </label>
+            )}
+          </form>
+        </div>
+        
+        <div className="flex-shrink-0 p-6 pt-4 border-t border-neutral-800 bg-neutral-900/95">
+          <div className="flex gap-3">
             <button
+              form="vision-form"
               type="submit"
               className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition-all"
             >
@@ -153,7 +158,6 @@ export function VisionModal({ isOpen, onClose, visionId }: VisionModalProps) {
               </button>
             )}
           </div>
-        </form>
         </div>
       </div>
     </div>

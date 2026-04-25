@@ -191,312 +191,317 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 overflow-y-auto" onClick={onClose}>
-      <div className="flex min-h-full items-end sm:items-center justify-center p-4 sm:p-6 pb-24 sm:pb-6">
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 max-w-lg w-full space-y-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
-          <div className="flex justify-between items-center">
-            <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-              <Target className="w-6 h-6 text-amber-500" />
-              {initialQuest ? 'Quest bearbeiten' : 'Neue Quest erstellen'}
-            </h3>
-            <button onClick={onClose} className="text-neutral-500 hover:text-white transition-colors">
-              <X className="w-6 h-6" />
-            </button>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pb-28 md:pb-8">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-lg shadow-2xl relative z-10 flex flex-col max-h-full overflow-hidden">
+        <header className="flex-shrink-0 flex justify-between items-center p-6 border-b border-neutral-800">
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+            <Target className="w-6 h-6 text-amber-500" />
+            {initialQuest ? 'Quest bearbeiten' : 'Neue Quest erstellen'}
+          </h3>
+          <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors text-neutral-400 hover:text-white">
+            <X className="w-6 h-6" />
+          </button>
+        </header>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-neutral-400 mb-1">Quest-Titel</label>
-            <input 
-              type="text" 
-              value={newQuest.title}
-              onChange={e => setNewQuest({...newQuest, title: e.target.value})}
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
-              placeholder="z.B. 5km laufen"
-              autoFocus
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-neutral-400 mb-1">Beschreibung (Optional)</label>
-            <textarea 
-              value={newQuest.description}
-              onChange={e => setNewQuest({...newQuest, description: e.target.value})}
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500 resize-none h-20"
-              placeholder="Details hinzufügen..."
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            {newQuest.type === 'habit' && (
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-neutral-400 mb-1">Richtung</label>
+        <div className="overflow-y-auto p-6 flex-1">
+          <form id="quest-form" onSubmit={handleSubmit} className="space-y-4 pb-2">
+            <div>
+              <label className="block text-sm font-medium text-neutral-400 mb-1">Quest-Titel</label>
+              <input 
+                type="text" 
+                value={newQuest.title}
+                onChange={e => setNewQuest({...newQuest, title: e.target.value})}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
+                placeholder="z.B. 5km laufen"
+                autoFocus
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-neutral-400 mb-1">Beschreibung (Optional)</label>
+              <textarea 
+                value={newQuest.description}
+                onChange={e => setNewQuest({...newQuest, description: e.target.value})}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500 resize-none h-20"
+                placeholder="Details hinzufügen..."
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {newQuest.type === 'habit' && (
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-neutral-400 mb-1">Richtung</label>
+                  <select 
+                    value={newQuest.habitDirection}
+                    onChange={e => setNewQuest({...newQuest, habitDirection: e.target.value as 'positive' | 'negative' | 'both'})}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="positive">Positiv (+EP)</option>
+                    <option value="negative">Negativ (-EP)</option>
+                    <option value="both">Beides (+/- EP)</option>
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-neutral-400 mb-1">Skill-Kategorie</label>
                 <select 
-                  value={newQuest.habitDirection}
-                  onChange={e => setNewQuest({...newQuest, habitDirection: e.target.value as 'positive' | 'negative' | 'both'})}
+                  value={newQuest.skill}
+                  onChange={e => setNewQuest({...newQuest, skill: e.target.value as SkillType})}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
                 >
-                  <option value="positive">Positiv (+EP)</option>
-                  <option value="negative">Negativ (-EP)</option>
-                  <option value="both">Beides (+/- EP)</option>
+                  <option value="Fitness">Fitness</option>
+                  <option value="Fokus">Fokus</option>
+                  <option value="Disziplin">Disziplin</option>
+                  <option value="Wissen">Wissen</option>
+                  <option value="Soziales">Soziales</option>
                 </select>
               </div>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-neutral-400 mb-1">Skill-Kategorie</label>
-              <select 
-                value={newQuest.skill}
-                onChange={e => setNewQuest({...newQuest, skill: e.target.value as SkillType})}
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
-              >
-                <option value="Fitness">Fitness</option>
-                <option value="Fokus">Fokus</option>
-                <option value="Disziplin">Disziplin</option>
-                <option value="Wissen">Wissen</option>
-                <option value="Soziales">Soziales</option>
-              </select>
+              <div>
+                <label className="block text-sm font-medium text-neutral-400 mb-1">EP-Belohnung</label>
+                <select 
+                  value={newQuest.xpReward}
+                  onChange={e => setNewQuest({...newQuest, xpReward: parseInt(e.target.value) || 10})}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
+                >
+                  <option value={5}>5 EP (Trivial)</option>
+                  <option value={10}>10 EP (Einfach)</option>
+                  <option value={20}>20 EP (Normal)</option>
+                  <option value={50}>50 EP (Herausfordernd)</option>
+                  <option value={100}>100 EP (Schwer)</option>
+                </select>
+              </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-neutral-400 mb-1">EP-Belohnung</label>
+              <label className="block text-sm font-medium text-neutral-400 mb-1 flex items-center gap-2">
+                <Compass className="w-4 h-4" />
+                Lebensziel (Optional)
+              </label>
               <select 
-                value={newQuest.xpReward}
-                onChange={e => setNewQuest({...newQuest, xpReward: parseInt(e.target.value) || 10})}
+                value={newQuest.visionId}
+                onChange={e => setNewQuest({...newQuest, visionId: e.target.value})}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
               >
-                <option value={5}>5 EP (Trivial)</option>
-                <option value={10}>10 EP (Einfach)</option>
-                <option value={20}>20 EP (Normal)</option>
-                <option value={50}>50 EP (Herausfordernd)</option>
-                <option value={100}>100 EP (Schwer)</option>
+                <option value="">Kein Ziel ausgewählt</option>
+                {visions.filter(v => !v.completed).map(vision => (
+                  <option key={vision.id} value={vision.id}>
+                    {vision.icon} {vision.title}
+                  </option>
+                ))}
               </select>
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-neutral-400 mb-1 flex items-center gap-2">
-              <Compass className="w-4 h-4" />
-              Lebensziel (Optional)
-            </label>
-            <select 
-              value={newQuest.visionId}
-              onChange={e => setNewQuest({...newQuest, visionId: e.target.value})}
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
-            >
-              <option value="">Kein Ziel ausgewählt</option>
-              {visions.filter(v => !v.completed).map(vision => (
-                <option key={vision.id} value={vision.id}>
-                  {vision.icon} {vision.title}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2 sm:col-span-1">
-              <label className="block text-sm font-medium text-neutral-400 mb-1 flex items-center gap-2">
-                <Calendar className="w-4 h-4" />
-                Fälligkeitsdatum
-              </label>
-              <input 
-                type="date" 
-                value={newQuest.dueDate}
-                onChange={e => setNewQuest({...newQuest, dueDate: e.target.value})}
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={newQuest.type === 'habit'}
-              />
-            </div>
-            <div className="col-span-2 sm:col-span-1">
-              <label className="block text-sm font-medium text-neutral-400 mb-1">
-                Uhrzeit (Optional)
-              </label>
-              <input 
-                type="time" 
-                value={newQuest.dueTime}
-                onChange={e => setNewQuest({...newQuest, dueTime: e.target.value, hasTime: !!e.target.value})}
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={newQuest.type === 'habit' || !newQuest.dueDate}
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-neutral-400 mb-1 flex items-center gap-2">
-                <Bell className="w-4 h-4" />
-                Erinnerung
-              </label>
-              <select 
-                value={newQuest.reminderTiming}
-                onChange={e => setNewQuest({...newQuest, reminderTiming: e.target.value as ReminderTiming})}
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={newQuest.type === 'habit'}
-              >
-                <option value="none">Keine</option>
-                <option value="0m">Zum Zeitpunkt</option>
-                <option value="1h">1 Stunde vorher</option>
-                <option value="2h">2 Stunden vorher</option>
-                <option value="1d">1 Tag vorher</option>
-                <option value="2d">2 Tage vorher</option>
-              </select>
-            </div>
-          </div>
-          {initialQuest?.completed && (
-            <div className="grid grid-cols-2 gap-4 p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
+            <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2 sm:col-span-1">
-                <label className="block text-sm font-medium text-green-400 mb-1 flex items-center gap-2">
+                <label className="block text-sm font-medium text-neutral-400 mb-1 flex items-center gap-2">
                   <Calendar className="w-4 h-4" />
-                  Abgeschlossen am
+                  Fälligkeitsdatum
                 </label>
                 <input 
                   type="date" 
-                  value={newQuest.completedAtDate}
-                  onChange={e => setNewQuest({...newQuest, completedAtDate: e.target.value})}
-                  className="w-full bg-neutral-950 border border-green-500/30 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-500"
+                  value={newQuest.dueDate}
+                  onChange={e => setNewQuest({...newQuest, dueDate: e.target.value})}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={newQuest.type === 'habit'}
                 />
               </div>
               <div className="col-span-2 sm:col-span-1">
-                <label className="block text-sm font-medium text-green-400 mb-1">
-                  Uhrzeit
+                <label className="block text-sm font-medium text-neutral-400 mb-1">
+                  Uhrzeit (Optional)
                 </label>
                 <input 
                   type="time" 
-                  value={newQuest.completedAtTime}
-                  onChange={e => setNewQuest({...newQuest, completedAtTime: e.target.value})}
-                  className="w-full bg-neutral-950 border border-green-500/30 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-500"
+                  value={newQuest.dueTime}
+                  onChange={e => setNewQuest({...newQuest, dueTime: e.target.value, hasTime: !!e.target.value})}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={newQuest.type === 'habit' || !newQuest.dueDate}
                 />
               </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-neutral-400 mb-1 flex items-center gap-2">
+                  <Bell className="w-4 h-4" />
+                  Erinnerung
+                </label>
+                <select 
+                  value={newQuest.reminderTiming}
+                  onChange={e => setNewQuest({...newQuest, reminderTiming: e.target.value as ReminderTiming})}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={newQuest.type === 'habit'}
+                >
+                  <option value="none">Keine</option>
+                  <option value="0m">Zum Zeitpunkt</option>
+                  <option value="1h">1 Stunde vorher</option>
+                  <option value="2h">2 Stunden vorher</option>
+                  <option value="1d">1 Tag vorher</option>
+                  <option value="2d">2 Tage vorher</option>
+                </select>
+              </div>
             </div>
-          )}
-          <div className="grid grid-cols-1 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-neutral-400 mb-1">Wiederholung</label>
-              <select 
-                value={newQuest.recurrence}
-                onChange={e => setNewQuest({...newQuest, recurrence: e.target.value as Recurrence})}
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={newQuest.type === 'habit'}
-              >
-                <option value="none">Einmalig</option>
-                <option value="daily">Täglich</option>
-                <option value="weekly">Wöchentlich</option>
-                <option value="monthly">Monatlich</option>
-              </select>
-            </div>
-            {newQuest.recurrence === 'weekly' && (
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-400">Wochentage</label>
-                <div className="flex flex-wrap gap-2">
-                  {WEEKDAYS.map(day => (
-                    <button
-                      key={day.value}
-                      type="button"
-                      onClick={() => toggleDay(day.value)}
-                      className={cn(
-                        "w-10 h-10 rounded-lg border text-sm font-medium transition-all",
-                        newQuest.recurrenceDays.includes(day.value)
-                          ? "bg-amber-500 border-amber-500 text-neutral-950"
-                          : "bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-600"
-                      )}
-                    >
-                      {day.label}
-                    </button>
-                  ))}
+            {initialQuest?.completed && (
+              <div className="grid grid-cols-2 gap-4 p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-sm font-medium text-green-400 mb-1 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Abgeschlossen am
+                  </label>
+                  <input 
+                    type="date" 
+                    value={newQuest.completedAtDate}
+                    onChange={e => setNewQuest({...newQuest, completedAtDate: e.target.value})}
+                    className="w-full bg-neutral-950 border border-green-500/30 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-500"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-sm font-medium text-green-400 mb-1">
+                    Uhrzeit
+                  </label>
+                  <input 
+                    type="time" 
+                    value={newQuest.completedAtTime}
+                    onChange={e => setNewQuest({...newQuest, completedAtTime: e.target.value})}
+                    className="w-full bg-neutral-950 border border-green-500/30 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-500"
+                  />
                 </div>
               </div>
             )}
-            {newQuest.recurrence === 'monthly' && (
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-400">Tag des Monats</label>
-                <div className="grid grid-cols-7 gap-2">
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                    <button
-                      key={day}
-                      type="button"
-                      onClick={() => toggleDay(day)}
-                      className={cn(
-                        "w-10 h-10 rounded-lg border text-sm font-medium transition-all",
-                        newQuest.recurrenceDays.includes(day)
-                          ? "bg-amber-500 border-amber-500 text-neutral-950"
-                          : "bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-600"
-                      )}
-                    >
-                      {day}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[10px] text-neutral-500">Hinweis: Bei Monaten mit weniger Tagen wird der letzte verfügbare Tag gewählt.</p>
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-neutral-400 mb-1">Wiederholung</label>
+                <select 
+                  value={newQuest.recurrence}
+                  onChange={e => setNewQuest({...newQuest, recurrence: e.target.value as Recurrence})}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={newQuest.type === 'habit'}
+                >
+                  <option value="none">Einmalig</option>
+                  <option value="daily">Täglich</option>
+                  <option value="weekly">Wöchentlich</option>
+                  <option value="monthly">Monatlich</option>
+                </select>
               </div>
-            )}
-          </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-neutral-400">Teilaufgaben (Optional)</label>
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                value={newSubtaskTitle}
-                onChange={e => setNewSubtaskTitle(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddSubtask())}
-                className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
-                placeholder="Teilaufgabe hinzufügen..."
-              />
-              <button 
-                type="button"
-                onClick={handleAddSubtask}
-                className="bg-neutral-800 text-white p-2 rounded-lg hover:bg-neutral-700 transition-colors"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-            </div>
-            {newQuest.subtasks.length > 0 && (
-              <div className="bg-neutral-950 rounded-xl border border-neutral-800 overflow-hidden">
-                {newQuest.subtasks.map(s => (
-                  <div key={s.id} className="flex items-center justify-between p-3 border-b border-neutral-800 last:border-0">
-                    <span className="text-sm text-neutral-300">{s.title}</span>
-                    <button 
-                      type="button"
-                      onClick={() => removeSubtask(s.id)}
-                      className="text-neutral-600 hover:text-red-500 transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+              {newQuest.recurrence === 'weekly' && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-400">Wochentage</label>
+                  <div className="flex flex-wrap gap-2">
+                    {WEEKDAYS.map(day => (
+                      <button
+                        key={day.value}
+                        type="button"
+                        onClick={() => toggleDay(day.value)}
+                        className={cn(
+                          "w-10 h-10 rounded-lg border text-sm font-medium transition-all",
+                          newQuest.recurrenceDays.includes(day.value)
+                            ? "bg-amber-500 border-amber-500 text-neutral-950"
+                            : "bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-600"
+                        )}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-neutral-400">Kategorien / Tags (Optional)</label>
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                value={newTag}
-                onChange={e => setNewTag(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
-                className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
-                placeholder="Tag hinzufügen (z.B. 'Gesundheit', 'Arbeit')..."
-              />
-              <button 
-                type="button"
-                onClick={handleAddTag}
-                className="bg-neutral-800 text-white p-2 rounded-lg hover:bg-neutral-700 transition-colors"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
+                </div>
+              )}
+              {newQuest.recurrence === 'monthly' && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-neutral-400">Tag des Monats</label>
+                  <div className="grid grid-cols-7 gap-2">
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => toggleDay(day)}
+                        className={cn(
+                          "w-10 h-10 rounded-lg border text-sm font-medium transition-all",
+                          newQuest.recurrenceDays.includes(day)
+                            ? "bg-amber-500 border-amber-500 text-neutral-950"
+                            : "bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-600"
+                        )}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-neutral-500">Hinweis: Bei Monaten mit weniger Tagen wird der letzte verfügbare Tag gewählt.</p>
+                </div>
+              )}
             </div>
-            {newQuest.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {newQuest.tags.map(tag => (
-                  <span key={tag} className="inline-flex items-center gap-1 px-3 py-1 bg-neutral-800 text-neutral-300 rounded-full text-sm">
-                    {tag}
-                    <button 
-                      type="button"
-                      onClick={() => removeTag(tag)}
-                      className="text-neutral-500 hover:text-red-400 transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-neutral-400">Teilaufgaben (Optional)</label>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={newSubtaskTitle}
+                  onChange={e => setNewSubtaskTitle(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddSubtask())}
+                  className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
+                  placeholder="Teilaufgabe hinzufügen..."
+                />
+                <button 
+                  type="button"
+                  onClick={handleAddSubtask}
+                  className="bg-neutral-800 text-white p-2 rounded-lg hover:bg-neutral-700 transition-colors"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
               </div>
-            )}
-          </div>
-          <div className="flex gap-3 pt-4">
+              {newQuest.subtasks.length > 0 && (
+                <div className="bg-neutral-950 rounded-xl border border-neutral-800 overflow-hidden">
+                  {newQuest.subtasks.map(s => (
+                    <div key={s.id} className="flex items-center justify-between p-3 border-b border-neutral-800 last:border-0">
+                      <span className="text-sm text-neutral-300">{s.title}</span>
+                      <button 
+                        type="button"
+                        onClick={() => removeSubtask(s.id)}
+                        className="text-neutral-600 hover:text-red-500 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-neutral-400">Kategorien / Tags (Optional)</label>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={newTag}
+                  onChange={e => setNewTag(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                  className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
+                  placeholder="Tag hinzufügen (z.B. 'Gesundheit', 'Arbeit')..."
+                />
+                <button 
+                  type="button"
+                  onClick={handleAddTag}
+                  className="bg-neutral-800 text-white p-2 rounded-lg hover:bg-neutral-700 transition-colors"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
+              {newQuest.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {newQuest.tags.map(tag => (
+                    <span key={tag} className="inline-flex items-center gap-1 px-3 py-1 bg-neutral-800 text-neutral-300 rounded-full text-sm">
+                      {tag}
+                      <button 
+                        type="button"
+                        onClick={() => removeTag(tag)}
+                        className="text-neutral-500 hover:text-red-400 transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </form>
+        </div>
+
+        <div className="flex-shrink-0 p-6 pt-4 border-t border-neutral-800 bg-neutral-900/95">
+          <div className="flex gap-3">
             <button 
               type="button"
               onClick={onClose}
@@ -505,6 +510,7 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
               Abbrechen
             </button>
             <button 
+              form="quest-form"
               type="submit"
               className="flex-1 bg-amber-500 text-neutral-950 py-3 rounded-xl font-bold hover:bg-amber-400 transition-colors flex items-center justify-center gap-2"
             >
@@ -512,7 +518,6 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
               {initialQuest ? 'Speichern' : 'Quest erstellen'}
             </button>
           </div>
-        </form>
         </div>
       </div>
     </div>

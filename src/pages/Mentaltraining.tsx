@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { Lightbulb, Target, ArrowRight } from 'lucide-react';
+import { Lightbulb, Target, ArrowRight, Brain, Dumbbell, BookOpen, Shield } from 'lucide-react';
 import { SkillType } from '@/types';
+import { cn } from '@/lib/utils';
 
 const DAILY_TIPS: Record<SkillType, { quote: string, tip: string, exercise: string }[]> = {
   Fitness: [
@@ -90,6 +91,74 @@ const DAILY_TIPS: Record<SkillType, { quote: string, tip: string, exercise: stri
   ]
 };
 
+const DEEP_TRAINings = [
+  {
+    id: 'neuro',
+    title: 'Die Psychologie der Gewohnheiten',
+    category: 'Disziplin & Fokus',
+    icon: Brain,
+    content: `
+      ### Der Habit-Loop
+      Als Psychologe sehe ich täglich, wie Menschen gegen ihre eigene Biologie ankämpfen. Willenskraft ist eine endliche Ressource – sie verbraucht sich über den Tag. Die Lösung liegt in der "**Neuroplastizität**" und dem Habit-Loop (Auslöser -> Routine -> Belohnung).
+      
+      **1. Der Auslöser (Trigger)**
+      Mache den Auslöser deiner gewünschten Gewohnheit offensichtlich. Willst du mehr lesen? Lege das Buch auf dein Kopfkissen. Willst du joggen? Stelle die Laufschuhe direkt vor die Tür. 
+      
+      **2. Die Routine (Verhalten)**
+      Mache die Aktion lächerlich einfach. Die 2-Minuten-Regel besagt: Skaliere jede neue Gewohnheit auf 2 Minuten herunter. "Ich lese ein Kapitel" wird zu "Ich lese eine Seite". Es geht darum, die Identität aufzubauen, nicht sofort die Leistung zu erbringen.
+      
+      **3. Die Belohnung**
+      Dein Gehirn lernt durch Dopamin. Belohne dich sofort nach der Ausführung. Ein einfaches Abstreichen auf einer Checkliste (wie in dieser App!) schüttet bereits Dopamin aus und signalisiert dem Gehirn: "Das war gut, lass uns das wiederholen."
+      
+      **Reflexionsaufgabe:** Welchen Trigger in deinem Alltag kannst du mit einer neuen Verhaltensweise koppeln? (z.B. "Nachdem ich mir den Kaffee einschenke, mache ich 10 Kniebeugen.")
+    `
+  },
+  {
+    id: 'hypertrophy',
+    title: 'Progressive Overload & ZNS-Regeneration',
+    category: 'Fitness',
+    icon: Dumbbell,
+    content: `
+      ### Das Stress-Anpassungs-Modell
+      Muskulatur baut sich nicht im Training auf, sondern in der Erholungsphase. Dein Körper adaptiert sich an einen Reiz, der ihn überfordert hat.
+      
+      **1. Progressive Overload (Progressive Überlastung)**
+      Wenn du in jedem Training das exakt gleiche Gewicht für die gleiche Wiederholungszahl bewegst, hat dein Körper keinen Grund, Muskeln aufzubauen. Du musst versuchen, dich systematisch in kleinen Schritten zu steigern (mehr Gewicht, eine Wiederholung mehr, saubereres Tempo, kürzere Pausen).
+      
+      **2. Die Rolle des zentralen Nervensystems (ZNS)**
+      Heavy Lifting ermüdet nicht nur den Muskel, sondern dein ZNS. Ständige Erschöpfung (Ausbrennen) führt zu Leistungsabfall und Lethargie. Lerne Intuitiv zu trainieren oder implementiere Deload-Wochen alle 4-8 Wochen, in denen du Volumen und Intensität drosselst.
+      
+      **3. Ernährung als Baumaterial**
+      Ohne ausreichend Protein (Baustoff) und Energie (Kalorienüberschuss oder -erhalt) nützt der beste Trainingsreiz nichts. Arbeite mit 1.6g bis 2.2g Protein pro Kilogramm Körpergewicht.
+      
+      **Dein Coaching-Auftrag:** Tracke nicht nur dein Training, sondern auch deine Schlafqualität und Energielevels. Sie sind die besten Indikatoren für deine Regeneration.
+    `
+  },
+  {
+    id: 'stoicism',
+    title: 'Emotionale Resilienz & Stoizismus',
+    category: 'Soziales & Wissen',
+    icon: Shield,
+    content: `
+      ### Die Dichotomie der Kontrolle
+      Eines der mächtigsten psychologischen Konzepte zur Stressreduktion stammt aus der antiken Stoa: Die Dichotomie der Kontrolle. 
+      
+      Wir leiden fast ausschließlich, weil wir versuchen, Dinge zu kontrollieren, die außerhalb unserer Macht liegen (die Meinung anderer, das Wetter, das Verhalten unserer Kollegen, die Vergangenheit).
+      
+      **1. Was du kontrollieren kannst:**
+      Deine Reaktion, deine Bemühungen, deine Werte, deine Entscheidungen.
+      
+      **2. Das Prinzip der "Amor Fati" (Liebe das Schicksal)**
+      Akzeptiere nicht nur, was passiert, sondern umarme es als Gelegenheit zum Wachstum. Wenn dir ein Hindernis in den Weg gelegt wird, ist das Hindernis der Weg. Hast du eine Beförderung nicht bekommen? Dies ist deine Möglichkeit, Demut, Geduld und harte Arbeit zu kultivieren.
+      
+      **3. Negative Visualisierung (Premeditatio Malorum)**
+      Stelle dir gelegentlich vor, Dinge zu verlieren, die du liebst. Das klingt makaber, aber es impft dich gegen Enttäuschungen und erzeugt vor allem eines: Tiefe Dankbarkeit für den jetzigen Moment.
+      
+      **Dein Coaching-Auftrag:** Wenn du das nächste Mal wütend oder gestresst bist, frage dich: "Ist das in meiner direkten Kontrolle?" Wenn nein, atme tief ein und lass es geistig los.
+    `
+  }
+];
+
 // Seeded random number generator
 function sfc32(a: number, b: number, c: number, d: number) {
   return function() {
@@ -116,8 +185,42 @@ function getDailyIndices(seed: number) {
   };
 }
 
+// Markdown-ähnliches Rendering für einfache Strings
+function renderMarkdown(text: string) {
+  return text.split('\n').map((line, index) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('### ')) {
+      return <h3 key={index} className="text-xl font-bold text-white mt-6 mb-3">{trimmed.replace('### ', '')}</h3>;
+    }
+    if (trimmed.startsWith('**') && trimmed.endsWith('**') && !trimmed.slice(2, -2).includes('**')) {
+      return <p key={index} className="font-bold text-amber-500 mt-4 mb-2">{trimmed.slice(2, -2)}</p>;
+    }
+    
+    // Inline bold formatting
+    let parsedLine = trimmed;
+    const parts = [];
+    let boldMatch;
+    let keyCounter = 0;
+    
+    while ((boldMatch = /\*\*(.*?)\*\*/.exec(parsedLine)) !== null) {
+      if (boldMatch.index > 0) {
+        parts.push(<span key={`text-${keyCounter++}`}>{parsedLine.slice(0, boldMatch.index)}</span>);
+      }
+      parts.push(<strong key={`bold-${keyCounter++}`} className="text-amber-500">{boldMatch[1]}</strong>);
+      parsedLine = parsedLine.slice(boldMatch.index + boldMatch[0].length);
+    }
+    if (parsedLine.length > 0) {
+      parts.push(<span key={`text-${keyCounter++}`}>{parsedLine}</span>);
+    }
+    
+    return trimmed ? <p key={index} className="text-neutral-300 mb-2 leading-relaxed">{parts}</p> : <br key={index} />;
+  });
+}
+
 export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
   const [currentDate] = useState(() => new Date());
+  const [activeSubTab, setActiveSubTab] = useState<'impulse' | 'tiefentraining'>('impulse');
+  const [expandedTraining, setExpandedTraining] = useState<string | null>(null);
 
   const dailyIndices = useMemo(() => {
     // Generate a unique seed for the current day (E.g. 20260423)
@@ -129,68 +232,148 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
 
   return (
     <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header className="mb-8">
+      <header className="mb-6">
         <h2 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
           <Lightbulb className="w-8 h-8 text-amber-400" />
           Mentaltraining
         </h2>
         <p className="text-neutral-400 leading-relaxed">
-          Tägliche Impulse für deinen Geist. Hier findest du jeden Tag neue Beratungen, Zitate und konkrete 
-          Übungsvorschläge für jede deiner Skill-Kategorien. Setze sie um, um schneller aufzusteigen.
+          Tägliche Impulse für deinen Geist und detaillierte psychologische Konzepte für langfristiges Wachstum. 
+          Dein persönlicher Coach für Mindset und Performance.
         </p>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {skillKeys.map((skill) => {
-          const index = dailyIndices[skill];
-          const tipData = DAILY_TIPS[skill][index];
-          
-          return (
-            <div key={skill} className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 relative overflow-hidden group hover:border-amber-500/30 transition-colors">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-500 bg-amber-500/10 px-3 py-1 rounded-full">
-                  {skill}
-                </span>
-              </div>
-              
-              <blockquote className="text-lg font-medium text-white mb-4 italic">
-                "{tipData.quote}"
-              </blockquote>
-              
-              <div className="space-y-4">
-                <div>
-                  <h4 className="text-sm font-semibold text-neutral-400 mb-1 flex items-center gap-2">
-                    <Target className="w-4 h-4" /> Insight
-                  </h4>
-                  <p className="text-neutral-300 text-sm leading-relaxed">
-                    {tipData.tip}
-                  </p>
-                </div>
-                
-                <div className="bg-amber-500/5 block border border-amber-500/20 rounded-2xl p-4">
-                  <h4 className="text-sm font-semibold text-amber-500 mb-1">🔥 Übung des Tages</h4>
-                  <p className="text-neutral-200 text-sm">
-                    {tipData.exercise}
-                  </p>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="bg-blue-500/10 border border-blue-500/20 rounded-3xl p-6 text-center mt-12 flex flex-col items-center">
-        <h3 className="text-xl font-bold text-white mb-2">Bereit für die Umsetzung?</h3>
-        <p className="text-neutral-400 text-sm max-w-md mx-auto mb-6">
-          Nutze diese Impulse, um direkt in Aktion zu treten. Erstelle eine neue Quest oder arbeite an deinen bestehenden Lebenszielen.
-        </p>
-        <button 
-          onClick={() => setActiveTab('quests')}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2"
+      {/* Tabs */}
+      <div className="flex gap-2 p-1 bg-neutral-900 rounded-xl max-w-sm mb-6 border border-neutral-800">
+        <button
+          onClick={() => setActiveSubTab('impulse')}
+          className={cn(
+            "flex-1 py-2 text-sm font-medium rounded-lg transition-all",
+            activeSubTab === 'impulse' 
+              ? "bg-amber-500 text-black shadow-md shadow-amber-500/20" 
+              : "text-neutral-400 hover:text-white"
+          )}
         >
-          Zu den Quests <ArrowRight className="w-5 h-5" />
+          Daily Impulse
+        </button>
+        <button
+          onClick={() => setActiveSubTab('tiefentraining')}
+          className={cn(
+            "flex-1 py-2 text-sm font-medium rounded-lg transition-all",
+            activeSubTab === 'tiefentraining' 
+              ? "bg-amber-500 text-black shadow-md shadow-amber-500/20" 
+              : "text-neutral-400 hover:text-white"
+          )}
+        >
+          Tiefentraining
         </button>
       </div>
+
+      {activeSubTab === 'impulse' && (
+        <div className="animate-in fade-in duration-300">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {skillKeys.map((skill) => {
+              const index = dailyIndices[skill];
+              const tipData = DAILY_TIPS[skill][index];
+              
+              return (
+                <div key={skill} className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 relative overflow-hidden group hover:border-amber-500/30 transition-colors">
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-500 bg-amber-500/10 px-3 py-1 rounded-full">
+                      {skill}
+                    </span>
+                  </div>
+                  
+                  <blockquote className="text-lg font-medium text-white mb-4 italic">
+                    "{tipData.quote}"
+                  </blockquote>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-sm font-semibold text-neutral-400 mb-1 flex items-center gap-2">
+                        <Target className="w-4 h-4" /> Insight
+                      </h4>
+                      <p className="text-neutral-300 text-sm leading-relaxed">
+                        {tipData.tip}
+                      </p>
+                    </div>
+                    
+                    <div className="bg-amber-500/5 block border border-amber-500/20 rounded-2xl p-4">
+                      <h4 className="text-sm font-semibold text-amber-500 mb-1">🔥 Übung des Tages</h4>
+                      <p className="text-neutral-200 text-sm">
+                        {tipData.exercise}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-3xl p-6 text-center mt-12 flex flex-col items-center">
+            <h3 className="text-xl font-bold text-white mb-2">Bereit für die Umsetzung?</h3>
+            <p className="text-neutral-400 text-sm max-w-md mx-auto mb-6">
+              Nutze diese Impulse, um direkt in Aktion zu treten. Erstelle eine neue Quest oder arbeite an deinen bestehenden Lebenszielen.
+            </p>
+            <button 
+              onClick={() => setActiveTab('quests')}
+              className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2"
+            >
+              Zu den Quests <ArrowRight className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'tiefentraining' && (
+        <div className="animate-in fade-in duration-300 space-y-6">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6">
+             <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+               <BookOpen className="w-6 h-6 text-blue-400" />
+               Die Coach-Bibliothek
+             </h3>
+             <p className="text-neutral-400 text-sm leading-relaxed mb-6">
+               Als dein mentaler und physischer High-Performance Coach habe ich hier die wichtigsten psychologischen, anatomischen und kognitiven Fundamente zusammengetragen. Diese Konzepte sind nicht nur Theorien, sondern mächtige Werkzeuge zur Transformation deiner Realität.
+             </p>
+
+             <div className="space-y-4">
+               {DEEP_TRAINings.map(training => {
+                 const isExpanded = expandedTraining === training.id;
+                 const Icon = training.icon;
+                 return (
+                   <div key={training.id} className="border border-neutral-700 bg-neutral-950 rounded-2xl overflow-hidden transition-all duration-300">
+                     <button 
+                       onClick={() => setExpandedTraining(isExpanded ? null : training.id)}
+                       className="w-full text-left p-5 flex items-center justify-between hover:bg-neutral-900/50 transition-colors"
+                     >
+                       <div className="flex items-center gap-4">
+                         <div className="bg-neutral-800 p-3 rounded-xl">
+                           <Icon className="w-6 h-6 text-amber-500" />
+                         </div>
+                         <div>
+                           <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-1">{training.category}</div>
+                           <h4 className="text-lg font-bold text-white">{training.title}</h4>
+                         </div>
+                       </div>
+                       <div className={cn("text-neutral-400 transition-transform duration-300 transform", isExpanded ? "rotate-180" : "")}>
+                         ▼
+                       </div>
+                     </button>
+                     
+                     {isExpanded && (
+                       <div className="p-6 pt-2 border-t border-neutral-800 bg-neutral-900/30">
+                         <div className="prose prose-invert max-w-none prose-p:text-neutral-300 prose-headings:text-white">
+                           {renderMarkdown(training.content)}
+                         </div>
+                       </div>
+                     )}
+                   </div>
+                 );
+               })}
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
