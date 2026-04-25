@@ -16,6 +16,7 @@ import { Diary } from './pages/Diary';
 import { Visions } from './pages/Visions';
 import { Focus } from './pages/Focus';
 import { Mentaltraining } from './pages/Mentaltraining';
+import { PinLock } from './components/PinLock';
 import { Toaster, toast } from 'sonner';
 import { NotificationManager } from './components/NotificationManager';
 import { useStore } from './store/useStore';
@@ -25,10 +26,50 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 import { Login } from './pages/Login';
 
+const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const { user, loading, stats, setUser, syncWithFirestore } = useStore();
+  const { user, loading, stats, settings, setLocked, setUser, syncWithFirestore } = useStore();
   const prevLevelRef = useRef(stats.level);
+  const lastActivityRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    if (!settings.isPinEnabled || !user) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const timeSinceLastActivity = Date.now() - lastActivityRef.current;
+        if (timeSinceLastActivity > 30000) { // Lock if backgrounded for more than 30 seconds
+          setLocked(true);
+        }
+      }
+    };
+
+    const handleActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    const inactivityInterval = setInterval(() => {
+      const timeSinceLastActivity = Date.now() - lastActivityRef.current;
+      if (timeSinceLastActivity > INACTIVITY_TIMEOUT) {
+        setLocked(true);
+      }
+    }, 10000); // Check every 10 seconds
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('mousedown', handleActivity);
+    document.addEventListener('keydown', handleActivity);
+    document.addEventListener('touchstart', handleActivity);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('mousedown', handleActivity);
+      document.removeEventListener('keydown', handleActivity);
+      document.removeEventListener('touchstart', handleActivity);
+      clearInterval(inactivityInterval);
+    };
+  }, [settings.isPinEnabled, user, setLocked]);
 
   useEffect(() => {
     let unsubSync: (() => void) | null = null;
@@ -86,6 +127,7 @@ export default function App() {
     <>
       <Toaster position="top-right" theme="dark" closeButton richColors />
       <NotificationManager />
+      <PinLock />
       <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
         {activeTab === 'dashboard' && <Dashboard setActiveTab={setActiveTab} />}
         {activeTab === 'visions' && <Visions />}

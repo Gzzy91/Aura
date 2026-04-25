@@ -67,6 +67,11 @@ interface AppState {
   user: User | null;
   loading: boolean;
   isInitialized: boolean;
+  isLocked: boolean;
+  settings: {
+    isPinEnabled: boolean;
+    pin: string | null;
+  };
   stats: UserStats;
   quests: Quest[];
   diaryEntries: DiaryEntry[];
@@ -76,6 +81,8 @@ interface AppState {
   widgetOrder: string[];
   setUser: (user: User | null) => void;
   setInitialized: (val: boolean) => void;
+  setLocked: (val: boolean) => void;
+  updateSettings: (updates: Partial<{ isPinEnabled: boolean; pin: string | null }>) => void;
   addQuest: (quest: Omit<Quest, 'id' | 'completed' | 'createdAt'>) => void;
   completeQuest: (id: string, isNegativeHabit?: boolean) => void;
   toggleSubtask: (questId: string, subtaskId: string) => void;
@@ -128,6 +135,11 @@ export const useStore = create<AppState>()(
       user: null,
       loading: true,
       isInitialized: false,
+      isLocked: false,
+      settings: {
+        isPinEnabled: false,
+        pin: null
+      },
       stats: INITIAL_STATS,
       quests: [],
       diaryEntries: [],
@@ -138,7 +150,17 @@ export const useStore = create<AppState>()(
       
       setUser: (user) => set({ user, loading: false }),
       setInitialized: (val) => set({ isInitialized: val }),
-      
+      setLocked: (val) => set({ isLocked: val }),
+
+      updateSettings: (updates) => {
+        const { user, settings } = get();
+        const newSettings = { ...settings, ...updates };
+        set({ settings: newSettings });
+        if (user) {
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ settings: newSettings }));
+        }
+      },
+
       updateWidgetOrder: (order) => {
         set({ widgetOrder: order });
         const { user } = get();
@@ -624,8 +646,14 @@ export const useStore = create<AppState>()(
             set({ 
               stats: data.stats || get().stats,
               widgetOrder: data.widgetOrder || get().widgetOrder,
-              notifiedQuestIds: data.notifiedQuestIds || get().notifiedQuestIds
+              notifiedQuestIds: data.notifiedQuestIds || get().notifiedQuestIds,
+              settings: data.settings || get().settings
             });
+            
+            // Auto lock if pin is enabled and was just initialized
+            if (data.settings?.isPinEnabled) {
+              set({ isLocked: true });
+            }
           }
         });
 
@@ -665,6 +693,10 @@ export const useStore = create<AppState>()(
     {
       name: 'rpg-storage',
       version: 1,
+      partialize: (state) => {
+        const { isLocked, ...persistedState } = state;
+        return persistedState;
+      },
       migrate: (persistedState: any, version: number) => {
         if (version === 0) {
           // Migrate skill names from English to German

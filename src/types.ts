@@ -76,6 +76,12 @@ export interface FocusSession {
   notes?: string;
 }
 
+export interface AppSettings {
+  isPinEnabled: boolean;
+  pin: string | null;
+  lastLockTime?: number;
+}
+
 export interface Quest {
   id: string;
   title: string;
