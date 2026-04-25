@@ -8,6 +8,7 @@ import { QuestDetailsModal } from '@/components/QuestDetailsModal';
 import { DeleteConfirmationModal } from '@/components/DeleteConfirmationModal';
 import { QuestModal } from '@/components/QuestModal';
 import { isSameDay, isSameWeek, isSameMonth, isSameYear } from 'date-fns';
+import { toast } from 'sonner';
 
 type TimeFilter = 'all' | 'today' | 'week' | 'month' | 'year';
 type SortOption = 'date' | 'xp';
@@ -441,6 +442,33 @@ export function Quests() {
                                 {tag}
                               </button>
                             ))}
+                          </div>
+                        )}
+                        {quest.type !== 'habit' && (
+                          <div className="flex gap-2 mt-3" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => {
+                                const today = new Date();
+                                today.setHours(23, 59, 59, 999);
+                                updateQuest(quest.id, { dueDate: today.getTime() });
+                                toast.success('Quest auf heute verschoben');
+                              }}
+                              className="px-2 py-1 bg-neutral-800 hover:bg-amber-500/10 text-[10px] font-bold text-neutral-400 hover:text-amber-500 rounded-lg border border-neutral-700 border-dashed transition-all flex items-center gap-1"
+                            >
+                              <Calendar className="w-3 h-3" /> Heute
+                            </button>
+                            <button
+                              onClick={() => {
+                                const tomorrow = new Date();
+                                tomorrow.setDate(tomorrow.getDate() + 1);
+                                tomorrow.setHours(23, 59, 59, 999);
+                                updateQuest(quest.id, { dueDate: tomorrow.getTime() });
+                                toast.success('Quest auf morgen verschoben');
+                              }}
+                              className="px-2 py-1 bg-neutral-800 hover:bg-blue-500/10 text-[10px] font-bold text-neutral-400 hover:text-blue-400 rounded-lg border border-neutral-700 border-dashed transition-all flex items-center gap-1"
+                            >
+                              <Calendar className="w-3 h-3" /> Morgen
+                            </button>
                           </div>
                         )}
                         {quest.dueDate && (

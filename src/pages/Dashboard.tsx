@@ -60,7 +60,7 @@ const MOOD_ICONS: Record<number, any> = {
 import { AvatarVisual } from '@/components/AvatarVisual';
 
 export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
-  const { stats, quests, diaryEntries, widgetOrder, updateWidgetOrder, settings, updateSettings, setLocked } = useStore();
+  const { stats, quests, diaryEntries, widgetOrder, updateWidgetOrder, settings, updateSettings, setLocked, updateQuest } = useStore();
   
   // PIN setting state
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
@@ -603,6 +603,33 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                                       day: 'numeric', 
                                       ...(quest.hasTime ? { hour: '2-digit', minute: '2-digit' } : {}) 
                                     })}</span>
+                                  </div>
+                                  <div className="flex gap-2 mt-2">
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const today = new Date();
+                                        today.setHours(23, 59, 59, 999);
+                                        updateQuest(quest.id, { dueDate: today.getTime() });
+                                        toast.success('Heute');
+                                      }}
+                                      className="px-2 py-1 bg-neutral-900 hover:bg-amber-500/10 text-[10px] font-bold text-neutral-500 hover:text-amber-500 rounded border border-neutral-800 transition-all flex items-center gap-1"
+                                    >
+                                      Heute
+                                    </button>
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const tomorrow = new Date();
+                                        tomorrow.setDate(tomorrow.getDate() + 1);
+                                        tomorrow.setHours(23, 59, 59, 999);
+                                        updateQuest(quest.id, { dueDate: tomorrow.getTime() });
+                                        toast.success('Morgen');
+                                      }}
+                                      className="px-2 py-1 bg-neutral-900 hover:bg-blue-500/10 text-[10px] font-bold text-neutral-500 hover:text-blue-400 rounded border border-neutral-800 transition-all flex items-center gap-1"
+                                    >
+                                      Morgen
+                                    </button>
                                   </div>
                                 </div>
                                 <div className={cn("text-xs font-mono px-2 py-1 rounded", SKILL_COLORS[quest.skill], SKILL_BG_COLORS[quest.skill])}>

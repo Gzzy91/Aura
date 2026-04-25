@@ -643,6 +643,11 @@ export const useStore = create<AppState>()(
         const unsubUser = onSnapshot(userDocRef, (doc) => {
           if (doc.exists()) {
             const data = doc.data();
+            // Only auto-lock once on initial load if pin is enabled
+            if (data.settings?.isPinEnabled && !get().isInitialized) {
+              set({ isLocked: true });
+            }
+
             set({ 
               stats: data.stats || get().stats,
               widgetOrder: data.widgetOrder || get().widgetOrder,
@@ -650,10 +655,7 @@ export const useStore = create<AppState>()(
               settings: data.settings || get().settings
             });
             
-            // Auto lock if pin is enabled and was just initialized
-            if (data.settings?.isPinEnabled) {
-              set({ isLocked: true });
-            }
+            set({ isInitialized: true });
           }
         });
 

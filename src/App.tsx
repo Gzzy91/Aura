@@ -26,7 +26,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 import { Login } from './pages/Login';
 
-const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+const INACTIVITY_TIMEOUT = 1 * 60 * 1000; // 1 minute
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
