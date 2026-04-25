@@ -237,14 +237,17 @@ function sfc32(a: number, b: number, c: number, d: number) {
   }
 }
 
-function getDailyIndices(seed: number) {
-  const rand = sfc32(seed, seed * 2, seed * 3, seed * 4);
+function getDailyIndices(date: Date) {
+  // Use day count since epoch for deterministic cycling
+  const dayCount = Math.floor(date.getTime() / (1000 * 60 * 60 * 24));
+  
   return {
-    Fitness: Math.floor(rand() * DAILY_TIPS.Fitness.length),
-    Fokus: Math.floor(rand() * DAILY_TIPS.Fokus.length),
-    Disziplin: Math.floor(rand() * DAILY_TIPS.Disziplin.length),
-    Wissen: Math.floor(rand() * DAILY_TIPS.Wissen.length),
-    Soziales: Math.floor(rand() * DAILY_TIPS.Soziales.length),
+    Fitness: dayCount % DAILY_TIPS.Fitness.length,
+    Fokus: (dayCount + 1) % DAILY_TIPS.Fokus.length,
+    Disziplin: (dayCount + 2) % DAILY_TIPS.Disziplin.length,
+    Wissen: (dayCount + 3) % DAILY_TIPS.Wissen.length,
+    Soziales: (dayCount + 4) % DAILY_TIPS.Soziales.length,
+    Deep: dayCount % DEEP_TRAINings.length
   };
 }
 
@@ -301,8 +304,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
   }, []);
 
   const getIndicesForDate = (date: Date) => {
-    const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
-    return getDailyIndices(seed);
+    return getDailyIndices(date);
   };
 
   const dailyIndices = useMemo(() => {
@@ -424,13 +426,49 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
       {activeSubTab === 'tiefentraining' && (
         <div className="animate-in fade-in duration-300 space-y-6">
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6">
-             <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-               <BookOpen className="w-6 h-6 text-blue-400" />
-               Die Coach-Bibliothek
-             </h3>
+             <div className="flex items-center justify-between mb-4">
+               <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                 <BookOpen className="w-6 h-6 text-blue-400" />
+                 Die Coach-Bibliothek
+               </h3>
+               <span className="text-xs font-medium text-neutral-500 bg-neutral-800 px-3 py-1 rounded-full">
+                 {DEEP_TRAINings.length} Module verfügbar
+               </span>
+             </div>
+             
              <p className="text-neutral-400 text-sm leading-relaxed mb-6">
-               Als dein mentaler und physischer High-Performance Coach habe ich hier die wichtigsten psychologischen, anatomischen und kognitiven Fundamente zusammengetragen. Diese Konzepte sind nicht nur Theorien, sondern mächtige Werkzeuge zur Transformation deiner Realität.
+               Als dein mentaler und physischer High-Performance Coach habe ich hier die wichtigsten psychologischen, anatomischen und kognitiven Fundamente zusammengetragen. Eine Auswahl wird täglich als Fokus-Thema hervorgehoben.
              </p>
+
+             {/* Featured Training of the Day */}
+             <div className="mb-8 p-1 bg-gradient-to-r from-amber-500/20 to-blue-500/20 rounded-2xl">
+               <div className="bg-neutral-900 rounded-xl p-5 border border-white/5">
+                 <div className="flex items-center gap-2 mb-3">
+                   <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                   <span className="text-xs font-bold text-amber-500 uppercase tracking-widest">Empfehlung für heute</span>
+                 </div>
+                 <div className="flex items-center justify-between">
+                   <div className="flex items-center gap-4">
+                     <div className="bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                       {(() => {
+                         const FeaturedIcon = DEEP_TRAINings[dailyIndices.Deep].icon;
+                         return <FeaturedIcon className="w-6 h-6 text-amber-500" />;
+                       })()}
+                     </div>
+                     <div>
+                       <h4 className="text-lg font-bold text-white">{DEEP_TRAINings[dailyIndices.Deep].title}</h4>
+                       <p className="text-sm text-neutral-400">{DEEP_TRAINings[dailyIndices.Deep].category}</p>
+                     </div>
+                   </div>
+                   <button 
+                     onClick={() => setExpandedTraining(DEEP_TRAINings[dailyIndices.Deep].id)}
+                     className="text-sm font-bold text-blue-400 hover:text-blue-300 transition-colors"
+                   >
+                     Zum Training →
+                   </button>
+                 </div>
+               </div>
+             </div>
 
              <div className="space-y-4">
                {DEEP_TRAINings.map(training => {
@@ -524,6 +562,28 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                 </div>
 
                 <div className="grid grid-cols-1 gap-4">
+                  {/* Featured Deep Training in Archive */}
+                  <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-5 mb-2">
+                    <div className="flex items-center gap-2 mb-4">
+                      <BookOpen className="w-4 h-4 text-blue-400" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-blue-400">Haupt-Coaching des Tages</span>
+                    </div>
+                    <div className="flex items-start gap-4">
+                      <div className="bg-neutral-900 p-3 rounded-xl border border-neutral-800">
+                        {(() => {
+                           const ArchIcon = DEEP_TRAINings[archiveIndices.Deep].icon;
+                           return <ArchIcon className="w-5 h-5 text-amber-500" />;
+                        })()}
+                      </div>
+                      <div>
+                        <h4 className="text-md font-bold text-white mb-1">{DEEP_TRAINings[archiveIndices.Deep].title}</h4>
+                        <p className="text-xs text-neutral-400 leading-relaxed line-clamp-2">
+                          {DEEP_TRAINings[archiveIndices.Deep].category} • {DEEP_TRAINings[archiveIndices.Deep].content.split('\n')[2].trim().slice(0, 100)}...
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   {skillKeys.map((skill) => {
                     const index = archiveIndices[skill];
                     const tipData = DAILY_TIPS[skill][index];
