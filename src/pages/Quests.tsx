@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
-import { CheckCircle2, Circle, Plus, History, Target, X, ListTodo, Trash2, Calendar, Bell, Clock, RotateCcw, Search, Timer, Repeat, MinusCircle, PlusCircle, ArrowUp, ArrowRight, ArrowDown, Filter, ArrowUpDown } from 'lucide-react';
+import { CheckCircle2, Circle, Plus, History, Target, X, ListTodo, Trash2, Calendar, Bell, Clock, RotateCcw, Search, Timer, Repeat, MinusCircle, PlusCircle, ArrowUp, ArrowRight, ArrowDown, Filter, ArrowUpDown, ChevronDown, Check } from 'lucide-react';
 import { SkillType, Quest, Subtask, ReminderTiming } from '@/types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, SKILL_COLORS, SKILL_BG_COLORS, SKILL_BORDER_COLORS } from '@/lib/utils';
@@ -26,6 +26,7 @@ export function Quests() {
   const [filterTags, setFilterTags] = useState<string[]>([]);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [sortOption, setSortOption] = useState<SortOption>('date');
+  const [isTagsDropdownOpen, setIsTagsDropdownOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -252,28 +253,70 @@ export function Quests() {
             </div>
 
             {allTags.length > 0 && (
-              <div className="flex items-center gap-2 w-full overflow-x-auto pb-2 sm:pb-0 scrollbar-hide">
-                <span className="text-xs text-neutral-500 font-medium uppercase tracking-wider mr-1">Tags:</span>
-                {allTags.map(tag => (
-                  <button
-                    key={tag}
-                    onClick={() => {
-                      setFilterTags(prev => 
-                        prev.includes(tag) 
-                          ? prev.filter(t => t !== tag)
-                          : [...prev, tag]
-                      );
-                    }}
-                    className={cn(
-                      "px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors border",
-                      filterTags.includes(tag) 
-                        ? "bg-amber-500/20 text-amber-500 border-amber-500/30"
-                        : "bg-neutral-800/50 text-neutral-400 border-neutral-700 hover:bg-neutral-800"
-                    )}
-                  >
-                    {tag}
-                  </button>
-                ))}
+              <div className="relative">
+                <button
+                  onClick={() => setIsTagsDropdownOpen(!isTagsDropdownOpen)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-neutral-900 border border-neutral-800 rounded-lg text-xs text-neutral-300 hover:border-neutral-700 transition-colors"
+                >
+                  <Filter className="w-3 h-3" />
+                  <span>Tags {filterTags.length > 0 && `(${filterTags.length})`}</span>
+                  <ChevronDown className={cn("w-3 h-3 transition-transform", isTagsDropdownOpen && "rotate-180")} />
+                </button>
+
+                <AnimatePresence>
+                  {isTagsDropdownOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-40" 
+                        onClick={() => setIsTagsDropdownOpen(false)} 
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute left-0 mt-2 w-56 max-h-64 overflow-y-auto bg-neutral-900 border border-neutral-800 rounded-xl shadow-xl z-50 p-2 scrollbar-hide"
+                      >
+                        <div className="flex items-center justify-between px-2 py-1 mb-1 border-bottom border-neutral-800">
+                          <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Filtern nach Tags</span>
+                          {filterTags.length > 0 && (
+                            <button 
+                              onClick={() => setFilterTags([])}
+                              className="text-[10px] text-amber-500 hover:text-amber-400 font-bold"
+                            >
+                              Leeren
+                            </button>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          {allTags.map(tag => {
+                            const isSelected = filterTags.includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                onClick={() => {
+                                  setFilterTags(prev => 
+                                    isSelected 
+                                      ? prev.filter(t => t !== tag)
+                                      : [...prev, tag]
+                                  );
+                                }}
+                                className={cn(
+                                  "w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors",
+                                  isSelected 
+                                    ? "bg-amber-500/10 text-amber-500" 
+                                    : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                                )}
+                              >
+                                <span>{tag}</span>
+                                {isSelected && <Check className="w-4 h-4" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
               </div>
             )}
           </div>
