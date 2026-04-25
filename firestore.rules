@@ -47,7 +47,7 @@ service cloud.firestore {
     }
 
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isAuthenticated() && request.auth.uid == userId && request.auth.token.email_verified == true;
     }
 
     function isAdmin() {

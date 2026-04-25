@@ -23,9 +23,11 @@ import { triggerLevelUpConfetti } from './lib/confetti';
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
+import { Login } from './pages/Login';
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const { stats, quests, setUser, syncWithFirestore } = useStore();
+  const { user, loading, stats, setUser, syncWithFirestore } = useStore();
   const prevLevelRef = useRef(stats.level);
 
   useEffect(() => {
@@ -57,10 +59,28 @@ export default function App() {
       toast.success(`Level Up! Du hast Level ${stats.level} erreicht!`, {
         duration: 5000,
         icon: '🎉',
+        id: 'level-up',
       });
     }
     prevLevelRef.current = stats.level;
   }, [stats.level]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <>
+        <Toaster position="top-right" theme="dark" closeButton richColors />
+        <Login />
+      </>
+    );
+  }
 
   return (
     <>
