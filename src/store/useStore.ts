@@ -720,9 +720,9 @@ export const useStore = create<AppState>()(
             Object.entries(persistedState.stats.skills).forEach(([key, value]) => {
               const newKey = skillMapping[key] || key;
               if (newSkills[newKey]) {
-                newSkills[newKey] = { ...newSkills[newKey], ...(value as any) };
+                 newSkills[newKey] = { ...newSkills[newKey], ...(value as any) };
               } else {
-                newSkills[newKey] = value;
+                 newSkills[newKey] = value;
               }
             });
             persistedState.stats.skills = newSkills;
@@ -736,6 +736,11 @@ export const useStore = create<AppState>()(
           }
         }
         return persistedState;
+      },
+      onRehydrateStorage: () => (state) => {
+        if (state && state.settings && state.settings.isPinEnabled) {
+          state.setLocked(true);
+        }
       }
     }
   )
