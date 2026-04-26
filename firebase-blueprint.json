@@ -101,6 +101,20 @@
         "tags": { "type": "array", "items": { "type": "string" } }
       },
       "required": ["id", "date", "mood", "notes", "progress", "tags"]
+    },
+    "DeepTraining": {
+      "title": "DeepTraining",
+      "description": "Advanced training module for the Coach Library",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "iconName": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "title", "category", "iconName", "content", "createdAt"]
     }
   },
   "firestore": {
@@ -115,6 +129,18 @@
     "/users/{userId}/diaryEntries/{diaryEntryId}": {
       "schema": "DiaryEntry",
       "description": "User's diary entries"
+    },
+    "/users/{userId}/visions/{visionId}": {
+      "schema": "Vision",
+      "description": "User's vision board entries"
+    },
+    "/users/{userId}/focusSessions/{sessionId}": {
+      "schema": "FocusSession",
+      "description": "User's focus training sessions"
+    },
+    "/users/{userId}/deepTrainings/{trainingId}": {
+      "schema": "DeepTraining",
+      "description": "Generated daily training modules"
     }
   }
 }

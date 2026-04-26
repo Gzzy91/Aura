@@ -13,86 +13,86 @@ const DAILY_TIPS: Record<SkillType, { quote: string, tip: string, exercise: stri
   Fitness: [
     {
       quote: "Der Körper ist der wahre Tempel.",
-      tip: "Wechsle zwischen intensiven Phasen und aktiver Erholung. Dein Körper wächst in den Ruhephasen.",
-      exercise: "Mache heute 5 Minuten Gelenkmobilitätsübungen (Armkreisen, Hüftrotation), bevor du den Tag startest."
+      tip: "Wechsle zwischen intensiven Phasen und aktiver Erholung. Dein Körper wächst nicht während der Belastung, sondern in den darauffolgenden Ruhephasen durch Superkompensation. Achte auf Anzeichen von Übertraining wie Schlafstörungen oder erhöhten Ruhepuls.",
+      exercise: "Mache heute 5-10 Minuten Gelenkmobilitätsübungen (Armkreisen, Hüftrotation, Katze-Kuh). Gehe dabei bis an die Grenze deiner Beweglichkeit, ohne Schmerz zu verursachen. Atme tief in die Dehnung hinein."
     },
     {
       quote: "Was gemessen wird, wird gemanagt.",
-      tip: "Achte nicht nur auf das Training, sondern auf mindestens 2 Liter Wasser pro Tag. Hydration ist 50% der Ausdauer.",
-      exercise: "Trinke direkt nach dem Aufstehen ein großes Glas Wasser. Baue 20 Kniebeugen zwischendurch ein."
+      tip: "Hydration ist die Basis zellulärer Energie. Schon 2% Flüssigkeitsverlust senken deine kognitive und physische Leistung massiv. Trinke mindestens 35ml Wasser pro Kilogramm Körpergewicht über den Tag verteilt.",
+      exercise: "Trinke direkt nach dem Aufstehen 500ml lauwarmes Wasser mit einer Prise Meersalz (Elektrolyte). Baue über den Tag verteilt 3 Sätze à 15 Kniebeugen ein, um den Lymphfluss anzuregen."
     },
     {
       quote: "Ein starker Körper trägt einen starken Geist.",
-      tip: "Ersetze den Fahrstuhl heute durch die Treppe und schöpfe frische Luft in deiner Mittagspause.",
-      exercise: "Versuche einen 15-minütigen Spaziergang ohne Musik oder Podcasts zu machen. Fokussiere dich auf deinen Körper."
+      tip: "Kleine Bewegungsreize summieren sich (NEAT - Non-Exercise Activity Thermogenesis). Vertikale Bewegung (Treppen) aktiviert die großen Muskelgruppen deiner Beine und verbessert sofort die Durchblutung deines Gehirns.",
+      exercise: "Ersetze heute JEDEN Fahrstuhl durch die Treppe. Mache in der Mittagspause einen 15-minütigen 'Silent Walk' ohne Handy. Achte dabei bewusst auf das Abrollen deiner Füße und die Spannung in deiner Körpermitte."
     }
   ],
   Fokus: [
     {
       quote: "Konzentration ist ein Muskel.",
-      tip: "Multitasking ist ein Mythos, der dich 40% deiner Produktivität kostet. Arbeite in 25-Minuten Sprints (Pomodoro).",
-      exercise: "Wähle heute EINE Aufgabe aus. Schalte das Handy für 25 Minuten in den Flugmodus und arbeite nur daran."
+      tip: "Multitasking ist ein kognitiver Kostentreiber. Dein Gehirn braucht bis zu 23 Minuten, um nach einer Ablenkung wieder die volle Tiefe (Flow) zu erreichen. Nutze die Time-Blocking-Methode für ununterbrochene Arbeitsphasen.",
+      exercise: "Wähle eine komplexe Aufgabe. Schalte alle Benachrichtigungen aus, deponiere dein Handy in einem anderen Raum und stelle einen Timer auf 50 Minuten Deep Work. Mache danach 10 Minuten Pause OHNE Bildschirm."
     },
     {
       quote: "Wo die Aufmerksamkeit hingeht, fließt die Energie.",
-      tip: "Dein Gehirn braucht Dopamin-Pausen. Schau nicht direkt nach der Arbeit auf dein Handy.",
-      exercise: "Mache heute eine 10-minütige analoge Pause. Kein Bildschirm, nur aus dem Fenster schauen."
+      tip: "Dopamin-Detoxing ist essentiell für langanhaltenden Fokus. Reize wie Social Media oder ständige Nachrichten fluten deine Synapsen und machen dich blind für subtile, aber wichtige Aufgaben. Schütze die ersten 60 Minuten deines Tages vor digitalem Rauschen.",
+      exercise: "Definiere heute eine 'Smartphone-freie Zone' (z.B. der Esstisch oder das Schlafzimmer). Verpflichte dich, in dieser Zone kein digitales Gerät zu nutzen und beobachte, wie dein Geist zur Ruhe kommt."
     },
     {
       quote: "Klarheit kommt von Reduktion.",
-      tip: "Eine aufgeräumte Umgebung führt zu einem aufgeräumten Geist. Räume deinen Schreibtisch auf.",
-      exercise: "Räume deinen direkten Arbeitsbereich für 5 Minuten auf, bevor du in den Fokus-Modus gehst."
+      tip: "Externe Ordnung schafft internen Fokus. Ein chaotischer Schreibtisch sendet ständig visuelle Alarmsignale an deine Amygdala. Minimalismus im Arbeitsbereich ist kein Lifestyle, sondern eine Performance-Strategie.",
+      exercise: "Führe einen 'Desktop-Reset' durch: Entferne alles von deinem Schreibtisch außer dem, was du für die aktuelle Aufgabe brauchst. Räume auch deinen digitalen Desktop auf und schließe alle unnötigen Browser-Tabs."
     }
   ],
   Disziplin: [
     {
       quote: "Motivation lässt dich starten, Disziplin lässt dich weitermachen.",
-      tip: "Verlasse dich nicht auf Willenskraft. Baue dir Systeme und Routinen auf, die gutes Verhalten automatisch machen.",
-      exercise: "Bereite heute Abend schon alles vor, was du morgen früh brauchst (Kleidung, Sporttasche)."
+      tip: "Wille ist wie ein Akku – er entlädt sich durch Entscheidungen (Decision Fatigue). Die besten Performer minimieren Entscheidungen durch starre Abend- und Morgenrituale. Deine Umgebung sollte die richtige Entscheidung zur einfachsten Entscheidung machen.",
+      exercise: "Wende das 'Identity Shifting' an: Sage nicht 'Ich versuche Sport zu machen', sondern 'Ich BIN ein Sportler'. Bereite heute Abend deine Sportkleidung direkt neben dem Bett vor, damit der Start morgen reibungslos verläuft."
     },
     {
       quote: "Wer den weichen Weg wählt, hat ein hartes Leben.",
-      tip: "Mach das Unbequeme zuerst. 'Eat the Frog' - erledige die wichtigste Aufgabe gleich morgens.",
-      exercise: "Welche Aufgabe schiebst du vor dir her? Mache sie heute für exakt 5 Minuten. Oft reicht der Startschuss."
+      tip: "Das Belohnungszentrum deines Gehirns springt auf sofortige Befriedigung an. Disziplin bedeutet, den 'Prefrontalen Cortex' zu stärken, der langfristige Ziele priorisiert. Nutze die 5-Sekunden-Regel: Sobald du einen Impuls hast, zähle 5-4-3-2-1 und HANDLE.",
+      exercise: "Identifiziere deine unangenehmste Aufgabe ('Eat the Frog'). Verpflichte dich, diese HEUTE als allererstes zu erledigen. Wenn sie zu groß wirkt, nimm dir nur 10 Minuten vor – der Widerstand schwindet meist nach den ersten Minuten."
     },
     {
       quote: "Konsistenz schlägt Intensität.",
-      tip: "Es ist besser, jeden Tag 1% besser zu werden, als einmal 50% und dann wieder aufzugeben.",
-      exercise: "Wähle eine winzige Gewohnheit (z.B. ein Glas Wasser trinken) und klebe sie an ein bestehendes Ritual (z.B. Zähneputzen)."
+      tip: "Kleine, tägliche Siege bauen ein massives Selbstvertrauen auf. Erfolg ist die Summe aus banalen, aber korrekt ausgeführten Gewohnheiten über einen langen Zeitraum. Die Macht des Zinseszinstums gilt auch für deine persönliche Entwicklung.",
+      exercise: "Wähle eine 'Non-Negotiable' Gewohnheit (z.B. 10 Seiten lesen oder 5 Minuten Meditation). Egal wie stressig der Tag ist, diese Aufgabe wird ausgeführt. Markiere den Erfolg sofort in deinem Quest-Log, um das Erfolgserlebnis zu verankern."
     }
   ],
   Wissen: [
     {
       quote: "Investitionen in Wissen bringen die besten Zinsen.",
-      tip: "Lese nicht nur, sondern wende an. Die wahre Meisterschaft liegt in der Ausführung des Gelernten.",
-      exercise: "Nimm das letzte Buch oder den letzten Podcast auf und schreibe 3 konkrete To-Dos auf, die du umsetzen willst."
+      tip: "Passives Lernen ist oft eine Illusion von Kompetenz. Um Wissen wirklich zu verankern, musst du es rekonstruieren (Active Recall). Nutze die Feynman-Methode: Kannst du das Konzept einem 8-jährigen Kind erklären?",
+      exercise: "Schreibe nach dem Lesen eines Artikels oder Hören eines Podcasts die 3 wichtigsten Kernaussagen aus dem Gedächtnis auf (ohne nachzusehen). Überlege dir für jede Aussage eine konkrete Anwendung in deinem Leben."
     },
     {
       quote: "Ein Anfängergeist sieht viele Möglichkeiten.",
-      tip: "Geh mit der Einstellung in den Tag, dass du von jedem Menschen etwas Neues lernen kannst.",
-      exercise: "Erkläre heute ein Konzept, das du neu gelernt hast, einer anderen Person so einfach wie möglich."
+      tip: "Bestätigungsfehler (Confirmation Bias) hindert uns am Wachstum. Suche aktiv nach Informationen, die deinen aktuellen Überzeugungen widersprechen. Wahre Intelligenz ist die Fähigkeit, zwei gegensätzliche Gedanken gleichzeitig im Kopf zu halten.",
+      exercise: "Lies heute etwas über ein Thema, das dich normalerweise abschreckt oder dem du kritisch gegenüberstehst. Versuche, die Argumente der Gegenseite objektiv nachzuvollziehen, ohne sie sofort zu bewerten."
     },
     {
       quote: "Wissen ist nur potentielle Macht.",
-      tip: "Verbinde neue Fakten mit Dingen, die du bereits weißt. Dies stärkt neuroplastische Verbindungen.",
-      exercise: "Widme heute Abend 10 Minuten dem Journaling: Was ist das Wichtigste, das du heute gelernt hast?"
+      tip: "Gelerntes muss mit bestehenden neuronalen Pfaden verknüpft werden (Elaboration). Je öfter du neue Informationen mit persönlichen Erfahrungen verbindest, desto schneller wandern sie vom Kurzzeit- ins Langzeitgedächtnis.",
+      exercise: "Erstelle eine 'Mind-Map' oder eine kurze Notiz für das heutige Lernthema. Verknüpfe es mit einer Metapher oder einer Geschichte aus deiner eigenen Vergangenheit. Erkläre es heute Abend jemandem beim Essen."
     }
   ],
   Soziales: [
     {
       quote: "Die Qualität deines Lebens hängt von der Qualität deiner Beziehungen ab.",
-      tip: "Sei interessiert, nicht interessant. Stelle mehr Fragen und höre aktiv zu, ohne deine eigene Antwort zu planen.",
-      exercise: "Melde dich heute proaktiv bei einer Person, mit der du schon länger nicht mehr gesprochen hast."
+      tip: "Emotionale Intelligenz beginnt mit radikaler Präsenz. In einer Welt voller Ablenkungen ist ungeteilte Aufmerksamkeit das kostbarste Geschenk. Höre auf die Zwischentöne: Was sagt die Person zwischen den Worten?",
+      exercise: "Führe heute ein Gespräch ohne dein Handy in Reichweite. Übe das 'Deep Listening': Wiederhole am Ende eines Satzes kurz, was du verstanden hast ('Habe ich dich richtig verstanden, dass...'), bevor du antwortest."
     },
     {
       quote: "Wir sind der Durchschnitt der 5 Menschen um uns herum.",
-      tip: "Umgib dich mit Leuten, die dich hochziehen und die ähnliche Visionen haben wie du.",
-      exercise: "Mache jemandem heute ein völlig unerwartetes, ehrliches Kompliment."
+      tip: "Spiegelneuronen sorgen dafür, dass wir uns unbewusst an unsere Umgebung anpassen. Suche dir Mentoren und Freunde, die bereits dort sind, wo du hinwillst. Achte aber auch darauf, wem DU ein Mentor sein kannst.",
+      exercise: "Verteile heute ehrliches, spezifisches Lob. Sage nicht nur 'Gut gemacht', sondern 'Mir hat gefallen, wie du das Problem X gelöst hast, weil...'. Beobachte die Reaktion deines Gegenübers auf diese Wertschätzung."
     },
     {
       quote: "Verletzlichkeit ist keine Schwäche, sondern Mut.",
-      tip: "Tiefe Verbindungen entstehen, wenn man die Fassade fallen lässt. Trau dich auch mal 'Ich weiß nicht' zu sagen.",
-      exercise: "Teile heute beim Abendessen oder in einem Meeting eine kleine Herausforderung, mit der du aktuell kämpfst."
+      tip: "Psychologische Sicherheit ist der Schlüssel zu großartigen Teams und tiefen Partnerschaften. Wenn du den ersten Schritt machst und eine Schwäche eingestehst, gibst du anderen die Erlaubnis, dasselbe zu tun. Authentizität schafft Vertrauen.",
+      exercise: "Sei heute radikal ehrlich zu dir selbst und anderen. Wenn du dich bei einem Fehler ertappst, entschuldige dich aufrichtig, ohne Ausreden zu suchen. Teile eine kleine Unsicherheit in einem sicheren Umfeld und spüre die Erleichterung."
     }
   ]
 };
@@ -105,18 +105,18 @@ const DEEP_TRAINings = [
     icon: Brain,
     content: `
       ### Der Habit-Loop
-      Als Psychologe sehe ich täglich, wie Menschen gegen ihre eigene Biologie ankämpfen. Willenskraft ist eine endliche Ressource – sie verbraucht sich über den Tag. Die Lösung liegt in der "**Neuroplastizität**" und dem Habit-Loop (Auslöser -> Routine -> Belohnung).
-      
+      Als Psychologe sehe ich täglich, wie Menschen gegen ihre eigene Biologie ankämpfen. Willenskraft ist eine endliche Ressource – sie verbraucht sich über den Tag durch Entscheidungen und Stress. Die Lösung liegt in der "**Neuroplastizität**" und dem Verständnis des Habit-Loops (Auslöser -> Routine -> Belohnung).
+
       **1. Der Auslöser (Trigger)**
-      Mache den Auslöser deiner gewünschten Gewohnheit offensichtlich. Willst du mehr lesen? Lege das Buch auf dein Kopfkissen. Willst du joggen? Stelle die Laufschuhe direkt vor die Tür. 
-      
+      Ein Gewohnheits-Trigger kann ein Ort, eine Zeit, ein emotionaler Zustand oder eine vorangehende Aktion sein. Um eine neue Gewohnheit zu etablieren, musst du den Auslöser unübersehbar machen. Willst du mehr lesen? Lege das Buch auf dein Kopfkissen. Willst du joggen? Stelle die Laufschuhe direkt vor die Tür. Wenn der Trigger fehlt, wird die Routine nie gestartet.
+
       **2. Die Routine (Verhalten)**
-      Mache die Aktion lächerlich einfach. Die 2-Minuten-Regel besagt: Skaliere jede neue Gewohnheit auf 2 Minuten herunter. "Ich lese ein Kapitel" wird zu "Ich lese eine Seite". Es geht darum, die Identität aufzubauen, nicht sofort die Leistung zu erbringen.
-      
+      Mache die Aktion lächerlich einfach (The Friction Rule). Die 2-Minuten-Regel von James Clear besagt: Skaliere jede neue Gewohnheit auf 2 Minuten herunter. "Ich lese ein Kapitel" wird zu "Ich lese eine Seite". Es geht darum, die Identität aufzubauen (ich bin jemand, der liest), nicht sofort die maximale Leistung zu erbringen. Wenn der Widerstand gering ist, ist die Ausführung garantiert.
+
       **3. Die Belohnung**
-      Dein Gehirn lernt durch Dopamin. Belohne dich sofort nach der Ausführung. Ein einfaches Abstreichen auf einer Checkliste (wie in dieser App!) schüttet bereits Dopamin aus und signalisiert dem Gehirn: "Das war gut, lass uns das wiederholen."
-      
-      **Reflexionsaufgabe:** Welchen Trigger in deinem Alltag kannst du mit einer neuen Verhaltensweise koppeln? (z.B. "Nachdem ich mir den Kaffee einschenke, mache ich 10 Kniebeugen.")
+      Dein Gehirn ist eine Dopamin-Maschine. Wenn du dich nicht sofort nach der Aktion belohnst, wird das Gehirn das Verhalten nicht als wiederholenswert abspeichern. Ein einfaches Abstreichen auf einer Checkliste (wie in dieser App!) schüttet bereits Dopamin aus. Du kannst auch "Habit Stacking" nutzen: Verbinde eine ungeliebte Aufgabe mit einer Belohnung (z.B. "Ich darf meinen Lieblings-Podcast NUR beim Putzen hören").
+
+      **Reflexionsaufgabe:** Welchen Trigger in deinem Alltag kannst du mit einer neuen Verhaltensweise koppeln? Definiere einen konkreten Satz: "Nachdem ich [Bestehende Gewohnheit], werde ich [Neue 2-Minuten-Gewohnheit]".
     `
   },
   {
@@ -126,18 +126,18 @@ const DEEP_TRAINings = [
     icon: Dumbbell,
     content: `
       ### Das Stress-Anpassungs-Modell
-      Muskulatur baut sich nicht im Training auf, sondern in der Erholungsphase. Dein Körper adaptiert sich an einen Reiz, der ihn überfordert hat.
-      
+      Muskulatur baut sich nicht im Training auf, sondern während der Erholungsphase. Das Training liefert lediglich den destruktiven Reiz (Mikrotraumata), der dem Körper signalisiert: "Du warst zu schwach für diese Last, bau vor für das nächste Mal."
+
       **1. Progressive Overload (Progressive Überlastung)**
-      Wenn du in jedem Training das exakt gleiche Gewicht für die gleiche Wiederholungszahl bewegst, hat dein Körper keinen Grund, Muskeln aufzubauen. Du musst versuchen, dich systematisch in kleinen Schritten zu steigern (mehr Gewicht, eine Wiederholung mehr, saubereres Tempo, kürzere Pausen).
-      
+      Der Körper ist ein Meister der Effizienz. Wenn du in jedem Training das exakt gleiche Gewicht für die gleiche Wiederholungszahl bewegst, adaptiert er sich einmal und verharrt dann auf dem Status Quo. Du musst versuchen, dich systematisch in kleinen Schritten zu steigern. Das bedeutet nicht immer mehr Gewicht: Es kann auch eine kontrolliertere Ausführung, eine langsamere exzentrische Phase (Time under Tension) oder eine kürzere Satzpause sein.
+
       **2. Die Rolle des zentralen Nervensystems (ZNS)**
-      Heavy Lifting ermüdet nicht nur den Muskel, sondern dein ZNS. Ständige Erschöpfung (Ausbrennen) führt zu Leistungsabfall und Lethargie. Lerne Intuitiv zu trainieren oder implementiere Deload-Wochen alle 4-8 Wochen, in denen du Volumen und Intensität drosselst.
-      
+      Heavy Lifting ermüdet nicht nur den Muskel, sondern dein gesamtes Nervensystem. Während sich Muskeln oft nach 48 Stunden erholen, braucht das ZNS bis zu 72 Stunden oder länger. Ständige Erschöpfung (Übertraining) äußert sich durch Leistungsabfall, schlechte Laune und Infektanfälligkeit. Implementiere alle 4-8 Wochen 'Deload-Wochen', in denen du das Gewicht um 50% reduzierst, um deinem System Zeit für eine vollständige systemische Heilung zu geben.
+
       **3. Ernährung als Baumaterial**
-      Ohne ausreichend Protein (Baustoff) und Energie (Kalorienüberschuss oder -erhalt) nützt der beste Trainingsreiz nichts. Arbeite mit 1.6g bis 2.2g Protein pro Kilogramm Körpergewicht.
-      
-      **Dein Coaching-Auftrag:** Tracke nicht nur dein Training, sondern auch deine Schlafqualität und Energielevels. Sie sind die besten Indikatoren für deine Regeneration.
+      Training ohne Protein ist wie der Versuch, ein Haus ohne Steine zu bauen. Du brauchst 1.6g bis 2.2g Protein pro Kilogramm Körpergewicht. Zudem ist ein leichter Kalorienüberschuss für maximalen Aufbau förderlich, während ein Defizit hormonelle Ressourcen für die Regeneration einschränkt. Unterschätze niemals die Rolle von Mikronährstoffen (Magnesium, Zink) für die Muskelfunktion.
+
+      **Dein Coaching-Auftrag:** Beginne ein Trainingstagebuch. Schreibe bei jeder Übung Gewicht, Sätze und Wiederholungen auf. Dein Ziel für das nächste Mal: Nur EIN kleiner Fortschritt in EINEM dieser Werte bei EINER Übung. Achte zudem auf 8 Stunden Schlaf – dort findet der eigentliche Muskelaufbau statt.
     `
   },
   {
@@ -147,20 +147,18 @@ const DEEP_TRAINings = [
     icon: Shield,
     content: `
       ### Die Dichotomie der Kontrolle
-      Eines der mächtigsten psychologischen Konzepte zur Stressreduktion stammt aus der antiken Stoa: Die Dichotomie der Kontrolle. 
-      
-      Wir leiden fast ausschließlich, weil wir versuchen, Dinge zu kontrollieren, die außerhalb unserer Macht liegen (die Meinung anderer, das Wetter, das Verhalten unserer Kollegen, die Vergangenheit).
-      
-      **1. Was du kontrollieren kannst:**
-      Deine Reaktion, deine Bemühungen, deine Werte, deine Entscheidungen.
-      
+      Eines der mächtigsten psychologischen Konzepte zur Stressreduktion stammt aus der antiken Stoa. Der Kern ist einfach: Wir leiden fast ausschließlich, weil wir versuchen, Dinge zu kontrollieren, die außerhalb unserer Macht liegen.
+
+      **1. Das Internale vs. Externale**
+      Stoische Praxis bedeutet, eine scharfe Trennlinie zu ziehen. Was andere über dich denken, das Wetter, die politische Lage oder die Fehler der Vergangenheit sind "Externale". Deine eigene Vorbereitung, deine Integrität und deine unmittelbare Reaktion auf Ereignisse sind "Internale". Wenn du deine Energie nur auf das fokussierst, was du kontrollieren kannst, wirst du unbesiegbar für äußeren Stress.
+
       **2. Das Prinzip der "Amor Fati" (Liebe das Schicksal)**
-      Akzeptiere nicht nur, was passiert, sondern umarme es als Gelegenheit zum Wachstum. Wenn dir ein Hindernis in den Weg gelegt wird, ist das Hindernis der Weg. Hast du eine Beförderung nicht bekommen? Dies ist deine Möglichkeit, Demut, Geduld und harte Arbeit zu kultivieren.
-      
-      **3. Negative Visualisierung (Premeditatio Malorum)**
-      Stelle dir gelegentlich vor, Dinge zu verlieren, die du liebst. Das klingt makaber, aber es impft dich gegen Enttäuschungen und erzeugt vor allem eines: Tiefe Dankbarkeit für den jetzigen Moment.
-      
-      **Dein Coaching-Auftrag:** Wenn du das nächste Mal wütend oder gestresst bist, frage dich: "Ist das in meiner direkten Kontrolle?" Wenn nein, atme tief ein und lass es geistig los.
+      Nietzsche und die Stoiker gingen über bloße Akzeptanz hinaus. Amor Fati bedeutet, alles, was passiert – auch Schmerz und Verlust – als absolut notwendig und gut für deine Entwicklung zu betrachten. Das Hindernis wird zum Treibstoff. Ein Fehler im Job ist keine Katastrophe, sondern ein hocheffizienter Lehrmeister für Prozessoptimierung.
+
+      **3. Premeditatio Malorum (Vorwegnahme des Übels)**
+      Das Gehirn hasst böse Überraschungen. Wenn du dir morgens kurz vorstellst, was heute alles schiefgehen könnte (ein unfreundlicher Kunde, ein Stau, ein technischer Defekt), impfst du dein Nervensystem. Wenn es dann passiert, hast du es mental bereits durchgespielt und bleibst ruhig, während andere in Panik verfallen. Dies ist keine Pessimismus, sondern strategische Ruhe.
+
+      **Dein Coaching-Auftrag:** Identifiziere heute eine Situation, die dich normalerweise stresst. Frage dich sofort: "Habe ich 100% Kontrolle über das Ergebnis?" Wenn nein, richte dein Augenmerk sofort auf DEINEN nächsten konstruktiven Schritt und akzeptiere das Ergebnis bereits im Vorfeld.
     `
   },
   {
@@ -170,18 +168,18 @@ const DEEP_TRAINings = [
     icon: Activity,
     content: `
       ### Die Neurowissenschaft der Haltung
-      Die Forschung zur "Embodied Cognition" beweist: Unser Gehirn ist nicht isoliert, sondern denkt mit dem gesamten Körper. Wie wir uns bewegen und stehen, verändert nicht nur, wie andere uns sehen, sondern direkt unsere eigene Gehirnchemie.
-      
-      **1. Das propriozeptive Feedback-System**
-      Dein Gehirn liest ständig die Spannung deiner Muskeln ab, um auf deinen emotionalen Zustand zu schließen. Eine eingesunkene Haltung mit hängenden Schultern signalisiert dem Gehirn "Niederlage" oder "Bedrohung", was die Ausschüttung von Cortisol (Stresshormon) begünstigt. 
-      
-      **2. Offene Expansion (Power Poses)**
-      Auch wenn die frühe Forschung von Amy Cuddy debattiert wurde, zeigen neuere Meta-Analysen: Eine offene, expansive Körperhaltung über nur 2 Minuten (Brust raus, Schultern zurück, Blick nach vorne) senkt die subjektive Stresswahrnehmung und erhöht die Risikobereitschaft und das Gefühl von Handlungsfähigkeit (Agency).
-      
-      **3. Der Vagus-Nerv und Mikro-Expressions**
-      Der Vagusnerv verbindet Gehirn, Herz und Darm. Eine ruhige, tiefe Bauchatmung und offene Gesichtsmimik (Entspannung der Kiefer- und Augenmuskulatur) aktivieren den ventralen Vaguskomplex (Social Engagement System). Du strahlst Sicherheit aus, weil dein Nervensystem buchstäblich im "Sicherheits-Modus" ist – was über Spiegelneuronen sofort dein Gegenüber beruhigt.
-      
-      **Dein Coaching-Auftrag:** Achte heute bewusst auf deinen Nacken und deine Schultern, wenn du am Handy bist ("Tech-Neck"). Richte dich auf, atme dreimal tief in den Bauch und spüre, wie sich dein mentaler Zustand allein durch die biomechanische Anpassung verändert.
+      Die Forschung beweist: Unser Gehirn ist kein isolierter Computer. Es nutzt den Körper als Feedback-Schleife, um Emotionen zu generieren. Du bist nicht traurig und lässt deshalb den Kopf hängen – oft bist du traurig, WEIL deine Körperhaltung "Niederlage" signalisiert.
+
+      **1. Das Biofeedback-System**
+      Dein Gehirn überwacht ständig die Spannung im Kiefer, die Weite der Brust und die Tiefe der Atmung. Eine zusammengezogene Haltung (Schutzhaltung) aktiviert die Amygdala und flutet den Körper mit Cortisol. Eine aufrechte Haltung hingegen signalisiert dem System Sicherheit, was die Produktion von Testosteron (Antrieb) leicht erhöht und Cortisol senkt.
+
+      **2. Die Macht der Expansion**
+      Expansion bedeutet Raum einnehmen. In Momenten der Unsicherheit neigen wir dazu, uns klein zu machen. Kämpfe aktiv dagegen an: Schultern zurück, Blick auf Augenhöhe, Hände sichtbar. Dies aktiviert das Belohnungssystem und gibt dir ein Gefühl von "Agency" (Selbstwirksamkeit). Du wartest nicht darauf, dich sicher zu fühlen, um aufrecht zu stehen – du stehst aufrecht, um dich sicher zu fühlen.
+
+      **3. Mikro-Mimik und Stimmung**
+      Untersuchungen zeigen, dass Menschen, die den "Bleistift-Test" machen (einen Stift so zwischen den Zähnen halten, dass die Lachmuskeln aktiviert werden), Cartoons lustiger finden als Menschen, die den Stift mit den Lippen halten (Schmolleffekt). Dein Gesichtsausdruck schreibt Programme in dein Gehirn.
+
+      **Dein Coaching-Auftrag:** Mache den "High-Performance-Check" jede volle Stunde. Korrigiere deine Haltung: Scheitel Richtung Decke, Schultern locker fallen lassen, leichtes Lächeln. Atme 3-mal tief in den unteren Bauch (Vagus-Stimulation). Beobachte, wie sich dein mentaler Fokus in nur 60 Sekunden klärt.
     `
   },
   {
@@ -218,7 +216,7 @@ const DEEP_TRAINings = [
       Über 90% des Serotonins (Glückshormon) und 50% des Dopamins in deinem Körper werden im Darmtrakt gebildet – gesteuert durch Billionen von Darmbakterien. Ein dysbiotisches Mikrobiom (durch hochverarbeitete Lebensmittel, Zucker und Stress) sendet über den Vagusnerv Alarmsignale, was sich unmittelbar als "Brain Fog", innere Unruhe oder mangelnder Antrieb äußert.
       
       **2. Neuroinflammation (Die Stille Zündung)**
-      Modernste Psychiatriestudien zeigen: Depressive Verstimmungen und chronische Müdigkeit sind stark mit Entzündungsprozessen verknüpft. Eine Ernährung reich an Omega-3-Fettsäuren (Fisch, Alken), Polyphenolen (Beeren, Olivenöl) und Ballaststoffen senkt Entzündungsmarker (wie Zytokine) messbar ab und schützt das Gehirn.
+      Modernste Psychiatriestudien zeigen: Depressive Verstimmungen und chronische Müdigkeit sind stark mit Entzündungsprozessen verknüpft. Eine Ernährung reich an Omega-3-Fettsäuren (Fisch, Alken), Polyphenolen (Beeren, Olivenöl) und Ballaststoffen senken Entzündungsmarker (wie Zytokine) messbar ab und schützt das Gehirn.
       
       **3. Blutzucker und der Kognitive Crash**
       Extreme Glukose-Spitzen (z.B. durch Croissants oder Smoothies auf nüchternen Magen) und die daraus folgenden Abstürze ruinieren deinen Fokus. Eine Stabilisierung deines Blutzuckers durch herzhafte, proteinreiche erste Mahlzeiten ist der effektivste Hebel für konstante mentale Energie und um "Heißhunger-Entscheidungen" vorzubeugen.

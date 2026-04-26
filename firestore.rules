@@ -68,6 +68,10 @@ service cloud.firestore {
       return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
 
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     // ===============================================================
     // Domain Validators
     // ===============================================================
@@ -85,7 +89,9 @@ service cloud.firestore {
     function isValidUserDoc(data) {
       return (!('stats' in data) || isValidUserStats(data.stats)) &&
              (!('widgetOrder' in data) || data.widgetOrder is list) &&
-             (!('notifiedQuestIds' in data) || data.notifiedQuestIds is list);
+             (!('notifiedQuestIds' in data) || data.notifiedQuestIds is list) &&
+             (!('lastTrainingGeneratedDate' in data) || data.lastTrainingGeneratedDate is string || data.lastTrainingGeneratedDate == null) &&
+             (!('settings' in data) || data.settings is map);
     }
 
     function isValidQuest(data) {
@@ -122,41 +128,57 @@ service cloud.firestore {
              data.completedAt is int;
     }
 
+    function isValidDeepTraining(data) {
+      return data.id is string &&
+             data.title is string && data.title.size() > 0 &&
+             data.category is string &&
+             data.iconName is string &&
+             data.content is string &&
+             data.createdAt is int;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && isValidUserDoc(request.resource.data);
-      allow update: if isOwner(userId) && isValidUserDoc(request.resource.data);
+      allow read: if (isOwner(userId) || isAdmin()) && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserDoc(request.resource.data);
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUserDoc(request.resource.data);
       allow delete: if isAdmin();
 
       match /quests/{questId} {
         allow read: if isOwner(userId) || isAdmin();
-        allow create: if isOwner(userId) && isValidQuest(request.resource.data);
-        allow update: if isOwner(userId) && isValidQuest(request.resource.data);
+        allow create: if isOwner(userId) && isValidId(questId) && isValidQuest(request.resource.data);
+        allow update: if isOwner(userId) && isValidId(questId) && isValidQuest(request.resource.data);
         allow delete: if isOwner(userId) || isAdmin();
       }
 
       match /diaryEntries/{diaryEntryId} {
         allow read: if isOwner(userId) || isAdmin();
-        allow create: if isOwner(userId) && isValidDiaryEntry(request.resource.data);
-        allow update: if isOwner(userId) && isValidDiaryEntry(request.resource.data);
+        allow create: if isOwner(userId) && isValidId(diaryEntryId) && isValidDiaryEntry(request.resource.data);
+        allow update: if isOwner(userId) && isValidId(diaryEntryId) && isValidDiaryEntry(request.resource.data);
         allow delete: if isOwner(userId) || isAdmin();
       }
       
       match /visions/{visionId} {
         allow read: if isOwner(userId) || isAdmin();
-        allow create: if isOwner(userId) && isValidVision(request.resource.data);
-        allow update: if isOwner(userId) && isValidVision(request.resource.data);
+        allow create: if isOwner(userId) && isValidId(visionId) && isValidVision(request.resource.data);
+        allow update: if isOwner(userId) && isValidId(visionId) && isValidVision(request.resource.data);
         allow delete: if isOwner(userId) || isAdmin();
       }
       
       match /focusSessions/{sessionId} {
         allow read: if isOwner(userId) || isAdmin();
-        allow create: if isOwner(userId) && isValidFocusSession(request.resource.data);
-        allow update: if isOwner(userId) && isValidFocusSession(request.resource.data);
+        allow create: if isOwner(userId) && isValidId(sessionId) && isValidFocusSession(request.resource.data);
+        allow update: if isOwner(userId) && isValidId(sessionId) && isValidFocusSession(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /deepTrainings/{trainingId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidId(trainingId) && isValidDeepTraining(request.resource.data);
+        allow update: if isOwner(userId) && isValidId(trainingId) && isValidDeepTraining(request.resource.data);
         allow delete: if isOwner(userId) || isAdmin();
       }
     }
