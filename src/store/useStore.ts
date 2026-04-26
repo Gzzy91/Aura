@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserStats, Quest, SkillType, DiaryEntry, Vision, FocusSession } from '../types';
+import { UserStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining } from '../types';
 import { User } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import { toast } from 'sonner';
@@ -79,6 +79,8 @@ interface AppState {
   focusSessions: FocusSession[];
   notifiedQuestIds: string[];
   widgetOrder: string[];
+  deepTrainings: DeepTraining[];
+  lastTrainingGeneratedDate: string | null;
   setUser: (user: User | null) => void;
   setInitialized: (val: boolean) => void;
   setLocked: (val: boolean) => void;
@@ -99,6 +101,8 @@ interface AppState {
   updateVision: (id: string, updates: Partial<Vision>) => void;
   deleteVision: (id: string) => void;
   addFocusSession: (session: Omit<FocusSession, 'id'>) => void;
+  addDeepTraining: (training: DeepTraining) => void;
+  setLastTrainingGeneratedDate: (dateStr: string) => void;
   updateWidgetOrder: (order: string[]) => void;
   equipItem: (category: 'head' | 'body' | 'legs' | 'feet' | 'weapon' | 'shield' | 'accessory', itemId: string | null) => void;
   setActiveSkin: (skinId: string) => void;
@@ -147,10 +151,28 @@ export const useStore = create<AppState>()(
       focusSessions: [],
       notifiedQuestIds: [],
       widgetOrder: ['level', 'streak', 'chart', 'calendar', 'today', 'reminders', 'settings'],
+      deepTrainings: [],
+      lastTrainingGeneratedDate: null,
       
       setUser: (user) => set({ user, loading: false }),
       setInitialized: (val) => set({ isInitialized: val }),
       setLocked: (val) => set({ isLocked: val }),
+      
+      addDeepTraining: (training) => {
+        set((state) => ({ deepTrainings: [...state.deepTrainings, training] }));
+        const { user } = get();
+        if (user) {
+          setDoc(doc(db, 'users', user.uid, 'deepTrainings', training.id), cleanData(training));
+        }
+      },
+      
+      setLastTrainingGeneratedDate: (dateStr) => {
+        set({ lastTrainingGeneratedDate: dateStr });
+        const { user } = get();
+        if (user) {
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ lastTrainingGeneratedDate: dateStr }));
+        }
+      },
 
       updateSettings: (updates) => {
         const { user, settings } = get();
@@ -623,6 +645,7 @@ export const useStore = create<AppState>()(
         const diaryColRef = collection(db, 'users', userId, 'diaryEntries');
         const visionsColRef = collection(db, 'users', userId, 'visions');
         const focusColRef = collection(db, 'users', userId, 'focusSessions');
+        const deepColRef = collection(db, 'users', userId, 'deepTrainings');
 
         // Initial check: if user doc doesn't exist, upload current local state
         getDoc(userDocRef).then((docSnap) => {
@@ -631,12 +654,14 @@ export const useStore = create<AppState>()(
             setDoc(userDocRef, cleanData({
               stats: state.stats,
               widgetOrder: state.widgetOrder,
-              notifiedQuestIds: state.notifiedQuestIds
+              notifiedQuestIds: state.notifiedQuestIds,
+              lastTrainingGeneratedDate: state.lastTrainingGeneratedDate
             }));
             state.quests.forEach(q => setDoc(doc(questsColRef, q.id), cleanData(q)));
             state.diaryEntries.forEach(e => setDoc(doc(diaryColRef, e.id), cleanData(e)));
             state.visions.forEach(v => setDoc(doc(visionsColRef, v.id), cleanData(v)));
             state.focusSessions.forEach(f => setDoc(doc(focusColRef, f.id), cleanData(f)));
+            state.deepTrainings.forEach(d => setDoc(doc(deepColRef, d.id), cleanData(d)));
           }
         });
 
@@ -652,7 +677,8 @@ export const useStore = create<AppState>()(
               stats: data.stats || get().stats,
               widgetOrder: data.widgetOrder || get().widgetOrder,
               notifiedQuestIds: data.notifiedQuestIds || get().notifiedQuestIds,
-              settings: data.settings || get().settings
+              settings: data.settings || get().settings,
+              lastTrainingGeneratedDate: data.lastTrainingGeneratedDate || get().lastTrainingGeneratedDate
             });
             
             set({ isInitialized: true });
@@ -683,12 +709,19 @@ export const useStore = create<AppState>()(
           set({ focusSessions });
         });
 
+        const unsubDeep = onSnapshot(deepColRef, (snapshot) => {
+          const deepTrainings: DeepTraining[] = [];
+          snapshot.forEach((doc) => deepTrainings.push(doc.data() as DeepTraining));
+          set({ deepTrainings });
+        });
+
         return () => {
           unsubUser();
           unsubQuests();
           unsubDiary();
           unsubVisions();
           unsubFocus();
+          unsubDeep();
         };
       }
     }),

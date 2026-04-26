@@ -1,7 +1,13 @@
-import { useState, useMemo } from 'react';
-import { Lightbulb, Target, ArrowRight, Brain, Dumbbell, BookOpen, Shield, Activity, Moon, Dna, History, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Lightbulb, Target, ArrowRight, Brain, Dumbbell, BookOpen, Shield, Activity, Moon, Dna, History, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { SkillType } from '@/types';
 import { cn } from '@/lib/utils';
+import { useStore } from '@/store/useStore';
+import { generateDailyTraining } from '@/services/coachService';
+
+const ICON_MAP: Record<string, React.ElementType> = {
+  Brain, Dumbbell, Shield, Activity, Moon, Dna, BookOpen
+};
 
 const DAILY_TIPS: Record<SkillType, { quote: string, tip: string, exercise: string }[]> = {
   Fitness: [
@@ -237,7 +243,7 @@ function sfc32(a: number, b: number, c: number, d: number) {
   }
 }
 
-function getDailyIndices(date: Date) {
+function getDailyIndices(date: Date, totalDeep: number) {
   // Use day count since epoch for deterministic cycling
   const dayCount = Math.floor(date.getTime() / (1000 * 60 * 60 * 24));
   
@@ -247,7 +253,7 @@ function getDailyIndices(date: Date) {
     Disziplin: (dayCount + 2) % DAILY_TIPS.Disziplin.length,
     Wissen: (dayCount + 3) % DAILY_TIPS.Wissen.length,
     Soziales: (dayCount + 4) % DAILY_TIPS.Soziales.length,
-    Deep: dayCount % DEEP_TRAINings.length
+    Deep: dayCount % Math.max(1, totalDeep)
   };
 }
 
@@ -284,9 +290,40 @@ function renderMarkdown(text: string) {
 }
 
 export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
+  const { deepTrainings, lastTrainingGeneratedDate, addDeepTraining, setLastTrainingGeneratedDate } = useStore();
   const [currentDate] = useState(() => new Date());
   const [activeSubTab, setActiveSubTab] = useState<'impulse' | 'tiefentraining' | 'archiv'>('impulse');
   const [expandedTraining, setExpandedTraining] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  
+  const allTrainings = useMemo(() => {
+    const dynamicTrainings = deepTrainings.map(d => ({
+      id: d.id,
+      title: d.title,
+      category: d.category,
+      icon: ICON_MAP[d.iconName] || BookOpen,
+      content: d.content
+    }));
+    // Reverse dynamic trainings so newest is first? Or keep chronological
+    return [...DEEP_TRAINings, ...dynamicTrainings];
+  }, [deepTrainings]);
+
+  useEffect(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (lastTrainingGeneratedDate !== todayStr && !isGenerating && process.env.GEMINI_API_KEY) {
+      setIsGenerating(true);
+      const existingTitles = allTrainings.map(t => t.title);
+      generateDailyTraining(existingTitles).then((newTraining) => {
+        addDeepTraining({ ...newTraining, id: crypto.randomUUID(), createdAt: Date.now() });
+        setLastTrainingGeneratedDate(todayStr);
+        setIsGenerating(false);
+      }).catch(err => {
+        console.error("Failed to generate daily training", err);
+        setIsGenerating(false);
+      });
+    }
+  }, [lastTrainingGeneratedDate, allTrainings, isGenerating, addDeepTraining, setLastTrainingGeneratedDate]);
+
   const [selectedArchiveDate, setSelectedArchiveDate] = useState<Date>(() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
@@ -304,7 +341,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
   }, []);
 
   const getIndicesForDate = (date: Date) => {
-    return getDailyIndices(date);
+    return getDailyIndices(date, allTrainings.length);
   };
 
   const dailyIndices = useMemo(() => {
@@ -432,7 +469,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                  Die Coach-Bibliothek
                </h3>
                <span className="text-xs font-medium text-neutral-500 bg-neutral-800 px-3 py-1 rounded-full">
-                 {DEEP_TRAINings.length} Module verfügbar
+                 {allTrainings.length} Module verfügbar
                </span>
              </div>
              
@@ -451,17 +488,17 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                    <div className="flex items-center gap-4">
                      <div className="bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
                        {(() => {
-                         const FeaturedIcon = DEEP_TRAINings[dailyIndices.Deep].icon;
+                         const FeaturedIcon = allTrainings[dailyIndices.Deep]?.icon || BookOpen;
                          return <FeaturedIcon className="w-6 h-6 text-amber-500" />;
                        })()}
                      </div>
                      <div>
-                       <h4 className="text-lg font-bold text-white">{DEEP_TRAINings[dailyIndices.Deep].title}</h4>
-                       <p className="text-sm text-neutral-400">{DEEP_TRAINings[dailyIndices.Deep].category}</p>
+                       <h4 className="text-lg font-bold text-white">{allTrainings[dailyIndices.Deep]?.title}</h4>
+                       <p className="text-sm text-neutral-400">{allTrainings[dailyIndices.Deep]?.category}</p>
                      </div>
                    </div>
                    <button 
-                     onClick={() => setExpandedTraining(DEEP_TRAINings[dailyIndices.Deep].id)}
+                     onClick={() => setExpandedTraining(allTrainings[dailyIndices.Deep]?.id)}
                      className="text-sm font-bold text-blue-400 hover:text-blue-300 transition-colors"
                    >
                      Zum Training →
@@ -471,9 +508,9 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
              </div>
 
              <div className="space-y-4">
-               {DEEP_TRAINings.map(training => {
+               {allTrainings.map(training => {
                  const isExpanded = expandedTraining === training.id;
-                 const Icon = training.icon;
+                 const Icon = training.icon || BookOpen;
                  return (
                    <div key={training.id} className="border border-neutral-700 bg-neutral-950 rounded-2xl overflow-hidden transition-all duration-300">
                      <button 
@@ -571,14 +608,14 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                     <div className="flex items-start gap-4">
                       <div className="bg-neutral-900 p-3 rounded-xl border border-neutral-800">
                         {(() => {
-                           const ArchIcon = DEEP_TRAINings[archiveIndices.Deep].icon;
+                           const ArchIcon = allTrainings[archiveIndices.Deep]?.icon || BookOpen;
                            return <ArchIcon className="w-5 h-5 text-amber-500" />;
                         })()}
                       </div>
                       <div>
-                        <h4 className="text-md font-bold text-white mb-1">{DEEP_TRAINings[archiveIndices.Deep].title}</h4>
+                        <h4 className="text-md font-bold text-white mb-1">{allTrainings[archiveIndices.Deep]?.title}</h4>
                         <p className="text-xs text-neutral-400 leading-relaxed line-clamp-2">
-                          {DEEP_TRAINings[archiveIndices.Deep].category} • {DEEP_TRAINings[archiveIndices.Deep].content.split('\n')[2].trim().slice(0, 100)}...
+                          {allTrainings[archiveIndices.Deep]?.category} • {allTrainings[archiveIndices.Deep]?.content?.split('\n')[2]?.trim().slice(0, 100)}...
                         </p>
                       </div>
                     </div>

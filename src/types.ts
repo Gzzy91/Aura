@@ -76,6 +76,15 @@ export interface FocusSession {
   notes?: string;
 }
 
+export interface DeepTraining {
+  id: string;
+  title: string;
+  category: string;
+  iconName: string;
+  content: string;
+  createdAt: number;
+}
+
 export interface AppSettings {
   isPinEnabled: boolean;
   pin: string | null;
