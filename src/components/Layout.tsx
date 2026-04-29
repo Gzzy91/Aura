@@ -1,4 +1,5 @@
 import { ReactNode, useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { User as UserIcon, Target, Brain, Sparkles, Calendar, Book, Repeat, LogIn, LogOut, LayoutDashboard, Shield, Timer, Compass, Menu, X, Lightbulb } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from './Logo';
@@ -8,7 +9,6 @@ import { toast } from 'sonner';
 
 interface LayoutProps {
   children: ReactNode;
-  activeTab: string;
   setActiveTab: (tab: string) => void;
 }
 
@@ -28,9 +28,13 @@ const NAV_ITEMS = [
 
 const MOBILE_PRIMARY_TABS = ['dashboard', 'visions', 'quests', 'focus'];
 
-export function Layout({ children, activeTab, setActiveTab }: LayoutProps) {
+export function Layout({ children, setActiveTab }: LayoutProps) {
   const { user } = useStore();
+  const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  // Extract activeTab from pathname (e.g. "/dashboard" -> "dashboard")
+  const activeTab = location.pathname.substring(1) || 'dashboard';
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
@@ -67,7 +71,7 @@ export function Layout({ children, activeTab, setActiveTab }: LayoutProps) {
         <div className="p-4 flex items-center gap-3 border-b border-neutral-800">
           <Logo />
         </div>
-        <div className="flex flex-col p-4 gap-2 justify-start flex-1 overflow-y-auto">
+        <div className="flex flex-col p-4 gap-2 justify-start flex-1 overflow-y-auto w-full">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -76,14 +80,14 @@ export function Layout({ children, activeTab, setActiveTab }: LayoutProps) {
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
                 className={cn(
-                  "flex items-center gap-3 p-3 rounded-xl transition-colors flex-none justify-start min-w-0",
+                  "flex items-center gap-3 w-full p-3 rounded-xl transition-colors flex-none justify-start min-w-0 text-left",
                   isActive 
                     ? "bg-neutral-800 text-amber-500" 
                     : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50"
                 )}
               >
-                <Icon className="w-6 h-6" />
-                <span className="block font-medium">{item.label}</span>
+                <Icon className="w-6 h-6 flex-shrink-0" />
+                <span className="block font-medium truncate">{item.label}</span>
               </button>
             );
           })}
@@ -91,15 +95,15 @@ export function Layout({ children, activeTab, setActiveTab }: LayoutProps) {
         {/* Auth Section Desktop */}
         <div className="p-4 border-t border-neutral-800">
           {user ? (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 w-full overflow-hidden">
               <img 
                 src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}`} 
                 alt="Profile" 
-                className="w-10 h-10 rounded-full border border-neutral-700"
+                className="w-10 h-10 rounded-full border border-neutral-700 flex-shrink-0"
                 referrerPolicy="no-referrer"
               />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold truncate text-white">{user.displayName}</p>
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <p className="text-sm font-bold truncate text-white block w-full">{user.displayName}</p>
                 <button 
                   onClick={handleLogout}
                   className="text-[10px] text-neutral-500 hover:text-red-400 flex items-center gap-1 transition-colors"

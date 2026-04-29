@@ -193,7 +193,7 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pb-28 md:pb-8">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-lg shadow-2xl relative z-10 flex flex-col max-h-full overflow-hidden">
+      <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-lg shadow-2xl relative z-10 flex flex-col max-h-[85dvh] overflow-hidden">
         <header className="flex-shrink-0 flex justify-between items-center p-6 border-b border-neutral-800">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
             <Target className="w-6 h-6 text-amber-500" />
@@ -204,7 +204,7 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest 
           </button>
         </header>
 
-        <div className="overflow-y-auto p-6 flex-1">
+        <div className="overflow-y-auto p-6 flex-1 min-h-0">
           <form id="quest-form" onSubmit={handleSubmit} className="space-y-4 pb-2">
             <div>
               <label className="block text-sm font-medium text-neutral-400 mb-1">Quest-Titel</label>

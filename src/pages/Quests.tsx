@@ -247,7 +247,7 @@ export function Quests() {
                 onChange={(e) => setSortOption(e.target.value as SortOption)}
                 className="bg-neutral-900 border border-neutral-800 rounded-lg px-2 py-1 text-xs text-neutral-300 focus:outline-none focus:border-amber-500"
               >
-                <option value="date">Nach Datum</option>
+                <option value="date">Nach Fälligkeitsdatum</option>
                 <option value="xp">Nach EP-Belohnung</option>
               </select>
             </div>

@@ -70,7 +70,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
   
   // Ensure all widgets are present in widgetOrder (for backwards compatibility with persisted state)
   useEffect(() => {
-    const allWidgets = ['avatar', 'level', 'streak', 'chart', 'calendar', 'completed', 'today', 'reminders', 'settings'];
+    const allWidgets = ['avatar', 'level', 'streak', 'chart', 'recurring_chart', 'calendar', 'completed', 'today', 'reminders', 'settings'];
     const missingWidgets = allWidgets.filter(w => !widgetOrder.includes(w));
     if (missingWidgets.length > 0) {
       updateWidgetOrder([...widgetOrder, ...missingWidgets]);
@@ -177,6 +177,11 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
     .sort((a, b) => (a.dueDate || 0) - (b.dueDate || 0))
     .slice(0, 3);
 
+  const needsDiaryEntryToday = useMemo(() => {
+    const today = new Date();
+    return !diaryEntries.some(e => isSameDay(new Date(e.date), today));
+  }, [diaryEntries]);
+
   const todayCompletedQuests = useMemo(() => {
     const today = new Date();
     const completed: Quest[] = [];
@@ -216,6 +221,47 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
 
   const nextWeek = () => setChartDate(addWeeks(chartDate, 1));
   const prevWeek = () => setChartDate(subWeeks(chartDate, 1));
+
+  // Calculate weekly recurring quests data
+  const weeklyRecurringData = useMemo(() => {
+    const start = startOfWeek(chartDate, { weekStartsOn: 1 }).getTime();
+    const end = endOfWeek(chartDate, { weekStartsOn: 1 }).getTime();
+    
+    const recurringMap = new Map<string, { title: string, count: number, skill: SkillType }>();
+
+    quests.forEach(q => {
+      if (q.type === 'habit') {
+        if (q.completions) {
+          const count = q.completions.filter(c => c.direction === 'positive' && c.date >= start && c.date <= end).length;
+          if (count > 0) {
+            recurringMap.set(q.title, {
+              title: q.title,
+              count: (recurringMap.get(q.title)?.count || 0) + count,
+              skill: q.skill,
+            });
+          }
+        }
+      } else if (q.recurrence && q.recurrence !== 'none' && q.completed && q.completedAt) {
+        if (q.completedAt >= start && q.completedAt <= end) {
+          recurringMap.set(q.title, {
+            title: q.title,
+            count: (recurringMap.get(q.title)?.count || 0) + 1,
+            skill: q.skill,
+          });
+        }
+      }
+    });
+
+    return Array.from(recurringMap.values())
+      .map(item => ({
+        name: item.title.length > 15 ? item.title.substring(0, 15) + '...' : item.title,
+        fullTitle: item.title,
+        count: item.count,
+        fill: CHART_COLORS[item.skill],
+        skill: item.skill
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [quests, chartDate]);
 
   // Calculate weekly XP data
   const weeklyXpData = useMemo(() => {
@@ -280,6 +326,22 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
               <span className={cn("font-mono", total > 0 ? "text-amber-500" : "text-red-500")}>{total} EP</span>
             </div>
           )}
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const CustomRecurringTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-neutral-900 border border-neutral-800 p-3 rounded-xl shadow-xl">
+          <p className="font-bold text-white mb-2">{data.fullTitle}</p>
+          <div className="flex items-center justify-between gap-4 text-sm mb-1">
+            <span style={{ color: data.fill }}>{data.skill}</span>
+            <span className="font-mono font-bold text-white">{data.count}× abgeschlossen</span>
+          </div>
         </div>
       );
     }
@@ -448,6 +510,82 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                       </div>
                     </SortableWidget>
                   );
+                case 'recurring_chart':
+                  return (
+                    <SortableWidget key="recurring_chart" id="recurring_chart" className="col-span-1 md:col-span-2 lg:col-span-2">
+                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full">
+                        <div className="flex justify-between items-center mb-6">
+                          <h3 className="text-xl font-bold flex items-center gap-2">
+                            <Target className="w-5 h-5 text-amber-500" />
+                            Wiederkehrende Quests
+                          </h3>
+                          <div className="text-sm font-bold text-neutral-400 uppercase tracking-widest text-center">
+                            {format(startOfWeek(chartDate, { weekStartsOn: 1 }), 'dd.MM.')} - {format(endOfWeek(chartDate, { weekStartsOn: 1 }), 'dd.MM.yyyy')}
+                          </div>
+                        </div>
+                        {weeklyRecurringData.length === 0 ? (
+                          <div className="flex items-center gap-2 h-[300px] w-full -ml-2">
+                            <button 
+                              onClick={prevWeek}
+                              className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors z-10"
+                            >
+                              <ChevronLeft className="w-6 h-6" />
+                            </button>
+                            <div className="flex-1 h-full min-w-0 flex items-center justify-center text-neutral-500 text-sm">
+                              Keine Quests in dieser Woche abgeschlossen.
+                            </div>
+                            <button 
+                              onClick={nextWeek}
+                              className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors z-10"
+                            >
+                              <ChevronRight className="w-6 h-6" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 h-[300px] w-full -ml-2">
+                            <button 
+                              onClick={prevWeek}
+                              className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors z-10 shrink-0"
+                            >
+                              <ChevronLeft className="w-6 h-6" />
+                            </button>
+                            <div className="flex-1 h-full min-w-0 flex flex-col gap-2 overflow-y-auto custom-scrollbar pr-2 pb-2">
+                              {weeklyRecurringData.map((item, index) => {
+                                const maxCount = Math.max(7, ...weeklyRecurringData.map(d => d.count));
+                                return (
+                                  <div key={index} className="flex flex-col bg-neutral-950 p-3 rounded-xl border border-neutral-800 shrink-0">
+                                    <div className="flex justify-between items-start mb-2 gap-2">
+                                      <span className="text-sm font-medium text-white break-words" title={item.fullTitle}>
+                                        {item.fullTitle}
+                                      </span>
+                                      <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                                        <span className="text-xs font-medium text-neutral-500 uppercase tracking-wider hidden sm:inline-block">{item.skill}</span>
+                                        <span className="text-sm font-mono font-bold" style={{ color: item.fill }}>
+                                          {item.count}×
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden">
+                                      <div 
+                                        className="h-full rounded-full transition-all duration-500 ease-in-out" 
+                                        style={{ width: `${Math.min((item.count / maxCount) * 100, 100)}%`, backgroundColor: item.fill }}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <button 
+                              onClick={nextWeek}
+                              className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors z-10 shrink-0"
+                            >
+                              <ChevronRight className="w-6 h-6" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </SortableWidget>
+                  );
                 case 'calendar':
                   return (
                     <SortableWidget key="calendar" id="calendar" className="col-span-1 md:col-span-2 lg:col-span-2">
@@ -577,7 +715,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                     </SortableWidget>
                   );
                 case 'reminders':
-                  return upcomingReminders.length > 0 ? (
+                  return (upcomingReminders.length > 0 || needsDiaryEntryToday) ? (
                     <SortableWidget key="reminders" id="reminders" className="col-span-1">
                       <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full">
                         <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
@@ -585,6 +723,22 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                           Anstehende Erinnerungen
                         </h3>
                         <div className="space-y-3">
+                          {needsDiaryEntryToday && (
+                            <div className="bg-neutral-950 p-4 rounded-xl border-l-4 border-y border-r border-y-neutral-800 border-r-neutral-800 flex items-center justify-between border-l-indigo-500 cursor-pointer hover:bg-neutral-900 transition-colors" onClick={() => setActiveTab('diary')}>
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-indigo-500/10 flex items-center justify-center shrink-0">
+                                  <BookOpen className="w-5 h-5 text-indigo-500" />
+                                </div>
+                                <div>
+                                  <div className="font-bold text-white text-sm">Tagebuch-Eintrag fehlt</div>
+                                  <div className="text-xs text-neutral-400">Halte deine heutigen Gedanken fest.</div>
+                                </div>
+                              </div>
+                              <button className="text-indigo-500 hover:text-indigo-400 font-bold text-xs uppercase tracking-wider shrink-0">
+                                Erstellen
+                              </button>
+                            </div>
+                          )}
                           {upcomingReminders.map(quest => {
                             const isDueSoon = (quest.dueDate || 0) - Date.now() < 86400000;
                             return (

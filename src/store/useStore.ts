@@ -4,6 +4,7 @@ import { UserStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTrai
 import { User } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import { toast } from 'sonner';
+import { triggerHapticFeedback } from '@/lib/utils';
 import { 
   doc, 
   setDoc, 
@@ -150,7 +151,7 @@ export const useStore = create<AppState>()(
       visions: [],
       focusSessions: [],
       notifiedQuestIds: [],
-      widgetOrder: ['level', 'streak', 'chart', 'calendar', 'today', 'reminders', 'settings'],
+      widgetOrder: ['level', 'streak', 'chart', 'recurring_chart', 'calendar', 'today', 'reminders', 'settings'],
       deepTrainings: [],
       lastTrainingGeneratedDate: null,
       
@@ -178,6 +179,7 @@ export const useStore = create<AppState>()(
         const { user, settings } = get();
         const newSettings = { ...settings, ...updates };
         set({ settings: newSettings });
+        triggerHapticFeedback();
         if (user) {
           updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ settings: newSettings }));
         }
@@ -314,6 +316,8 @@ export const useStore = create<AppState>()(
         const state = get();
         const quest = state.quests.find(q => q.id === id);
         if (!quest || quest.completed) return;
+        
+        triggerHapticFeedback([50, 100, 50]);
 
         const { user } = get();
         let nextQuests = [...state.quests];
@@ -450,6 +454,7 @@ export const useStore = create<AppState>()(
       },
 
       toggleSubtask: (questId, subtaskId) => {
+        triggerHapticFeedback(30);
         set((state) => ({
           quests: state.quests.map(q => q.id === questId ? {
             ...q,

@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Quests } from './pages/Quests';
@@ -28,11 +29,11 @@ import { Login } from './pages/Login';
 
 const INACTIVITY_TIMEOUT = 1 * 60 * 1000; // 1 minute
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+function AppContent() {
   const { user, loading, stats, settings, setLocked, setUser, syncWithFirestore } = useStore();
   const prevLevelRef = useRef(stats.level);
   const lastActivityRef = useRef<number>(Date.now());
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!settings.isPinEnabled || !user) return;
@@ -106,6 +107,11 @@ export default function App() {
     prevLevelRef.current = stats.level;
   }, [stats.level]);
 
+  // Create a proxy for setActiveTab that navigates instead
+  const handleSetActiveTab = (tab: string) => {
+    navigate(`/${tab}`);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -128,19 +134,31 @@ export default function App() {
       <Toaster position="top-right" theme="dark" closeButton richColors />
       <NotificationManager />
       <PinLock />
-      <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
-        {activeTab === 'dashboard' && <Dashboard setActiveTab={setActiveTab} />}
-        {activeTab === 'visions' && <Visions />}
-        {activeTab === 'quests' && <Quests />}
-        {activeTab === 'habits' && <Habits />}
-        {activeTab === 'focus' && <Focus />}
-        {activeTab === 'skills' && <Skills />}
-        {activeTab === 'avatar' && <Avatar />}
-        {activeTab === 'calendar' && <Calendar />}
-        {activeTab === 'diary' && <Diary />}
-        {activeTab === 'mentaltraining' && <Mentaltraining setActiveTab={setActiveTab} />}
-        {activeTab === 'coach' && <AICoach />}
+      <Layout setActiveTab={handleSetActiveTab}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<Dashboard setActiveTab={handleSetActiveTab} />} />
+          <Route path="/visions" element={<Visions />} />
+          <Route path="/quests" element={<Quests />} />
+          <Route path="/habits" element={<Habits />} />
+          <Route path="/focus" element={<Focus />} />
+          <Route path="/skills" element={<Skills />} />
+          <Route path="/avatar" element={<Avatar />} />
+          <Route path="/calendar" element={<Calendar />} />
+          <Route path="/diary" element={<Diary />} />
+          <Route path="/mentaltraining" element={<Mentaltraining setActiveTab={handleSetActiveTab} />} />
+          <Route path="/coach" element={<AICoach />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
       </Layout>
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <HashRouter>
+      <AppContent />
+    </HashRouter>
   );
 }

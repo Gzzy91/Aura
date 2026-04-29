@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useStore } from '@/store/useStore';
 import { motion, AnimatePresence } from 'motion/react';
-import { Book, Plus, Trash2, Smile, Meh, Frown, Heart, Star, Calendar as CalendarIcon, ChevronRight, ChevronDown, Edit2 } from 'lucide-react';
-import { format } from 'date-fns';
+import { Book, Plus, Trash2, Smile, Meh, Frown, Heart, Star, Calendar as CalendarIcon, ChevronRight, ChevronDown, Edit2, Filter, X } from 'lucide-react';
+import { format, isSameDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -25,6 +25,27 @@ export function Diary() {
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [isNotesExpanded, setIsNotesExpanded] = useState(false);
   const [isProgressExpanded, setIsProgressExpanded] = useState(false);
+
+  const [filterMood, setFilterMood] = useState<number | null>(null);
+  const [filterDate, setFilterDate] = useState<string>('');
+
+  const filteredEntries = useMemo(() => {
+    return diaryEntries.filter(entry => {
+      let matchesMood = true;
+      let matchesDate = true;
+
+      if (filterMood !== null) {
+        matchesMood = entry.mood === filterMood;
+      }
+
+      if (filterDate) {
+        // filterDate is in 'yyyy-MM-dd' format, but entry.date is a timestamp
+        matchesDate = isSameDay(new Date(entry.date), new Date(filterDate));
+      }
+
+      return matchesMood && matchesDate;
+    });
+  }, [diaryEntries, filterMood, filterDate]);
 
   const handleEdit = (entry: any) => {
     setEditingId(entry.id);
@@ -243,19 +264,66 @@ export function Diary() {
       </AnimatePresence>
 
       <div className="space-y-6">
-        <h3 className="text-xl font-bold flex items-center gap-2">
-          <Book className="w-5 h-5 text-amber-500" />
-          Deine Einträge
-        </h3>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <h3 className="text-xl font-bold flex items-center gap-2">
+            <Book className="w-5 h-5 text-amber-500" />
+            Deine Einträge
+          </h3>
+          
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="flex items-center gap-2 bg-neutral-900 border border-neutral-800 rounded-lg p-1">
+              <Filter className="w-4 h-4 text-neutral-500 ml-2" />
+              {MOODS.map((m) => {
+                const Icon = m.icon;
+                const isActive = filterMood === m.value;
+                return (
+                  <button
+                    key={`filter-${m.value}`}
+                    onClick={() => setFilterMood(isActive ? null : m.value)}
+                    className={cn(
+                      "p-1.5 rounded-md transition-colors",
+                      isActive ? m.bg : "hover:bg-neutral-800"
+                    )}
+                    title={m.label}
+                  >
+                    <Icon className={cn("w-4 h-4", isActive ? m.color : "text-neutral-500")} />
+                  </button>
+                );
+              })}
+            </div>
+            
+            <div className="flex items-center gap-2 bg-neutral-900 border border-neutral-800 rounded-lg p-1">
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="bg-transparent text-sm font-mono text-neutral-300 focus:outline-none px-2 py-1"
+                placeholder="Datum filtern"
+              />
+              {filterDate && (
+                <button 
+                  onClick={() => setFilterDate('')}
+                  className="p-1.5 hover:bg-neutral-800 rounded-md text-neutral-500 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
 
-        {diaryEntries.length === 0 ? (
+        {filteredEntries.length === 0 ? (
           <div className="bg-neutral-900/50 border border-dashed border-neutral-800 rounded-2xl p-12 text-center">
             <Book className="w-12 h-12 text-neutral-700 mx-auto mb-4" />
-            <p className="text-neutral-500">Noch keine Einträge vorhanden. Starte heute mit deinem ersten Eintrag!</p>
+            <p className="text-neutral-500">
+              {diaryEntries.length === 0 
+                ? "Noch keine Einträge vorhanden. Starte heute mit deinem ersten Eintrag!" 
+                : "Keine Einträge für diese Filter gefunden."}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4">
-            {diaryEntries.map((entry) => {
+            {filteredEntries.map((entry) => {
               const moodInfo = MOODS.find(m => m.value === entry.mood) || MOODS[2];
               const MoodIcon = moodInfo.icon;
               

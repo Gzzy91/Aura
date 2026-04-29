@@ -6,6 +6,16 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export function triggerHapticFeedback(pattern: number | number[] = 50) {
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try {
+      navigator.vibrate(pattern);
+    } catch (e) {
+      // Ignore errors if vibrate is not supported or blocked
+    }
+  }
+}
+
 export const SKILL_COLORS: Record<SkillType, string> = {
   Fitness: 'text-red-500',
   Fokus: 'text-blue-500',

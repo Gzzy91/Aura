@@ -307,7 +307,13 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
   }, [deepTrainings]);
 
   useEffect(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    // Use yesterday's date if before 6 AM to delay daily refresh
+    if (now.getHours() < 6) {
+      now.setDate(now.getDate() - 1);
+    }
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
     if (lastTrainingGeneratedDate !== todayStr && !isGenerating && process.env.GEMINI_API_KEY) {
       setIsGenerating(true);
       const existingTitles = allTrainings.map(t => t.title);
