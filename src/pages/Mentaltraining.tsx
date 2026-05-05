@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Lightbulb, Target, ArrowRight, Brain, Dumbbell, BookOpen, Shield, Activity, Moon, Dna, History, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Lightbulb, Target, ArrowRight, Brain, Dumbbell, BookOpen, Shield, Activity, Moon, Dna, History, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2, Filter, ArrowUpDown, X } from 'lucide-react';
 import { SkillType } from '@/types';
+import { format } from 'date-fns';
+import { de } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store/useStore';
 import { generateDailyTraining } from '@/services/coachService';
@@ -103,6 +105,7 @@ const DEEP_TRAINings = [
     title: 'Die Psychologie der Gewohnheiten',
     category: 'Disziplin & Fokus',
     icon: Brain,
+    createdAt: new Date('2024-01-01').getTime(),
     content: `
       ### Der Habit-Loop
       Als Psychologe sehe ich täglich, wie Menschen gegen ihre eigene Biologie ankämpfen. Willenskraft ist eine endliche Ressource – sie verbraucht sich über den Tag durch Entscheidungen und Stress. Die Lösung liegt in der "**Neuroplastizität**" und dem Verständnis des Habit-Loops (Auslöser -> Routine -> Belohnung).
@@ -124,6 +127,7 @@ const DEEP_TRAINings = [
     title: 'Progressive Overload & ZNS-Regeneration',
     category: 'Fitness',
     icon: Dumbbell,
+    createdAt: new Date('2024-01-02').getTime(),
     content: `
       ### Das Stress-Anpassungs-Modell
       Muskulatur baut sich nicht im Training auf, sondern während der Erholungsphase. Das Training liefert lediglich den destruktiven Reiz (Mikrotraumata), der dem Körper signalisiert: "Du warst zu schwach für diese Last, bau vor für das nächste Mal."
@@ -145,6 +149,7 @@ const DEEP_TRAINings = [
     title: 'Emotionale Resilienz & Stoizismus',
     category: 'Soziales & Wissen',
     icon: Shield,
+    createdAt: new Date('2024-01-03').getTime(),
     content: `
       ### Die Dichotomie der Kontrolle
       Eines der mächtigsten psychologischen Konzepte zur Stressreduktion stammt aus der antiken Stoa. Der Kern ist einfach: Wir leiden fast ausschließlich, weil wir versuchen, Dinge zu kontrollieren, die außerhalb unserer Macht liegen.
@@ -166,6 +171,7 @@ const DEEP_TRAINings = [
     title: 'Embodied Cognition & Körpersprache',
     category: 'Soziales & Fokus',
     icon: Activity,
+    createdAt: new Date('2024-01-04').getTime(),
     content: `
       ### Die Neurowissenschaft der Haltung
       Die Forschung beweist: Unser Gehirn ist kein isolierter Computer. Es nutzt den Körper als Feedback-Schleife, um Emotionen zu generieren. Du bist nicht traurig und lässt deshalb den Kopf hängen – oft bist du traurig, WEIL deine Körperhaltung "Niederlage" signalisiert.
@@ -187,6 +193,7 @@ const DEEP_TRAINings = [
     title: 'Zirkadianer Rhythmus & Schlafarchitektur',
     category: 'Fitness & Disziplin',
     icon: Moon,
+    createdAt: new Date('2024-01-05').getTime(),
     content: `
       ### Die Basis jeglicher Leistung
       Nach dem aktuellsten Stand der Schlafforschung (z.B. Dr. Matthew Walker, Stanford's Andrew Huberman) ist Schlaf keine Ruhepause, sondern ein hochaktiver neurologischer und metabolischer Prozess. Ohne optimierten Schlaf ist jegliches Mentaltraining wirkungslos.
@@ -208,6 +215,7 @@ const DEEP_TRAINings = [
     title: 'Darm-Hirn-Achse (Psychobiom)',
     category: 'Wissen & Fitness',
     icon: Dna,
+    createdAt: new Date('2024-01-06').getTime(),
     content: `
       ### Ernährungspsychiatrie der Zukunft
       Die Trennung zwischen Körper und Geist ist in der modernen Forschung obsolet. Das Epizentrum deiner mentalen Gesundheit und Resilienz liegt nicht nur im Kopf, sondern zu einem Großteil in deinem Darm.
@@ -294,17 +302,41 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
   const [expandedTraining, setExpandedTraining] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   
+  const [trainingFilterCategory, setTrainingFilterCategory] = useState<string>('Alle');
+  const [trainingSortOrder, setTrainingSortOrder] = useState<'newest' | 'oldest' | 'alphabetical'>('newest');
+
   const allTrainings = useMemo(() => {
     const dynamicTrainings = deepTrainings.map(d => ({
       id: d.id,
       title: d.title,
       category: d.category,
       icon: ICON_MAP[d.iconName] || BookOpen,
+      createdAt: d.createdAt,
       content: d.content
     }));
-    // Reverse dynamic trainings so newest is first? Or keep chronological
     return [...DEEP_TRAINings, ...dynamicTrainings];
   }, [deepTrainings]);
+
+  const categories = useMemo(() => {
+    const cats = new Set(allTrainings.map(t => t.category));
+    return ['Alle', ...Array.from(cats)].sort();
+  }, [allTrainings]);
+
+  const filteredAndSortedTrainings = useMemo(() => {
+    let result = [...allTrainings];
+
+    if (trainingFilterCategory !== 'Alle') {
+      result = result.filter(t => t.category === trainingFilterCategory);
+    }
+
+    result.sort((a, b) => {
+      if (trainingSortOrder === 'newest') return b.createdAt - a.createdAt;
+      if (trainingSortOrder === 'oldest') return a.createdAt - b.createdAt;
+      return a.title.localeCompare(b.title);
+    });
+
+    return result;
+  }, [allTrainings, trainingFilterCategory, trainingSortOrder]);
 
   useEffect(() => {
     const now = new Date();
@@ -478,10 +510,51 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
              </div>
              
              <p className="text-neutral-400 text-sm leading-relaxed mb-6">
-               Als dein mentaler und physischer High-Performance Coach habe ich hier die wichtigsten psychologischen, anatomischen und kognitiven Fundamente zusammengetragen. Eine Auswahl wird täglich als Fokus-Thema hervorgehoben.
-             </p>
+                Als dein mentaler und physischer High-Performance Coach habe ich hier die wichtigsten psychologischen, anatomischen und kognitiven Fundamente zusammengetragen. Eine Auswahl wird täglich als Fokus-Thema hervorgehoben.
+              </p>
 
-             {/* Featured Training of the Day */}
+              {/* Filter and Sort Controls */}
+              <div className="flex flex-col sm:flex-row gap-4 mb-8">
+                <div className="flex-1">
+                  <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1 block px-1">Kategorie filtern</label>
+                  <div className="relative group">
+                    <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                    <select
+                      value={trainingFilterCategory}
+                      onChange={(e) => setTrainingFilterCategory(e.target.value)}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2.5 pl-10 pr-4 text-sm text-neutral-300 focus:outline-none focus:border-amber-500 transition-colors appearance-none"
+                    >
+                      {categories.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-500">
+                      ▼
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex-1">
+                  <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1 block px-1">Sortieren nach</label>
+                  <div className="relative group">
+                    <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                    <select
+                      value={trainingSortOrder}
+                      onChange={(e) => setTrainingSortOrder(e.target.value as any)}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2.5 pl-10 pr-4 text-sm text-neutral-300 focus:outline-none focus:border-amber-500 transition-colors appearance-none"
+                    >
+                      <option value="newest">Zuletzt hinzugefügt</option>
+                      <option value="oldest">Zuerst hinzugefügt</option>
+                      <option value="alphabetical">Name (A-Z)</option>
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-500">
+                      ▼
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Featured Training of the Day */}
              <div className="mb-8 p-1 bg-gradient-to-r from-amber-500/20 to-blue-500/20 rounded-2xl">
                <div className="bg-neutral-900 rounded-xl p-5 border border-white/5">
                  <div className="flex items-center gap-2 mb-3">
@@ -511,41 +584,60 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                </div>
              </div>
 
-             <div className="space-y-4">
-               {allTrainings.map(training => {
-                 const isExpanded = expandedTraining === training.id;
-                 const Icon = training.icon || BookOpen;
-                 return (
-                   <div key={training.id} className="border border-neutral-700 bg-neutral-950 rounded-2xl overflow-hidden transition-all duration-300">
-                     <button 
-                       onClick={() => setExpandedTraining(isExpanded ? null : training.id)}
-                       className="w-full text-left p-5 flex items-center justify-between hover:bg-neutral-900/50 transition-colors"
-                     >
-                       <div className="flex items-center gap-4">
-                         <div className="bg-neutral-800 p-3 rounded-xl">
-                           <Icon className="w-6 h-6 text-amber-500" />
-                         </div>
-                         <div>
-                           <div className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-1">{training.category}</div>
-                           <h4 className="text-lg font-bold text-white">{training.title}</h4>
-                         </div>
-                       </div>
-                       <div className={cn("text-neutral-400 transition-transform duration-300 transform", isExpanded ? "rotate-180" : "")}>
-                         ▼
-                       </div>
-                     </button>
-                     
-                     {isExpanded && (
-                       <div className="p-6 pt-2 border-t border-neutral-800 bg-neutral-900/30">
-                         <div className="prose prose-invert max-w-none prose-p:text-neutral-300 prose-headings:text-white">
-                           {renderMarkdown(training.content)}
-                         </div>
-                       </div>
-                     )}
-                   </div>
-                 );
-               })}
-             </div>
+              <div className="space-y-4">
+                {filteredAndSortedTrainings.length === 0 ? (
+                  <div className="text-center py-12 bg-neutral-950 border border-dashed border-neutral-800 rounded-3xl">
+                    <History className="w-10 h-10 text-neutral-700 mx-auto mb-3" />
+                    <p className="text-neutral-500 text-sm">Keine Module für diese Kriterien gefunden.</p>
+                    <button 
+                      onClick={() => { setTrainingFilterCategory('Alle'); setTrainingSortOrder('newest'); }}
+                      className="mt-4 text-xs font-bold text-amber-500 hover:text-amber-400"
+                    >
+                      Filter zurücksetzen
+                    </button>
+                  </div>
+                ) : (
+                  filteredAndSortedTrainings.map(training => {
+                    const isExpanded = expandedTraining === training.id;
+                    const Icon = training.icon || BookOpen;
+                    return (
+                      <div key={training.id} className="border border-neutral-800 bg-neutral-950 rounded-2xl overflow-hidden transition-all duration-300 hover:border-neutral-700">
+                        <button 
+                          onClick={() => setExpandedTraining(isExpanded ? null : training.id)}
+                          className="w-full text-left p-5 flex items-center justify-between hover:bg-neutral-900/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="bg-neutral-800 p-3 rounded-xl">
+                              <Icon className="w-6 h-6 text-amber-500" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">{training.category}</div>
+                                <div className="w-1 h-1 rounded-full bg-neutral-700" />
+                                <div className="text-[10px] font-medium text-neutral-500">
+                                  {format(training.createdAt, 'dd. MMM yyyy', { locale: de })}
+                                </div>
+                              </div>
+                              <h4 className="text-lg font-bold text-white">{training.title}</h4>
+                            </div>
+                          </div>
+                          <div className={cn("text-neutral-400 transition-transform duration-300 transform", isExpanded ? "rotate-180" : "")}>
+                            ▼
+                          </div>
+                        </button>
+                        
+                        {isExpanded && (
+                          <div className="p-6 pt-2 border-t border-neutral-800 bg-neutral-900/30">
+                            <div className="prose prose-invert max-w-none prose-p:text-neutral-300 prose-headings:text-white">
+                              {renderMarkdown(training.content)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
           </div>
         </div>
       )}

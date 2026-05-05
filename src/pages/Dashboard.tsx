@@ -8,7 +8,7 @@ import { startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, format, startOf
 import { de } from 'date-fns/locale';
 import { AnimatePresence, motion } from 'motion/react';
 import { DiaryEntry, SkillType, Quest } from '@/types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { DndContext, closestCenter, closestCorners, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -70,7 +70,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
   
   // Ensure all widgets are present in widgetOrder (for backwards compatibility with persisted state)
   useEffect(() => {
-    const allWidgets = ['avatar', 'level', 'streak', 'chart', 'recurring_chart', 'calendar', 'completed', 'today', 'reminders', 'settings'];
+    const allWidgets = ['avatar', 'level', 'streak', 'chart', 'trend', 'recurring_chart', 'calendar', 'completed', 'today', 'reminders', 'settings'];
     const missingWidgets = allWidgets.filter(w => !widgetOrder.includes(w));
     if (missingWidgets.length > 0) {
       updateWidgetOrder([...widgetOrder, ...missingWidgets]);
@@ -306,6 +306,56 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
     });
   }, [quests, chartDate]);
 
+  // Calculate 4-week trend data
+  const fourWeekTrendData = useMemo(() => {
+    const today = new Date();
+    const currentWeekStart = startOfWeek(today, { weekStartsOn: 1 });
+    
+    const weeks = [3, 2, 1, 0].map(offset => {
+      const weekStart = subWeeks(currentWeekStart, offset);
+      const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+      return { 
+        start: weekStart, 
+        end: weekEnd,
+        label: format(weekStart, 'dd.MM', { locale: de })
+      };
+    });
+
+    return weeks.map(week => {
+      const weekData: any = {
+        name: week.label,
+        Fitness: 0,
+        Fokus: 0,
+        Disziplin: 0,
+        Wissen: 0,
+        Soziales: 0,
+      };
+
+      quests.forEach(q => {
+        if (q.completed && q.completedAt && q.completedAt >= week.start.getTime() && q.completedAt <= week.end.getTime()) {
+          if (q.type === 'habit' && q.habitDirection === 'negative') {
+            weekData[q.skill] -= q.xpReward;
+          } else {
+            weekData[q.skill] += q.xpReward;
+          }
+        }
+        if (q.completions) {
+          q.completions.forEach(c => {
+            if (c.date >= week.start.getTime() && c.date <= week.end.getTime()) {
+              if (c.direction === 'negative') {
+                weekData[q.skill] -= q.xpReward;
+              } else {
+                weekData[q.skill] += q.xpReward;
+              }
+            }
+          });
+        }
+      });
+
+      return weekData;
+    });
+  }, [quests]);
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const total = payload.reduce((sum: number, entry: any) => sum + entry.value, 0);
@@ -447,6 +497,61 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                         <div className="text-sm font-bold text-neutral-400 uppercase tracking-widest mb-1">Tägliche Serie</div>
                         <div className="text-4xl font-black text-orange-500">{currentStreak}</div>
                         <div className="text-sm text-neutral-500 mt-2">Tage aktiv</div>
+                      </div>
+                    </SortableWidget>
+                  );
+                case 'trend':
+                  return (
+                    <SortableWidget key="trend" id="trend" className="col-span-1 lg:col-span-2">
+                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800">
+                        <div className="flex items-center justify-between mb-6">
+                          <div>
+                            <h3 className="text-xl font-bold flex items-center gap-2">
+                              <BarChart2 className="w-5 h-5 text-amber-500" />
+                              Fähigkeits-Trends (4 Wochen)
+                            </h3>
+                            <p className="text-xs text-neutral-500 mt-1 uppercase tracking-widest font-bold">Wöchentlicher EP-Fortschritt</p>
+                          </div>
+                        </div>
+
+                        <div className="h-[300px] w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={fourWeekTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#262626" />
+                              <XAxis 
+                                dataKey="name" 
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fill: '#737373', fontSize: 10, fontWeight: 'bold' }}
+                                dy={10}
+                              />
+                              <YAxis 
+                                axisLine={false} 
+                                tickLine={false} 
+                                tick={{ fill: '#737373', fontSize: 10, fontWeight: 'bold' }}
+                              />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#171717', border: '1px solid #262626', borderRadius: '12px', fontSize: '12px' }}
+                                itemStyle={{ fontWeight: 'bold' }}
+                              />
+                              <Legend 
+                                wrapperStyle={{ paddingTop: '20px', fontSize: '10px', textTransform: 'uppercase', fontWeight: 'bold' }}
+                              />
+                              {(Object.keys(CHART_COLORS) as SkillType[]).map((skill) => (
+                                <Line
+                                  key={skill}
+                                  type="monotone"
+                                  dataKey={skill}
+                                  stroke={CHART_COLORS[skill]}
+                                  strokeWidth={3}
+                                  dot={{ r: 4, strokeWidth: 2, fill: '#0a0a0a' }}
+                                  activeDot={{ r: 6, strokeWidth: 0 }}
+                                  animationDuration={1000}
+                                />
+                              ))}
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
                     </SortableWidget>
                   );
