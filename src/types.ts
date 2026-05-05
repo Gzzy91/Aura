@@ -85,6 +85,17 @@ export interface DeepTraining {
   createdAt: number;
 }
 
+export interface FoodEntry {
+  id: string;
+  date: number;
+  name: string;
+  calories: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  type: 'Frühstück' | 'Mittagessen' | 'Abendessen' | 'Snack';
+}
+
 export interface AppSettings {
   isPinEnabled: boolean;
   pin: string | null;

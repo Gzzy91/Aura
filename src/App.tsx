@@ -17,6 +17,7 @@ import { Diary } from './pages/Diary';
 import { Visions } from './pages/Visions';
 import { Focus } from './pages/Focus';
 import { Mentaltraining } from './pages/Mentaltraining';
+import { FoodJournal } from './pages/FoodJournal';
 import { PinLock } from './components/PinLock';
 import { Toaster, toast } from 'sonner';
 import { NotificationManager } from './components/NotificationManager';
@@ -146,6 +147,7 @@ function AppContent() {
           <Route path="/avatar" element={<Avatar />} />
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/diary" element={<Diary />} />
+          <Route path="/food" element={<FoodJournal />} />
           <Route path="/mentaltraining" element={<Mentaltraining setActiveTab={handleSetActiveTab} />} />
           <Route path="/coach" element={<AICoach />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

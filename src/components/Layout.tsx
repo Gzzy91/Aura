@@ -1,6 +1,6 @@
 import { ReactNode, useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { User as UserIcon, Target, Brain, Sparkles, Calendar, Book, Repeat, LogIn, LogOut, LayoutDashboard, Shield, Timer, Compass, Menu, X, Lightbulb } from 'lucide-react';
+import { User as UserIcon, Target, Brain, Sparkles, Calendar, Book, Repeat, LogIn, LogOut, LayoutDashboard, Shield, Timer, Compass, Menu, X, Lightbulb, Utensils } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from './Logo';
 import { useStore } from '@/store/useStore';
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { id: 'visions', icon: Compass, label: 'Lebensziele' },
   { id: 'quests', icon: Target, label: 'Quests' },
   { id: 'habits', icon: Repeat, label: 'Habits' },
+  { id: 'food', icon: Utensils, label: 'Food Journal' },
   { id: 'focus', icon: Timer, label: 'Fokus' },
   { id: 'mentaltraining', icon: Lightbulb, label: 'Mentaltraining' },
   { id: 'avatar', icon: UserIcon, label: 'Avatar' },

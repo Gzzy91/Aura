@@ -115,6 +115,22 @@
         "createdAt": { "type": "integer" }
       },
       "required": ["id", "title", "category", "iconName", "content", "createdAt"]
+    },
+    "FoodEntry": {
+      "title": "FoodEntry",
+      "description": "A food diary entry tracking calories and macros",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "integer" },
+        "name": { "type": "string" },
+        "calories": { "type": "integer" },
+        "protein": { "type": "number" },
+        "carbs": { "type": "number" },
+        "fat": { "type": "number" },
+        "type": { "type": "string", "enum": ["Frühstück", "Mittagessen", "Abendessen", "Snack"] }
+      },
+      "required": ["id", "date", "name", "calories", "type"]
     }
   },
   "firestore": {
@@ -141,6 +157,10 @@
     "/users/{userId}/deepTrainings/{trainingId}": {
       "schema": "DeepTraining",
       "description": "Generated daily training modules"
+    },
+    "/users/{userId}/foodEntries/{entryId}": {
+      "schema": "FoodEntry",
+      "description": "User's food journal entries"
     }
   }
 }

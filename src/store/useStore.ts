@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining } from '../types';
+import { UserStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry } from '../types';
 import { User } from 'firebase/auth';
-import { db, auth } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { toast } from 'sonner';
 import { triggerHapticFeedback } from '@/lib/utils';
 import { 
@@ -81,6 +81,7 @@ interface AppState {
   notifiedQuestIds: string[];
   widgetOrder: string[];
   deepTrainings: DeepTraining[];
+  foodEntries: FoodEntry[];
   lastTrainingGeneratedDate: string | null;
   setUser: (user: User | null) => void;
   setInitialized: (val: boolean) => void;
@@ -98,6 +99,9 @@ interface AppState {
   addDiaryEntry: (entry: Omit<DiaryEntry, 'id'>) => void;
   updateDiaryEntry: (id: string, updates: Partial<Omit<DiaryEntry, 'id'>>) => void;
   deleteDiaryEntry: (id: string) => void;
+  addFoodEntry: (entry: Omit<FoodEntry, 'id'>) => void;
+  updateFoodEntry: (id: string, updates: Partial<Omit<FoodEntry, 'id'>>) => void;
+  deleteFoodEntry: (id: string) => void;
   addVision: (vision: Omit<Vision, 'id' | 'createdAt' | 'completed'>) => void;
   updateVision: (id: string, updates: Partial<Vision>) => void;
   deleteVision: (id: string) => void;
@@ -153,6 +157,7 @@ export const useStore = create<AppState>()(
       notifiedQuestIds: [],
       widgetOrder: ['level', 'streak', 'chart', 'recurring_chart', 'calendar', 'today', 'reminders', 'settings'],
       deepTrainings: [],
+      foodEntries: [],
       lastTrainingGeneratedDate: null,
       
       setUser: (user) => set({ user, loading: false }),
@@ -309,6 +314,56 @@ export const useStore = create<AppState>()(
         const { user } = get();
         if (user) {
           deleteDoc(doc(db, 'users', user.uid, 'diaryEntries', id));
+        }
+      },
+
+      addFoodEntry: (entryData) => {
+        const id = crypto.randomUUID();
+        const entry: FoodEntry = { ...entryData, id, date: entryData.date || Date.now() };
+        
+        set((state) => ({
+          foodEntries: [entry, ...state.foodEntries].sort((a, b) => b.date - a.date)
+        }));
+
+        const { user } = get();
+        if (user) {
+          try {
+            setDoc(doc(db, 'users', user.uid, 'foodEntries', id), cleanData(entry));
+          } catch (error) {
+            handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/foodEntries/${id}`);
+          }
+        }
+      },
+
+      updateFoodEntry: (id, updates) => {
+        set((state) => ({
+          foodEntries: state.foodEntries
+            .map(e => e.id === id ? { ...e, ...updates } : e)
+            .sort((a, b) => b.date - a.date)
+        }));
+
+        const { user } = get();
+        if (user) {
+          try {
+            updateDoc(doc(db, 'users', user.uid, 'foodEntries', id), cleanUpdateData(updates));
+          } catch (error) {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/foodEntries/${id}`);
+          }
+        }
+      },
+
+      deleteFoodEntry: (id) => {
+        set((state) => ({
+          foodEntries: state.foodEntries.filter(e => e.id !== id)
+        }));
+
+        const { user } = get();
+        if (user) {
+          try {
+            deleteDoc(doc(db, 'users', user.uid, 'foodEntries', id));
+          } catch (error) {
+            handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/foodEntries/${id}`);
+          }
         }
       },
 
@@ -651,6 +706,7 @@ export const useStore = create<AppState>()(
         const visionsColRef = collection(db, 'users', userId, 'visions');
         const focusColRef = collection(db, 'users', userId, 'focusSessions');
         const deepColRef = collection(db, 'users', userId, 'deepTrainings');
+        const foodColRef = collection(db, 'users', userId, 'foodEntries');
 
         // Initial check: if user doc doesn't exist, upload current local state
         getDoc(userDocRef).then((docSnap) => {
@@ -667,6 +723,7 @@ export const useStore = create<AppState>()(
             state.visions.forEach(v => setDoc(doc(visionsColRef, v.id), cleanData(v)));
             state.focusSessions.forEach(f => setDoc(doc(focusColRef, f.id), cleanData(f)));
             state.deepTrainings.forEach(d => setDoc(doc(deepColRef, d.id), cleanData(d)));
+            state.foodEntries.forEach(f => setDoc(doc(foodColRef, f.id), cleanData(f)));
           }
         });
 
@@ -688,36 +745,56 @@ export const useStore = create<AppState>()(
             
             set({ isInitialized: true });
           }
+        }, (error) => {
+          handleFirestoreError(error, OperationType.GET, `users/${userId}`);
         });
 
         const unsubQuests = onSnapshot(questsColRef, (snapshot) => {
           const quests: Quest[] = [];
           snapshot.forEach((doc) => quests.push(doc.data() as Quest));
           set({ quests });
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, `users/${userId}/quests`);
         });
 
         const unsubDiary = onSnapshot(diaryColRef, (snapshot) => {
           const diaryEntries: DiaryEntry[] = [];
           snapshot.forEach((doc) => diaryEntries.push(doc.data() as DiaryEntry));
           set({ diaryEntries: diaryEntries.sort((a, b) => b.date - a.date) });
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, `users/${userId}/diaryEntries`);
         });
 
         const unsubVisions = onSnapshot(visionsColRef, (snapshot) => {
           const visions: Vision[] = [];
           snapshot.forEach((doc) => visions.push(doc.data() as Vision));
           set({ visions });
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, `users/${userId}/visions`);
         });
 
         const unsubFocus = onSnapshot(focusColRef, (snapshot) => {
           const focusSessions: FocusSession[] = [];
           snapshot.forEach((doc) => focusSessions.push(doc.data() as FocusSession));
           set({ focusSessions });
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, `users/${userId}/focusSessions`);
         });
 
         const unsubDeep = onSnapshot(deepColRef, (snapshot) => {
           const deepTrainings: DeepTraining[] = [];
           snapshot.forEach((doc) => deepTrainings.push(doc.data() as DeepTraining));
           set({ deepTrainings });
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, `users/${userId}/deepTrainings`);
+        });
+
+        const unsubFood = onSnapshot(foodColRef, (snapshot) => {
+          const foodEntries: FoodEntry[] = [];
+          snapshot.forEach((doc) => foodEntries.push(doc.data() as FoodEntry));
+          set({ foodEntries: foodEntries.sort((a, b) => b.date - a.date) });
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, `users/${userId}/foodEntries`);
         });
 
         return () => {
@@ -727,6 +804,7 @@ export const useStore = create<AppState>()(
           unsubVisions();
           unsubFocus();
           unsubDeep();
+          unsubFood();
         };
       }
     }),

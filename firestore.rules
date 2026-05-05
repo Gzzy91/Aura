@@ -137,6 +137,17 @@ service cloud.firestore {
              data.createdAt is int;
     }
 
+    function isValidFoodEntry(data) {
+      return data.id is string &&
+             data.date is int &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.calories is int && data.calories >= 0 &&
+             data.type in ['Frühstück', 'Mittagessen', 'Abendessen', 'Snack'] &&
+             (!('protein' in data) || data.protein is number) &&
+             (!('carbs' in data) || data.carbs is number) &&
+             (!('fat' in data) || data.fat is number);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -179,6 +190,13 @@ service cloud.firestore {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidId(trainingId) && isValidDeepTraining(request.resource.data);
         allow update: if isOwner(userId) && isValidId(trainingId) && isValidDeepTraining(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /foodEntries/{entryId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidId(entryId) && isValidFoodEntry(request.resource.data);
+        allow update: if isOwner(userId) && isValidId(entryId) && isValidFoodEntry(request.resource.data);
         allow delete: if isOwner(userId) || isAdmin();
       }
     }
