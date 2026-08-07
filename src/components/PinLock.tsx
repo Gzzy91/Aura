@@ -23,7 +23,7 @@ export function PinLock() {
     }
   }, [pin, settings.pin, setLocked]);
 
-  if (!isLocked || !settings.isPinEnabled) return null;
+  if (!isLocked || !settings.isPinEnabled || !settings.pin || settings.pin.length !== 4) return null;
 
   const handleNumberClick = (num: string) => {
     if (pin.length < 4) {
