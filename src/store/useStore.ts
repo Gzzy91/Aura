@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry } from '../types';
+import { UserStats, SkillStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry } from '../types';
 import { User } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { toast } from 'sonner';
@@ -111,8 +111,21 @@ interface AppState {
   updateWidgetOrder: (order: string[]) => void;
   equipItem: (category: 'head' | 'body' | 'legs' | 'feet' | 'weapon' | 'shield' | 'accessory', itemId: string | null) => void;
   setActiveSkin: (skinId: string) => void;
+  recalculateStats: () => void;
   syncWithFirestore: (userId: string) => () => void;
 }
+
+const SKILL_MAPPING: Record<string, SkillType> = {
+  'Focus': 'Fokus',
+  'Discipline': 'Disziplin',
+  'Knowledge': 'Wissen',
+  'Social': 'Soziales',
+  'Fitness': 'Fitness',
+  'Fokus': 'Fokus',
+  'Disziplin': 'Disziplin',
+  'Wissen': 'Wissen',
+  'Soziales': 'Soziales'
+};
 
 const INITIAL_STATS: UserStats = {
   level: 1,
@@ -137,6 +150,112 @@ const INITIAL_STATS: UserStats = {
   },
   activeSkinId: 'default',
 };
+
+export function calculateStatsFromHistory(
+  quests: Quest[],
+  focusSessions: FocusSession[],
+  currentStats?: UserStats
+): UserStats {
+  const skillXpMap: Record<SkillType, number> = {
+    Fitness: 0,
+    Fokus: 0,
+    Disziplin: 0,
+    Wissen: 0,
+    Soziales: 0,
+  };
+
+  // 1. Calculate XP from Quests & Habits
+  for (const q of quests || []) {
+    const rawSkill = q.skill;
+    const skill = SKILL_MAPPING[rawSkill] || 'Disziplin';
+    const xpReward = typeof q.xpReward === 'number' ? q.xpReward : 10;
+
+    if (q.type === 'habit') {
+      if (Array.isArray(q.completions)) {
+        for (const c of q.completions) {
+          if (c.direction === 'negative') {
+            skillXpMap[skill] -= xpReward;
+          } else {
+            skillXpMap[skill] += xpReward;
+          }
+        }
+      }
+    } else if (q.completed) {
+      skillXpMap[skill] += xpReward;
+    }
+  }
+
+  // 2. Calculate XP from Focus Sessions
+  for (const f of focusSessions || []) {
+    const rawSkill = f.skill;
+    const skill = SKILL_MAPPING[rawSkill] || 'Fokus';
+    const durationMinutes = typeof f.durationMinutes === 'number' ? f.durationMinutes : 0;
+    const xpGained = durationMinutes;
+    skillXpMap[skill] += xpGained;
+  }
+
+  const ALL_SKILLS: SkillType[] = ['Fitness', 'Fokus', 'Disziplin', 'Wissen', 'Soziales'];
+  
+  const skillsResult: Record<SkillType, SkillStats> = {
+    Fitness: { level: 1, xp: 0, xpToNextLevel: 50 },
+    Fokus: { level: 1, xp: 0, xpToNextLevel: 50 },
+    Disziplin: { level: 1, xp: 0, xpToNextLevel: 50 },
+    Wissen: { level: 1, xp: 0, xpToNextLevel: 50 },
+    Soziales: { level: 1, xp: 0, xpToNextLevel: 50 },
+  };
+
+  let totalOverallXp = 0;
+
+  for (const skill of ALL_SKILLS) {
+    const rawXp = Math.max(0, skillXpMap[skill] || 0);
+    totalOverallXp += rawXp;
+
+    let level = 1;
+    let xp = rawXp;
+    let xpToNextLevel = 50;
+    while (xp >= xpToNextLevel) {
+      xp -= xpToNextLevel;
+      level += 1;
+      xpToNextLevel = Math.floor(xpToNextLevel * 1.5);
+    }
+
+    skillsResult[skill] = { level, xp, xpToNextLevel };
+  }
+
+  let overallLevel = 1;
+  let overallXp = totalOverallXp;
+  let overallXpToNextLevel = 100;
+  while (overallXp >= overallXpToNextLevel) {
+    overallXp -= overallXpToNextLevel;
+    overallLevel += 1;
+    overallXpToNextLevel = Math.floor(overallXpToNextLevel * 1.5);
+  }
+
+  const baseStats = currentStats || INITIAL_STATS;
+
+  const finalLevel = Math.max(overallLevel, baseStats.level || 1);
+  const finalXp = finalLevel > overallLevel ? (baseStats.xp || 0) : overallXp;
+  const finalXpToNextLevel = finalLevel > overallLevel ? (baseStats.xpToNextLevel || 100) : overallXpToNextLevel;
+
+  const mergedSkills: Record<SkillType, SkillStats> = {} as any;
+  for (const skill of ALL_SKILLS) {
+    const calc = skillsResult[skill];
+    const existing = baseStats.skills?.[skill];
+    if (existing && existing.level > calc.level) {
+      mergedSkills[skill] = existing;
+    } else {
+      mergedSkills[skill] = calc;
+    }
+  }
+
+  return {
+    ...baseStats,
+    level: finalLevel,
+    xp: finalXp,
+    xpToNextLevel: finalXpToNextLevel,
+    skills: mergedSkills,
+  };
+}
 
 export const useStore = create<AppState>()(
   persist(
@@ -699,6 +818,15 @@ export const useStore = create<AppState>()(
         }
       },
 
+      recalculateStats: () => {
+        const state = get();
+        const newStats = calculateStatsFromHistory(state.quests, state.focusSessions, state.stats);
+        set({ stats: newStats });
+        if (state.user) {
+          updateDoc(doc(db, 'users', state.user.uid), cleanUpdateData({ stats: newStats }));
+        }
+      },
+
       syncWithFirestore: (userId) => {
         const userDocRef = doc(db, 'users', userId);
         const questsColRef = collection(db, 'users', userId, 'quests');
@@ -712,8 +840,9 @@ export const useStore = create<AppState>()(
         getDoc(userDocRef).then((docSnap) => {
           if (!docSnap.exists()) {
             const state = get();
+            const initialStats = calculateStatsFromHistory(state.quests, state.focusSessions, state.stats);
             setDoc(userDocRef, cleanData({
-              stats: state.stats,
+              stats: initialStats,
               widgetOrder: state.widgetOrder,
               notifiedQuestIds: state.notifiedQuestIds,
               lastTrainingGeneratedDate: state.lastTrainingGeneratedDate
@@ -735,12 +864,16 @@ export const useStore = create<AppState>()(
               set({ isLocked: true });
             }
 
+            const state = get();
+            const loadedStats = data.stats || state.stats;
+            const newStats = calculateStatsFromHistory(state.quests, state.focusSessions, loadedStats);
+
             set({ 
-              stats: data.stats || get().stats,
-              widgetOrder: data.widgetOrder || get().widgetOrder,
-              notifiedQuestIds: data.notifiedQuestIds || get().notifiedQuestIds,
-              settings: data.settings || get().settings,
-              lastTrainingGeneratedDate: data.lastTrainingGeneratedDate || get().lastTrainingGeneratedDate
+              stats: newStats,
+              widgetOrder: data.widgetOrder || state.widgetOrder,
+              notifiedQuestIds: data.notifiedQuestIds || state.notifiedQuestIds,
+              settings: data.settings || state.settings,
+              lastTrainingGeneratedDate: data.lastTrainingGeneratedDate || state.lastTrainingGeneratedDate
             });
             
             set({ isInitialized: true });
@@ -752,7 +885,9 @@ export const useStore = create<AppState>()(
         const unsubQuests = onSnapshot(questsColRef, (snapshot) => {
           const quests: Quest[] = [];
           snapshot.forEach((doc) => quests.push(doc.data() as Quest));
-          set({ quests });
+          const state = get();
+          const newStats = calculateStatsFromHistory(quests, state.focusSessions, state.stats);
+          set({ quests, stats: newStats });
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/quests`);
         });
@@ -776,7 +911,9 @@ export const useStore = create<AppState>()(
         const unsubFocus = onSnapshot(focusColRef, (snapshot) => {
           const focusSessions: FocusSession[] = [];
           snapshot.forEach((doc) => focusSessions.push(doc.data() as FocusSession));
-          set({ focusSessions });
+          const state = get();
+          const newStats = calculateStatsFromHistory(state.quests, focusSessions, state.stats);
+          set({ focusSessions, stats: newStats });
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/focusSessions`);
         });
@@ -854,8 +991,14 @@ export const useStore = create<AppState>()(
         return persistedState;
       },
       onRehydrateStorage: () => (state) => {
-        if (state && state.settings && state.settings.isPinEnabled) {
-          state.setLocked(true);
+        if (state) {
+          if (state.settings && state.settings.isPinEnabled) {
+            state.setLocked(true);
+          }
+          if (state.quests || state.focusSessions) {
+            const recalculated = calculateStatsFromHistory(state.quests || [], state.focusSessions || [], state.stats);
+            useStore.setState({ stats: recalculated });
+          }
         }
       }
     }
