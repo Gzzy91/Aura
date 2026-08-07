@@ -139,34 +139,43 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
   });
 
   useEffect(() => {
-    if ('Notification' in window) {
-      setPermission(Notification.permission);
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      try {
+        setPermission(Notification.permission);
+      } catch (e) {
+        console.warn('Could not read Notification permission:', e);
+      }
     }
   }, []);
 
   const requestPermission = async () => {
-    if (!('Notification' in window)) {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
       toast.error('Dein Browser unterstützt keine Desktop-Benachrichtigungen.');
       return;
     }
 
-    if (Notification.permission === 'denied') {
-      toast.error(
-        'Benachrichtigungen sind blockiert. Klicke auf das Schloss-Symbol in der Adressleiste deines Browsers, wähle "Benachrichtigungen" und setze sie auf "Zulassen". Lade die Seite danach neu.',
-        { duration: 6000 }
-      );
-      return;
-    }
+    try {
+      if (Notification.permission === 'denied') {
+        toast.error(
+          'Benachrichtigungen sind blockiert. Klicke auf das Schloss-Symbol in der Adressleiste deines Browsers, wähle "Benachrichtigungen" und setze sie auf "Zulassen". Lade die Seite danach neu.',
+          { duration: 6000 }
+        );
+        return;
+      }
 
-    const result = await Notification.requestPermission();
-    setPermission(result);
-    if (result === 'granted') {
-      toast.success('Benachrichtigungen aktiviert!');
-    } else if (result === 'denied') {
-      toast.error(
-        'Benachrichtigungen wurden blockiert. Klicke auf das Schloss-Symbol in der Adressleiste deines Browsers, wähle "Benachrichtigungen" und setze sie auf "Zulassen". Lade die Seite danach neu.',
-        { duration: 6000 }
-      );
+      const result = await Notification.requestPermission();
+      setPermission(result);
+      if (result === 'granted') {
+        toast.success('Benachrichtigungen aktiviert!');
+      } else if (result === 'denied') {
+        toast.error(
+          'Benachrichtigungen wurden blockiert. Klicke auf das Schloss-Symbol in der Adressleiste deines Browsers, wähle "Benachrichtigungen" und setze sie auf "Zulassen". Lade die Seite danach neu.',
+          { duration: 6000 }
+        );
+      }
+    } catch (err) {
+      console.warn('Error requesting Notification permission:', err);
+      toast.error('Benachrichtigungen werden von diesem Gerät/Browser nicht unterstützt.');
     }
   };
 

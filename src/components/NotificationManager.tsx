@@ -3,6 +3,7 @@ import { useStore } from '@/store/useStore';
 import { toast } from 'sonner';
 import { Bell } from 'lucide-react';
 import { ReminderTiming } from '@/types';
+import { sendBrowserNotification } from '@/lib/notification';
 
 const getReminderOffset = (timing: ReminderTiming): number => {
   switch (timing) {
@@ -37,13 +38,11 @@ export function NotificationManager() {
             duration: 10000,
           });
 
-          // Trigger browser notification if permitted
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('Quest Erinnerung', {
-              body: `Deine Quest "${quest.title}" ist bald fällig!`,
-              icon: '/favicon.ico' // Assuming a favicon exists
-            });
-          }
+          // Trigger browser notification safely
+          sendBrowserNotification('Quest Erinnerung', {
+            body: `Deine Quest "${quest.title}" ist bald fällig!`,
+            icon: '/favicon.ico'
+          });
 
           markNotified(quest.id);
         }
