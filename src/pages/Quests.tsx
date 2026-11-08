@@ -1,25 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useStore } from '@/store/useStore';
 import { 
   Check, 
   X, 
   CheckCircle2, 
-  XCircle, 
   Plus, 
   History, 
   Target, 
   ListTodo, 
   Calendar, 
-  Clock, 
   RotateCcw, 
   Search, 
   Repeat, 
-  PlusCircle, 
-  MinusCircle, 
   Filter, 
   ChevronDown, 
   ChevronRight,
-  Sparkles
+  ChevronLeft,
+  CalendarDays,
+  Sparkles,
+  Award
 } from 'lucide-react';
 import { SkillType, Quest } from '@/types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -27,7 +26,19 @@ import { cn, SKILL_COLORS, SKILL_BG_COLORS, SKILL_BORDER_COLORS } from '@/lib/ut
 import { QuestDetailsModal } from '@/components/QuestDetailsModal';
 import { DeleteConfirmationModal } from '@/components/DeleteConfirmationModal';
 import { QuestModal } from '@/components/QuestModal';
-import { isSameDay, isSameWeek, isSameMonth, isSameYear, isTomorrow } from 'date-fns';
+import { 
+  isSameDay, 
+  isSameWeek, 
+  isSameMonth, 
+  isSameYear, 
+  isTomorrow, 
+  isToday, 
+  isYesterday, 
+  addDays, 
+  subDays, 
+  format 
+} from 'date-fns';
+import { de } from 'date-fns/locale';
 import { toast } from 'sonner';
 
 type TimeFilter = 'all' | 'today' | 'week' | 'month' | 'year';
@@ -54,6 +65,11 @@ export function Quests() {
   const [completingType, setCompletingType] = useState<'success' | 'failed' | null>(null);
   const [expandedSubtasksId, setExpandedSubtasksId] = useState<string | null>(null);
 
+  // History Day Navigation
+  const [historyDate, setHistoryDate] = useState<Date>(new Date());
+  const [historyViewMode, setHistoryViewMode] = useState<'day' | 'all'>('day');
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSkills, setFilterSkills] = useState<SkillType[]>([]);
@@ -61,7 +77,6 @@ export function Quests() {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [sortOption, setSortOption] = useState<SortOption>('date');
   const [showFilters, setShowFilters] = useState(false);
-  const [isTagsDropdownOpen, setIsTagsDropdownOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -150,7 +165,32 @@ export function Quests() {
 
   const activeQuests = sortQuests(filteredQuests.filter(q => !q.completed && (!q.dueDate || isDueTodayOrEarlier(q.dueDate))), 'active');
   const upcomingQuests = sortQuests(filteredQuests.filter(q => !q.completed && q.dueDate && !isDueTodayOrEarlier(q.dueDate)), 'upcoming');
-  const completedQuests = sortQuests(filteredQuests.filter(q => q.completed), 'history');
+  const allCompletedQuests = sortQuests(filteredQuests.filter(q => q.completed), 'history');
+
+  // Completed quests for the selected history day
+  const dayCompletedQuests = useMemo(() => {
+    return allCompletedQuests.filter(q => {
+      const compDate = q.completedAt || q.createdAt;
+      return isSameDay(new Date(compDate), historyDate);
+    });
+  }, [allCompletedQuests, historyDate]);
+
+  // Quests to display in history view
+  const displayedHistoryQuests = historyViewMode === 'day' ? dayCompletedQuests : allCompletedQuests;
+
+  // Day metrics for history
+  const daySuccessCount = dayCompletedQuests.filter(q => !q.failed).length;
+  const dayFailedCount = dayCompletedQuests.filter(q => q.failed).length;
+  const dayXpEarned = dayCompletedQuests.reduce((acc, q) => acc + (!q.failed ? q.xpReward : 0), 0);
+
+  // Find latest active history date if user wants to jump
+  const latestCompletedDate = useMemo(() => {
+    const dates = quests
+      .filter(q => q.type !== 'habit' && q.completed && (q.completedAt || q.createdAt))
+      .map(q => new Date(q.completedAt || q.createdAt))
+      .sort((a, b) => b.getTime() - a.getTime());
+    return dates.length > 0 ? dates[0] : null;
+  }, [quests]);
 
   const totalActiveCount = quests.filter(q => q.type !== 'habit' && !q.completed && (!q.dueDate || isDueTodayOrEarlier(q.dueDate))).length;
   const totalUpcomingCount = quests.filter(q => q.type !== 'habit' && !q.completed && q.dueDate && !isDueTodayOrEarlier(q.dueDate)).length;
@@ -165,6 +205,46 @@ export function Quests() {
     setTimeFilter('all');
     setFilterTags([]);
     setSearchQuery('');
+  };
+
+  // Day Navigation Functions
+  const handlePrevDay = () => {
+    setHistoryDate(prev => subDays(prev, 1));
+  };
+
+  const handleNextDay = () => {
+    if (isToday(historyDate)) return;
+    setHistoryDate(prev => addDays(prev, 1));
+  };
+
+  const handleToday = () => {
+    setHistoryDate(new Date());
+  };
+
+  // Touch Swipe Handlers for History Day Navigation
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null || historyViewMode !== 'day') return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchEndX - touchStartX;
+    if (diff > 50) {
+      // Swiped right -> go to previous day
+      handlePrevDay();
+    } else if (diff < -50) {
+      // Swiped left -> go to next day
+      handleNextDay();
+    }
+    setTouchStartX(null);
+  };
+
+  const getHistoryDayTitle = (date: Date) => {
+    if (isToday(date)) return 'Heute';
+    if (isYesterday(date)) return 'Gestern';
+    if (isTomorrow(date)) return 'Morgen';
+    return format(date, 'EEEE', { locale: de });
   };
 
   const handleCompleteSuccess = (quest: Quest) => {
@@ -240,11 +320,11 @@ export function Quests() {
           <div className="flex items-center gap-2">
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">Quests</h2>
             <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
-              {view === 'active' ? activeQuests.length : view === 'upcoming' ? upcomingQuests.length : completedQuests.length}
+              {view === 'active' ? activeQuests.length : view === 'upcoming' ? upcomingQuests.length : (historyViewMode === 'day' ? dayCompletedQuests.length : allCompletedQuests.length)}
             </span>
           </div>
           <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
-            Komprimierte Übersicht deiner täglichen Aufgaben
+            Komprimierte Übersicht deiner täglichen Aufgaben & Historie
           </p>
         </div>
 
@@ -482,8 +562,155 @@ export function Quests() {
         </AnimatePresence>
       </div>
 
+      {/* HISTORY DAY-BY-DAY NAVIGATION CONTROLLER (Visible when view === 'history') */}
+      {view === 'history' && (
+        <div className="space-y-2">
+          {/* Day Navigation Switcher Bar with Left and Right Controls */}
+          <div className="bg-neutral-900/90 border border-neutral-800 rounded-2xl p-2 sm:p-2.5 shadow-md">
+            <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+              {/* Links: Vorheriger Tag Button */}
+              <button
+                type="button"
+                onClick={handlePrevDay}
+                className="p-2 sm:px-3 sm:py-2 rounded-xl bg-neutral-800/90 hover:bg-neutral-700 text-neutral-200 hover:text-white transition-all active:scale-95 flex items-center gap-1.5 text-xs font-semibold shrink-0"
+                title="Einen Tag zurück"
+                aria-label="Vorheriger Tag"
+              >
+                <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+                <span className="hidden sm:inline">Vortag</span>
+              </button>
+
+              {/* Center: Selected Day Header */}
+              <div className="flex flex-col items-center justify-center text-center flex-1 min-w-0 px-1">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <span className="text-sm sm:text-base font-bold text-white truncate">
+                    {getHistoryDayTitle(historyDate)}
+                  </span>
+                  
+                  {!isToday(historyDate) && (
+                    <button
+                      type="button"
+                      onClick={handleToday}
+                      className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors border border-amber-500/30 shrink-0"
+                    >
+                      Heute
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1 text-[11px] text-neutral-400 mt-0.5 truncate">
+                  <Calendar className="w-3 h-3 text-amber-500/80 shrink-0" />
+                  <span>{format(historyDate, 'd. MMMM yyyy', { locale: de })}</span>
+                </div>
+              </div>
+
+              {/* Right Controls: Date Picker & Rechts (Nächster Tag) Button */}
+              <div className="flex items-center gap-1 shrink-0">
+                {/* Native Date Picker Icon Button */}
+                <label 
+                  className="p-2 rounded-xl bg-neutral-800/70 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-all cursor-pointer relative"
+                  title="Bestimmtes Datum auswählen"
+                >
+                  <CalendarDays className="w-4 h-4" />
+                  <input 
+                    type="date"
+                    value={format(historyDate, 'yyyy-MM-dd')}
+                    max={format(new Date(), 'yyyy-MM-dd')}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [year, month, day] = e.target.value.split('-').map(Number);
+                        setHistoryDate(new Date(year, month - 1, day, 12, 0, 0));
+                      }
+                    }}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  />
+                </label>
+
+                {/* Rechts: Nächster Tag Button */}
+                <button
+                  type="button"
+                  onClick={handleNextDay}
+                  disabled={isToday(historyDate)}
+                  className={cn(
+                    "p-2 sm:px-3 sm:py-2 rounded-xl transition-all flex items-center gap-1.5 text-xs font-semibold",
+                    isToday(historyDate)
+                      ? "opacity-30 cursor-not-allowed text-neutral-500 bg-neutral-800/30"
+                      : "bg-neutral-800/90 hover:bg-neutral-700 text-neutral-200 hover:text-white active:scale-95"
+                  )}
+                  title="Einen Tag vor"
+                  aria-label="Nächster Tag"
+                >
+                  <span className="hidden sm:inline">Folgetag</span>
+                  <ChevronRight className="w-4 h-4 stroke-[2.5]" />
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-bar: Day Metrics Summary & View Mode Switch */}
+            <div className="mt-2 pt-2 border-t border-neutral-800/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+              {/* Daily KPI Badges */}
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span className="px-2 py-0.5 rounded-lg bg-neutral-950/80 border border-neutral-800 text-neutral-300 font-medium text-[11px]">
+                  {dayCompletedQuests.length} {dayCompletedQuests.length === 1 ? 'Quest' : 'Quests'}
+                </span>
+                {daySuccessCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold text-[11px] flex items-center gap-1">
+                    <Check className="w-3 h-3 stroke-[2.5]" />
+                    {daySuccessCount} geschafft
+                  </span>
+                )}
+                {dayFailedCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 font-semibold text-[11px] flex items-center gap-1">
+                    <X className="w-3 h-3 stroke-[2.5]" />
+                    {dayFailedCount} nicht durchgeführt
+                  </span>
+                )}
+                {dayXpEarned > 0 && (
+                  <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono font-bold text-[11px] flex items-center gap-1">
+                    <Award className="w-3 h-3" />
+                    +{dayXpEarned} EP
+                  </span>
+                )}
+              </div>
+
+              {/* Toggle: Tagesansicht vs. Alle */}
+              <div className="bg-neutral-950 p-0.5 rounded-lg border border-neutral-800/80 flex items-center">
+                <button
+                  type="button"
+                  onClick={() => setHistoryViewMode('day')}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-[10px] font-semibold transition-colors",
+                    historyViewMode === 'day' 
+                      ? "bg-neutral-800 text-white" 
+                      : "text-neutral-500 hover:text-neutral-300"
+                  )}
+                >
+                  Tagesansicht
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryViewMode('all')}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-[10px] font-semibold transition-colors",
+                    historyViewMode === 'all' 
+                      ? "bg-neutral-800 text-white" 
+                      : "text-neutral-500 hover:text-neutral-300"
+                  )}
+                >
+                  Alle ({allCompletedQuests.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Quests List Section */}
-      <div className="space-y-2">
+      <div 
+        className="space-y-2 min-h-[200px]"
+        onTouchStart={view === 'history' ? handleTouchStart : undefined}
+        onTouchEnd={view === 'history' ? handleTouchEnd : undefined}
+      >
         <AnimatePresence mode="popLayout">
           {/* ACTIVE OR UPCOMING VIEW */}
           {(view === 'active' || view === 'upcoming') && (
@@ -540,7 +767,6 @@ export function Quests() {
                         : isFailedAction
                         ? "bg-rose-950/40 border-rose-500/60 scale-[0.99] opacity-75"
                         : "bg-neutral-900/90 hover:bg-neutral-850 border-neutral-800/90",
-                      // Clean subtle left color accent
                       "border-l-[4px]",
                       SKILL_BORDER_COLORS[quest.skill]
                     )}
@@ -608,19 +834,16 @@ export function Quests() {
 
                         {/* Single-line compact metadata row */}
                         <div className="flex items-center gap-2 mt-0.5 text-xs text-neutral-400 overflow-hidden">
-                          {/* Skill label */}
                           <span className={cn("font-medium text-[11px] shrink-0", SKILL_COLORS[quest.skill])}>
                             {quest.skill}
                           </span>
 
                           <span className="text-neutral-600 shrink-0">•</span>
 
-                          {/* XP */}
                           <span className="font-mono text-amber-400 font-semibold text-[11px] shrink-0">
                             +{quest.xpReward} EP
                           </span>
 
-                          {/* Due Date Indicator */}
                           {dueInfo && (
                             <>
                               <span className="text-neutral-600 shrink-0">•</span>
@@ -630,7 +853,6 @@ export function Quests() {
                             </>
                           )}
 
-                          {/* Subtasks pill if present */}
                           {totalSubtasksCount > 0 && (
                             <>
                               <span className="text-neutral-600 shrink-0">•</span>
@@ -648,7 +870,6 @@ export function Quests() {
                             </>
                           )}
 
-                          {/* First tag preview if available */}
                           {quest.tags && quest.tags.length > 0 && (
                             <span className="hidden md:inline-block text-[10px] text-neutral-500 truncate shrink-0">
                               #{quest.tags[0]}
@@ -663,7 +884,7 @@ export function Quests() {
                       </div>
                     </div>
 
-                    {/* Expandable Subtasks Inline Section (if tapped) */}
+                    {/* Expandable Subtasks Inline Section */}
                     <AnimatePresence>
                       {isSubtasksExpanded && quest.subtasks && quest.subtasks.length > 0 && (
                         <motion.div
@@ -709,26 +930,46 @@ export function Quests() {
 
           {/* HISTORY VIEW (VERLAUF) */}
           {view === 'history' && (
-            completedQuests.length === 0 ? (
+            displayedHistoryQuests.length === 0 ? (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 className="text-center py-12 px-4 text-neutral-500 border border-dashed border-neutral-800 rounded-2xl bg-neutral-900/20"
               >
-                {searchQuery || activeFilterCount > 0 ? (
-                  <p>Keine passenden Einträge im Verlauf gefunden.</p>
-                ) : (
-                  <p>Noch keine Quests im Verlauf vorhanden.</p>
-                )}
+                <div className="space-y-3">
+                  <Calendar className="w-8 h-8 text-neutral-600 mx-auto" />
+                  <div>
+                    <p className="text-sm font-medium text-neutral-300">
+                      {historyViewMode === 'day' 
+                        ? `Keine Quests für ${getHistoryDayTitle(historyDate)} (${format(historyDate, 'd. MMM', { locale: de })})`
+                        : "Keine passenden Einträge im Verlauf gefunden."}
+                    </p>
+                    <p className="text-xs text-neutral-500 mt-1">
+                      {historyViewMode === 'day' 
+                        ? "Verwende die Pfeile oben oder wische nach links/rechts, um andere Tage aufzurufen."
+                        : "Schließe Quests ab, um deinen Verlauf aufzubauen."}
+                    </p>
+                  </div>
+
+                  {historyViewMode === 'day' && latestCompletedDate && !isSameDay(latestCompletedDate, historyDate) && (
+                    <button
+                      type="button"
+                      onClick={() => setHistoryDate(latestCompletedDate)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-neutral-800 hover:bg-neutral-700 text-amber-400 border border-neutral-700 transition-colors"
+                    >
+                      <span>Zum letzten aktiven Tag springen ({format(latestCompletedDate, 'd. MMM', { locale: de })})</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </motion.div>
             ) : (
-              completedQuests.map(quest => {
+              displayedHistoryQuests.map(quest => {
                 const isFailed = quest.failed === true;
-                const formattedDate = new Date(quest.completedAt || quest.createdAt).toLocaleDateString('de-DE', {
-                  day: 'numeric',
-                  month: 'short'
-                });
+                const compDateObj = new Date(quest.completedAt || quest.createdAt);
+                const formattedTime = compDateObj.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                const formattedDate = compDateObj.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' });
 
                 return (
                   <motion.div
@@ -791,7 +1032,7 @@ export function Quests() {
                           )}
                           <span className="text-neutral-600">•</span>
                           <span className="text-[10px] text-neutral-500">
-                            {formattedDate}
+                            {historyViewMode === 'day' ? `${formattedTime} Uhr` : `${formattedDate}, ${formattedTime}`}
                           </span>
                         </div>
                       </div>
