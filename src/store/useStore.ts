@@ -89,6 +89,7 @@ interface AppState {
   updateSettings: (updates: Partial<{ isPinEnabled: boolean; pin: string | null }>) => void;
   addQuest: (quest: Omit<Quest, 'id' | 'completed' | 'createdAt'>) => void;
   completeQuest: (id: string, isNegativeHabit?: boolean) => void;
+  failQuest: (id: string) => void;
   toggleSubtask: (questId: string, subtaskId: string) => void;
   deleteQuest: (id: string) => void;
   reopenQuest: (id: string) => void;
@@ -180,7 +181,7 @@ export function calculateStatsFromHistory(
           }
         }
       }
-    } else if (q.completed) {
+    } else if (q.completed && !q.failed) {
       skillXpMap[skill] += xpReward;
     }
   }
@@ -627,6 +628,97 @@ export const useStore = create<AppState>()(
         }
       },
 
+      failQuest: (id) => {
+        const state = get();
+        const quest = state.quests.find(q => q.id === id);
+        if (!quest || quest.completed) return;
+
+        triggerHapticFeedback([40, 40]);
+
+        const { user } = get();
+        let nextQuests = state.quests.map(q => q.id === id ? {
+          ...q,
+          completed: true,
+          failed: true,
+          completedAt: Date.now()
+        } : q);
+
+        if (user) {
+          updateDoc(doc(db, 'users', user.uid, 'quests', id), cleanUpdateData({
+            completed: true,
+            failed: true,
+            completedAt: Date.now()
+          })).catch(error => {
+            console.error("Firestore update failed:", error);
+            toast.error("Fehler beim Aktualisieren der Quest");
+          });
+        }
+
+        if (quest.recurrence && quest.recurrence !== 'none') {
+          const date = new Date(quest.dueDate || Date.now());
+          if (quest.recurrence === 'daily') date.setDate(date.getDate() + 1);
+          else if (quest.recurrence === 'weekly') {
+            if (quest.recurrenceDays && quest.recurrenceDays.length > 0) {
+              let found = false;
+              for (let i = 1; i <= 7; i++) {
+                const nextDate = new Date(date);
+                nextDate.setDate(date.getDate() + i);
+                if (quest.recurrenceDays.includes(nextDate.getDay())) {
+                  date.setTime(nextDate.getTime());
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) date.setDate(date.getDate() + 7);
+            } else {
+              date.setDate(date.getDate() + 7);
+            }
+          } else if (quest.recurrence === 'monthly') {
+            if (quest.recurrenceDays && quest.recurrenceDays.length > 0) {
+              let found = false;
+              for (let i = 0; i < 12; i++) {
+                const nextMonth = new Date(date);
+                nextMonth.setMonth(date.getMonth() + i);
+                const sortedDays = [...quest.recurrenceDays].sort((a, b) => a - b);
+                for (const day of sortedDays) {
+                  const candidate = new Date(nextMonth);
+                  const lastDayOfMonth = new Date(candidate.getFullYear(), candidate.getMonth() + 1, 0).getDate();
+                  candidate.setDate(Math.min(day, lastDayOfMonth));
+                  if (candidate.getTime() > date.getTime()) {
+                    date.setTime(candidate.getTime());
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
+              }
+              if (!found) date.setMonth(date.getMonth() + 1);
+            } else {
+              date.setMonth(date.getMonth() + 1);
+            }
+          }
+
+          const recurringQuest: Quest = {
+            ...quest,
+            id: crypto.randomUUID(),
+            completed: false,
+            failed: false,
+            completedAt: undefined,
+            createdAt: Date.now(),
+            dueDate: date.getTime(),
+            subtasks: quest.subtasks?.map(s => ({ ...s, completed: false }))
+          };
+          nextQuests.push(recurringQuest);
+
+          if (user) {
+            setDoc(doc(db, 'users', user.uid, 'quests', recurringQuest.id), cleanData(recurringQuest));
+          }
+        }
+
+        set({ quests: nextQuests });
+        toast.info(`"${quest.title}" als nicht durchgeführt markiert`);
+      },
+
       toggleSubtask: (questId, subtaskId) => {
         triggerHapticFeedback(30);
         set((state) => ({
@@ -653,7 +745,7 @@ export const useStore = create<AppState>()(
         if (!quest) return;
 
         let newStats = { ...state.stats, skills: { ...state.stats.skills } };
-        if (quest.completed) {
+        if (quest.completed && !quest.failed) {
           newStats.xp -= quest.xpReward;
           while (newStats.xp < 0 && newStats.level > 1) {
             newStats.level -= 1;
@@ -690,30 +782,33 @@ export const useStore = create<AppState>()(
         if (!quest || !quest.completed) return;
 
         let newStats = { ...state.stats, skills: { ...state.stats.skills } };
-        newStats.xp -= quest.xpReward;
-        while (newStats.xp < 0 && newStats.level > 1) {
-          newStats.level -= 1;
-          newStats.xpToNextLevel = Math.ceil(newStats.xpToNextLevel / 1.5);
-          newStats.xp += newStats.xpToNextLevel;
+        if (!quest.failed) {
+          newStats.xp -= quest.xpReward;
+          while (newStats.xp < 0 && newStats.level > 1) {
+            newStats.level -= 1;
+            newStats.xpToNextLevel = Math.ceil(newStats.xpToNextLevel / 1.5);
+            newStats.xp += newStats.xpToNextLevel;
+          }
+          if (newStats.xp < 0) newStats.xp = 0;
+          const skillStats = { ...newStats.skills[quest.skill] };
+          skillStats.xp -= quest.xpReward;
+          while (skillStats.xp < 0 && skillStats.level > 1) {
+            skillStats.level -= 1;
+            skillStats.xpToNextLevel = Math.ceil(skillStats.xpToNextLevel / 1.5);
+            skillStats.xp += skillStats.xpToNextLevel;
+          }
+          if (skillStats.xp < 0) skillStats.xp = 0;
+          newStats.skills[quest.skill] = skillStats;
         }
-        if (newStats.xp < 0) newStats.xp = 0;
-        const skillStats = { ...newStats.skills[quest.skill] };
-        skillStats.xp -= quest.xpReward;
-        while (skillStats.xp < 0 && skillStats.level > 1) {
-          skillStats.level -= 1;
-          skillStats.xpToNextLevel = Math.ceil(skillStats.xpToNextLevel / 1.5);
-          skillStats.xp += skillStats.xpToNextLevel;
-        }
-        if (skillStats.xp < 0) skillStats.xp = 0;
-        newStats.skills[quest.skill] = skillStats;
 
-        const newQuests = state.quests.map(q => q.id === id ? { ...q, completed: false, completedAt: undefined } : q);
+        const newQuests = state.quests.map(q => q.id === id ? { ...q, completed: false, failed: false, completedAt: undefined } : q);
         set({ quests: newQuests, stats: newStats });
 
         const { user } = get();
         if (user) {
           updateDoc(doc(db, 'users', user.uid, 'quests', id), {
             completed: false,
+            failed: false,
             completedAt: deleteField()
           });
           updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));

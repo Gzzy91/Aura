@@ -34,7 +34,7 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
                 )}
               </div>
               <p className="text-neutral-400 text-sm mt-1">
-                {quest.completed ? 'Abgeschlossen am ' : 'Erstellt am '}
+                {quest.completed ? (quest.failed ? 'Nicht durchgeführt am ' : 'Abgeschlossen am ') : 'Erstellt am '}
                 {new Date(quest.completedAt || quest.createdAt).toLocaleDateString('de-DE', {
                   weekday: 'long',
                   year: 'numeric',
@@ -101,8 +101,10 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
               <span className={cn("font-bold text-lg", SKILL_COLORS[quest.skill])}>{quest.skill}</span>
             </div>
             <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 flex flex-col items-center justify-center text-center">
-              <span className="text-sm text-neutral-500 mb-1">{quest.completed ? 'EP verdient' : 'EP Belohnung'}</span>
-              <span className="font-bold text-lg text-amber-500">+{quest.xpReward} EP</span>
+              <span className="text-sm text-neutral-500 mb-1">{quest.completed ? (quest.failed ? 'Status' : 'EP verdient') : 'EP Belohnung'}</span>
+              <span className={cn("font-bold text-lg", quest.failed ? "text-rose-400" : "text-amber-500")}>
+                {quest.failed ? 'Nicht durchgeführt (0 EP)' : `+${quest.xpReward} EP`}
+              </span>
             </div>
           </div>
 

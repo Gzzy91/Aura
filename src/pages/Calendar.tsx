@@ -26,7 +26,8 @@ import {
   Download,
   ArrowUp,
   ArrowRight,
-  ArrowDown
+  ArrowDown,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -290,13 +291,17 @@ export function Calendar() {
                       className={cn(
                         "p-3 rounded-xl border transition-all cursor-pointer group",
                         quest.completed 
-                          ? "bg-green-500/5 border-green-500/20 hover:border-green-500/40" 
+                          ? (quest.failed ? "bg-rose-500/5 border-rose-500/20 hover:border-rose-500/40" : "bg-green-500/5 border-green-500/20 hover:border-green-500/40")
                           : "bg-neutral-950 border-neutral-800 hover:border-neutral-700"
                       )}
                     >
                       <div className="flex items-center gap-3">
                         {quest.completed ? (
-                          <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
+                          quest.failed ? (
+                            <X className="w-5 h-5 text-rose-400 shrink-0" />
+                          ) : (
+                            <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
+                          )
                         ) : (
                           <Target className="w-5 h-5 text-amber-500 shrink-0" />
                         )}
@@ -308,7 +313,11 @@ export function Calendar() {
                             {quest.title}
                           </h4>
                           <div className="flex items-center gap-2 text-[10px] text-neutral-500 mt-0.5">
-                            <span className="text-amber-500/70">+{quest.xpReward} EP</span>
+                            {quest.failed ? (
+                              <span className="text-rose-400 font-semibold">Nicht durchgeführt</span>
+                            ) : (
+                              <span className="text-amber-500/70">+{quest.xpReward} EP</span>
+                            )}
                             <span>•</span>
                             <span>{quest.skill}</span>
                             {quest.dueDate && isSameDay(new Date(quest.dueDate), selectedDay!) && (

@@ -109,6 +109,7 @@ export interface Quest {
   skill: SkillType;
   xpReward: number;
   completed: boolean;
+  failed?: boolean;
   type: 'daily' | 'habit';
   habitDirection?: 'positive' | 'negative' | 'both';
   createdAt: number;
