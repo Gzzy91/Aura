@@ -25,13 +25,15 @@ import { useStore } from './store/useStore';
 import { triggerLevelUpConfetti } from './lib/confetti';
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { startOfDay } from 'date-fns';
+import { recordBrowserActivityHeartbeat } from './services/healthSyncService';
 
 import { Login } from './pages/Login';
 
 const INACTIVITY_TIMEOUT = 1 * 60 * 1000; // 1 minute
 
 function AppContent() {
-  const { user, loading, stats, settings, setLocked, setUser, syncWithFirestore } = useStore();
+  const { user, loading, questsSynced, quests, stats, settings, setLocked, setUser, syncWithFirestore } = useStore();
   const prevLevelRef = useRef(stats.level);
   const lastActivityRef = useRef<number>(Date.now());
   const navigate = useNavigate();
@@ -107,6 +109,78 @@ function AppContent() {
     }
     prevLevelRef.current = stats.level;
   }, [stats.level]);
+
+  const runAutoFailCheck = () => {
+    const {
+      user: currentUser,
+      questsSynced: synced,
+      quests: currentQuests,
+      autoFailOverdueQuests,
+    } = useStore.getState();
+    if (currentUser && !synced) return;
+
+    const startOfTodayMs = startOfDay(new Date()).getTime();
+    const hasOverduePastQuests = currentQuests.some(
+      (q) =>
+        q.type !== 'habit' &&
+        !q.completed &&
+        typeof q.dueDate === 'number' &&
+        q.dueDate < startOfTodayMs
+    );
+    if (!hasOverduePastQuests) return;
+
+    const count = autoFailOverdueQuests();
+    if (count > 0) {
+      toast.info(
+        `${count} überfällige ${count === 1 ? 'Quest' : 'Quests'} von früheren Tagen automatisch als nicht durchgeführt abgehakt`,
+        { id: 'auto-fail-overdue' }
+      );
+    }
+  };
+
+  useEffect(() => {
+    runAutoFailCheck();
+  }, [user, questsSynced, quests]);
+
+  useEffect(() => {
+    recordBrowserActivityHeartbeat();
+
+    let lastBeat = Date.now();
+    const handleBeat = () => {
+      const now = Date.now();
+      if (now - lastBeat >= 30_000) {
+        lastBeat = now;
+        recordBrowserActivityHeartbeat(now);
+      }
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        runAutoFailCheck();
+        recordBrowserActivityHeartbeat();
+      }
+    };
+
+    const interval = setInterval(() => {
+      runAutoFailCheck();
+      if (document.visibilityState === 'visible') {
+        recordBrowserActivityHeartbeat();
+      }
+    }, 60000);
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('pointerdown', handleBeat, { passive: true });
+    document.addEventListener('keydown', handleBeat, { passive: true });
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('pointerdown', handleBeat);
+      document.removeEventListener('keydown', handleBeat);
+    };
+  }, []);
 
   // Create a proxy for setActiveTab that navigates instead
   const handleSetActiveTab = (tab: string) => {

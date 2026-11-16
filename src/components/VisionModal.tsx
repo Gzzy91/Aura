@@ -14,27 +14,29 @@ const EMOJI_OPTIONS = ['🚀', '💪', '🧠', '💼', '🧘‍♂️', '🏖️
 
 export function VisionModal({ isOpen, onClose, visionId }: VisionModalProps) {
   const { visions, addVision, updateVision, deleteVision } = useStore();
-  
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   const [vision, setVision] = useState<Partial<Vision>>({
     title: '',
     description: '',
     icon: '🚀',
-    completed: false
+    completed: false,
   });
 
   useEffect(() => {
+    setConfirmDelete(false);
     if (visionId) {
-      const existing = visions.find(v => v.id === visionId);
+      const existing = visions.find((v) => v.id === visionId);
       if (existing) setVision(existing);
     } else {
       setVision({
         title: '',
         description: '',
         icon: '🚀',
-        completed: false
+        completed: false,
       });
     }
-  }, [visionId, visions]);
+  }, [visionId, visions, isOpen]);
 
   if (!isOpen) return null;
 
@@ -52,12 +54,11 @@ export function VisionModal({ isOpen, onClose, visionId }: VisionModalProps) {
     onClose();
   };
 
-  const handleDelete = () => {
-    if (visionId && confirm('Möchtest du dieses Ziel wirklich verwerfen?')) {
-      deleteVision(visionId);
-      toast.success('Lebensziel verworfen');
-      onClose();
-    }
+  const handleConfirmDelete = () => {
+    if (!visionId) return;
+    deleteVision(visionId);
+    toast.success('Lebensziel verworfen');
+    onClose();
   };
 
   return (
@@ -68,7 +69,12 @@ export function VisionModal({ isOpen, onClose, visionId }: VisionModalProps) {
           <h3 className="text-xl font-bold flex items-center gap-2">
             {visionId ? 'Ziel anpassen' : 'Neues Lebensziel'}
           </h3>
-          <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full transition-colors text-neutral-400 hover:text-white">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 hover:bg-neutral-800 rounded-full transition-colors text-neutral-400 hover:text-white min-w-[40px] min-h-[40px] flex items-center justify-center"
+            aria-label="Modal schließen"
+          >
             <X className="w-5 h-5" />
           </button>
         </header>
@@ -78,13 +84,15 @@ export function VisionModal({ isOpen, onClose, visionId }: VisionModalProps) {
             <div>
               <label className="block text-sm font-medium text-neutral-400 mb-2">Symbol</label>
               <div className="flex flex-wrap gap-2">
-                {EMOJI_OPTIONS.map(emoji => (
+                {EMOJI_OPTIONS.map((emoji) => (
                   <button
                     key={emoji}
                     type="button"
                     onClick={() => setVision({ ...vision, icon: emoji })}
                     className={`w-12 h-12 rounded-xl text-2xl flex items-center justify-center transition-all ${
-                      vision.icon === emoji ? 'bg-blue-500/20 border border-blue-500 scale-110' : 'bg-neutral-800 border border-transparent hover:bg-neutral-700'
+                      vision.icon === emoji
+                        ? 'bg-blue-500/20 border border-blue-500 scale-105'
+                        : 'bg-neutral-800 border border-transparent hover:bg-neutral-700'
                     }`}
                   >
                     {emoji}
@@ -99,7 +107,7 @@ export function VisionModal({ isOpen, onClose, visionId }: VisionModalProps) {
                 type="text"
                 required
                 value={vision.title}
-                onChange={e => setVision({ ...vision, title: e.target.value })}
+                onChange={(e) => setVision({ ...vision, title: e.target.value })}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
                 placeholder="z.B. Einen Marathon laufen"
               />
@@ -110,7 +118,7 @@ export function VisionModal({ isOpen, onClose, visionId }: VisionModalProps) {
               <textarea
                 required
                 value={vision.description}
-                onChange={e => setVision({ ...vision, description: e.target.value })}
+                onChange={(e) => setVision({ ...vision, description: e.target.value })}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all min-h-[100px] resize-none"
                 placeholder="Warum ist dir dieses Ziel wichtig?"
               />
@@ -121,43 +129,70 @@ export function VisionModal({ isOpen, onClose, visionId }: VisionModalProps) {
                 <input
                   type="checkbox"
                   checked={vision.completed}
-                  onChange={e => setVision({ 
-                    ...vision, 
-                    completed: e.target.checked,
-                    completedAt: e.target.checked ? Date.now() : undefined
-                  })}
+                  onChange={(e) =>
+                    setVision({
+                      ...vision,
+                      completed: e.target.checked,
+                      completedAt: e.target.checked ? Date.now() : undefined,
+                    })
+                  }
                   className="w-5 h-5 rounded border-neutral-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-neutral-900 bg-neutral-900"
                 />
                 <span className="font-medium flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-neutral-400" />
-                  Ziel als "Erreicht" markieren
+                  Ziel als &quot;Erreicht&quot; markieren
                 </span>
               </label>
             )}
           </form>
         </div>
-        
+
         <div className="flex-shrink-0 p-6 pt-4 border-t border-neutral-800 bg-neutral-900/95">
-          <div className="flex gap-3">
-            <button
-              form="vision-form"
-              type="submit"
-              className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition-all"
-            >
-              <Save className="w-5 h-5" />
-              Speichern
-            </button>
-            {visionId && (
+          {confirmDelete ? (
+            <div className="flex items-center justify-between gap-3 bg-rose-500/10 border border-rose-500/30 rounded-xl p-3">
+              <span className="text-xs sm:text-sm font-semibold text-rose-200">
+                Lebensziel wirklich verwerfen?
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="px-3 py-2 rounded-lg text-xs font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  className="px-3 py-2 rounded-lg text-xs font-bold bg-rose-500 hover:bg-rose-400 text-white transition-colors"
+                >
+                  Verwerfen
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-3">
               <button
-                type="button"
-                onClick={handleDelete}
-                className="px-4 bg-neutral-800 hover:bg-red-500/20 text-neutral-400 hover:text-red-500 rounded-xl transition-colors border border-transparent hover:border-red-500/50"
-                title="Ziel verwerfen"
+                form="vision-form"
+                type="submit"
+                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition-all min-h-[44px]"
               >
-                <Trash2 className="w-5 h-5" />
+                <Save className="w-5 h-5" />
+                Speichern
               </button>
-            )}
-          </div>
+              {visionId && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="px-4 bg-neutral-800 hover:bg-rose-500/20 text-neutral-400 hover:text-rose-400 rounded-xl transition-colors border border-transparent hover:border-rose-500/50 min-h-[44px]"
+                  title="Ziel verwerfen"
+                  aria-label="Ziel verwerfen"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

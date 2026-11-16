@@ -1,12 +1,26 @@
 import { useState, useMemo } from 'react';
 import { useStore } from '@/store/useStore';
 import { motion, AnimatePresence } from 'motion/react';
-import { Utensils, Plus, Trash2, Calendar as CalendarIcon, ChevronRight, ChevronDown, Edit2, Info, Beef, Wheat, Droplets, PieChart as PieChartIcon } from 'lucide-react';
-import { format, isSameDay, startOfDay } from 'date-fns';
+import {
+  Utensils,
+  Plus,
+  Trash2,
+  Calendar as CalendarIcon,
+  ChevronDown,
+  Edit2,
+  Beef,
+  Wheat,
+  Droplets,
+  PieChart as PieChartIcon,
+  ArrowRight,
+  Sparkles,
+} from 'lucide-react';
+import { format, isSameDay } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { cn } from '@/lib/utils';
+import { cn, parseLocalDateInput } from '@/lib/utils';
 import { toast } from 'sonner';
 import { FoodEntry } from '@/types';
+import { DeleteConfirmationModal } from '@/components/DeleteConfirmationModal';
 
 const MEAL_TYPES = ['Frühstück', 'Mittagessen', 'Abendessen', 'Snack'] as const;
 
@@ -14,21 +28,22 @@ export function FoodJournal() {
   const { foodEntries, addFoodEntry, updateFoodEntry, deleteFoodEntry } = useStore();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  
+  const [deleteTarget, setDeleteTarget] = useState<FoodEntry | null>(null);
+
   // Form state
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
-  const [type, setType] = useState<typeof MEAL_TYPES[number]>('Frühstück');
+  const [type, setType] = useState<(typeof MEAL_TYPES)[number]>('Frühstück');
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   const [expandedDays, setExpandedDays] = useState<string[]>([format(new Date(), 'yyyy-MM-dd')]);
 
   const toggleDay = (day: string) => {
-    setExpandedDays(prev => 
-      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    setExpandedDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
     );
   };
 
@@ -39,25 +54,26 @@ export function FoodJournal() {
     setCarbs('');
     setFat('');
     setType('Frühstück');
+    setDate(format(new Date(), 'yyyy-MM-dd'));
     setEditingId(null);
     setIsAdding(false);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !calories) {
+    if (!name.trim() || !calories) {
       toast.error('Bitte Name und Kalorien angeben');
       return;
     }
 
     const entryData = {
-      name,
-      calories: parseInt(calories),
+      name: name.trim(),
+      calories: parseInt(calories, 10) || 0,
       protein: protein ? parseFloat(protein) : undefined,
       carbs: carbs ? parseFloat(carbs) : undefined,
       fat: fat ? parseFloat(fat) : undefined,
       type,
-      date: new Date(date).getTime(),
+      date: parseLocalDateInput(date),
     };
 
     if (editingId) {
@@ -65,6 +81,9 @@ export function FoodJournal() {
       toast.success('Eintrag aktualisiert');
     } else {
       addFoodEntry(entryData);
+      if (!expandedDays.includes(date)) {
+        setExpandedDays((prev) => [...prev, date]);
+      }
       toast.success('Eintrag hinzugefügt');
     }
 
@@ -81,11 +100,40 @@ export function FoodJournal() {
     setType(entry.type);
     setDate(format(new Date(entry.date), 'yyyy-MM-dd'));
     setIsAdding(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  const handleApplyPreset = (preset: FoodEntry) => {
+    setName(preset.name);
+    setCalories(preset.calories.toString());
+    setProtein(preset.protein?.toString() || '');
+    setCarbs(preset.carbs?.toString() || '');
+    setFat(preset.fat?.toString() || '');
+    setType(preset.type);
+  };
+
+  const frequentMeals = useMemo(() => {
+    const map = new Map<string, { count: number; latest: FoodEntry }>();
+    foodEntries.forEach((entry) => {
+      const key = entry.name.trim().toLowerCase();
+      if (!key) return;
+      const existing = map.get(key);
+      if (existing) {
+        existing.count += 1;
+        if (entry.date >= existing.latest.date) existing.latest = entry;
+      } else {
+        map.set(key, { count: 1, latest: entry });
+      }
+    });
+    return Array.from(map.values())
+      .sort((a, b) => b.count - a.count || b.latest.date - a.latest.date)
+      .slice(0, 6)
+      .map((item) => item.latest);
+  }, [foodEntries]);
 
   const groupedEntries = useMemo(() => {
     const groups: Record<string, FoodEntry[]> = {};
-    foodEntries.forEach(entry => {
+    foodEntries.forEach((entry) => {
       const day = format(new Date(entry.date), 'yyyy-MM-dd');
       if (!groups[day]) groups[day] = [];
       groups[day].push(entry);
@@ -94,50 +142,195 @@ export function FoodJournal() {
   }, [foodEntries]);
 
   const dailyTotals = useMemo(() => {
-    const totals: Record<string, { calories: number; protein: number; carbs: number; fat: number }> = {};
+    const totals: Record<
+      string,
+      { calories: number; protein: number; carbs: number; fat: number }
+    > = {};
     groupedEntries.forEach(([day, entries]) => {
-      totals[day] = entries.reduce((acc, entry) => ({
-        calories: acc.calories + entry.calories,
-        protein: acc.protein + (entry.protein || 0),
-        carbs: acc.carbs + (entry.carbs || 0),
-        fat: acc.fat + (entry.fat || 0),
-      }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+      totals[day] = entries.reduce(
+        (acc, entry) => ({
+          calories: acc.calories + entry.calories,
+          protein: acc.protein + (entry.protein || 0),
+          carbs: acc.carbs + (entry.carbs || 0),
+          fat: acc.fat + (entry.fat || 0),
+        }),
+        { calories: 0, protein: 0, carbs: 0, fat: 0 }
+      );
     });
     return totals;
   }, [groupedEntries]);
 
+  const todayKey = format(new Date(), 'yyyy-MM-dd');
+  const todayStats = dailyTotals[todayKey] || { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  const todayCount = groupedEntries.find(([d]) => d === todayKey)?.[1].length || 0;
+  const macroTotalGrams = todayStats.protein + todayStats.carbs + todayStats.fat;
+
   return (
-    <div className="max-w-4xl mx-auto pb-20">
-      <div className="flex items-center justify-between mb-8">
+    <div className="max-w-5xl mx-auto pb-20 space-y-6">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-white flex items-center gap-3">
+          <h2 className="text-3xl font-bold text-white flex items-center gap-3 tracking-tight">
             <Utensils className="w-8 h-8 text-amber-500" />
             Food Journal
           </h2>
-          <p className="text-neutral-400 mt-1 uppercase tracking-widest text-[10px] font-bold">Ernährung & Energie</p>
+          <p className="text-neutral-400 mt-1 text-sm">
+            Ernährung, Makros &amp; Energie im Überblick
+          </p>
         </div>
         <button
-          onClick={() => setIsAdding(!isAdding)}
-          className="bg-amber-500 hover:bg-amber-400 text-black font-bold py-2 px-4 rounded-xl flex items-center gap-2 transition-all transform hover:scale-105 active:scale-95"
+          type="button"
+          onClick={() => (isAdding ? resetForm() : setIsAdding(true))}
+          className={cn(
+            'font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors min-h-[44px]',
+            isAdding
+              ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
+              : 'bg-amber-500 hover:bg-amber-400 text-neutral-950'
+          )}
         >
-          {isAdding ? <ChevronDown className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-          {isAdding ? 'Abbrechen' : 'Neuer Eintrag'}
+          {isAdding ? (
+            <>
+              <ChevronDown className="w-5 h-5" />
+              Abbrechen
+            </>
+          ) : (
+            <>
+              <Plus className="w-5 h-5" />
+              Neuer Eintrag
+            </>
+          )}
         </button>
-      </div>
+      </header>
+
+      {/* Today's Nutrition Overview Strip */}
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+            Heute im Überblick
+          </span>
+          <span className="text-xs text-neutral-500 tabular-nums">
+            {todayCount} {todayCount === 1 ? 'Mahlzeit' : 'Mahlzeiten'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3.5">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
+              <PieChartIcon className="w-3.5 h-3.5 text-amber-500" />
+              Kalorien
+            </div>
+            <div className="mt-1 text-2xl font-black text-white tabular-nums">
+              {todayStats.calories} <span className="text-xs font-bold text-neutral-500">kcal</span>
+            </div>
+          </div>
+
+          <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3.5">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
+              <Beef className="w-3.5 h-3.5 text-rose-400" />
+              Protein
+            </div>
+            <div className="mt-1 text-2xl font-black text-rose-400 tabular-nums">
+              {todayStats.protein.toFixed(0)} <span className="text-xs font-bold text-neutral-500">g</span>
+            </div>
+          </div>
+
+          <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3.5">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
+              <Wheat className="w-3.5 h-3.5 text-amber-400" />
+              Carbs
+            </div>
+            <div className="mt-1 text-2xl font-black text-amber-400 tabular-nums">
+              {todayStats.carbs.toFixed(0)} <span className="text-xs font-bold text-neutral-500">g</span>
+            </div>
+          </div>
+
+          <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3.5">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
+              <Droplets className="w-3.5 h-3.5 text-sky-400" />
+              Fett
+            </div>
+            <div className="mt-1 text-2xl font-black text-sky-400 tabular-nums">
+              {todayStats.fat.toFixed(0)} <span className="text-xs font-bold text-neutral-500">g</span>
+            </div>
+          </div>
+        </div>
+
+        {macroTotalGrams > 0 && (
+          <div className="space-y-1.5">
+            <div className="h-2 w-full rounded-full bg-neutral-950 overflow-hidden flex">
+              <div
+                className="bg-rose-400 transition-all"
+                style={{ width: `${(todayStats.protein / macroTotalGrams) * 100}%` }}
+                title={`Protein ${Math.round((todayStats.protein / macroTotalGrams) * 100)}%`}
+              />
+              <div
+                className="bg-amber-400 transition-all"
+                style={{ width: `${(todayStats.carbs / macroTotalGrams) * 100}%` }}
+                title={`Carbs ${Math.round((todayStats.carbs / macroTotalGrams) * 100)}%`}
+              />
+              <div
+                className="bg-sky-400 transition-all"
+                style={{ width: `${(todayStats.fat / macroTotalGrams) * 100}%` }}
+                title={`Fett ${Math.round((todayStats.fat / macroTotalGrams) * 100)}%`}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-4 text-[11px] text-neutral-400 tabular-nums">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-rose-400" />
+                Protein {Math.round((todayStats.protein / macroTotalGrams) * 100)}%
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-400" />
+                Carbs {Math.round((todayStats.carbs / macroTotalGrams) * 100)}%
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-sky-400" />
+                Fett {Math.round((todayStats.fat / macroTotalGrams) * 100)}%
+              </span>
+            </div>
+          </div>
+        )}
+      </section>
 
       <AnimatePresence>
         {isAdding && (
           <motion.div
-            initial={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 mb-8 shadow-xl"
+            exit={{ opacity: 0, y: -12 }}
+            className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 shadow-xl"
           >
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Quick Fill from Frequent Meals */}
+              {!editingId && frequentMeals.length > 0 && (
+                <div>
+                  <div className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    Schnell-Auswahl aus deinem Verlauf
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {frequentMeals.map((meal) => (
+                      <button
+                        key={meal.id}
+                        type="button"
+                        onClick={() => handleApplyPreset(meal)}
+                        className="px-3 py-1.5 rounded-lg bg-neutral-950 border border-neutral-800 hover:border-amber-500/50 text-xs font-medium text-neutral-200 hover:text-amber-400 transition-colors flex items-center gap-2 min-h-[36px]"
+                      >
+                        <span className="truncate max-w-[160px]">{meal.name}</span>
+                        <span className="text-[10px] font-mono text-neutral-500 tabular-nums">
+                          {meal.calories} kcal
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-neutral-500 uppercase tracking-widest mb-1 px-1">Was hast du gegessen?</label>
+                    <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1.5 px-1">
+                      Was hast du gegessen?
+                    </label>
                     <input
                       type="text"
                       value={name}
@@ -148,17 +341,25 @@ export function FoodJournal() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-neutral-500 uppercase tracking-widest mb-1 px-1">Mahlzeit</label>
+                      <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1.5 px-1">
+                        Mahlzeit
+                      </label>
                       <select
                         value={type}
-                        onChange={(e) => setType(e.target.value as any)}
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-amber-500 appearance-none"
+                        onChange={(e) => setType(e.target.value as (typeof MEAL_TYPES)[number])}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-amber-500"
                       >
-                        {MEAL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        {MEAL_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-neutral-500 uppercase tracking-widest mb-1 px-1">Datum</label>
+                      <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1.5 px-1">
+                        Datum
+                      </label>
                       <input
                         type="date"
                         value={date}
@@ -169,59 +370,61 @@ export function FoodJournal() {
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-500 uppercase tracking-widest mb-1 px-1 flex items-center gap-1">
-                        <PieChartIcon className="w-3 h-3" /> Kalorien
-                      </label>
-                      <input
-                        type="number"
-                        value={calories}
-                        onChange={(e) => setCalories(e.target.value)}
-                        placeholder="kcal"
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-500 uppercase tracking-widest mb-1 px-1 flex items-center gap-1">
-                        <Beef className="w-3 h-3 text-red-500" /> Protein
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={protein}
-                        onChange={(e) => setProtein(e.target.value)}
-                        placeholder="g"
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-500 uppercase tracking-widest mb-1 px-1 flex items-center gap-1">
-                        <Wheat className="w-3 h-3 text-amber-500" /> Carbs
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={carbs}
-                        onChange={(e) => setCarbs(e.target.value)}
-                        placeholder="g"
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-500 uppercase tracking-widest mb-1 px-1 flex items-center gap-1">
-                        <Droplets className="w-3 h-3 text-blue-500" /> Fett
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={fat}
-                        onChange={(e) => setFat(e.target.value)}
-                        placeholder="g"
-                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1.5 px-1 flex items-center gap-1">
+                      <PieChartIcon className="w-3 h-3" /> Kalorien
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={calories}
+                      onChange={(e) => setCalories(e.target.value)}
+                      placeholder="kcal"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1.5 px-1 flex items-center gap-1">
+                      <Beef className="w-3 h-3 text-rose-400" /> Protein
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={protein}
+                      onChange={(e) => setProtein(e.target.value)}
+                      placeholder="g"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1.5 px-1 flex items-center gap-1">
+                      <Wheat className="w-3 h-3 text-amber-400" /> Carbs
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={carbs}
+                      onChange={(e) => setCarbs(e.target.value)}
+                      placeholder="g"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1.5 px-1 flex items-center gap-1">
+                      <Droplets className="w-3 h-3 text-sky-400" /> Fett
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={fat}
+                      onChange={(e) => setFat(e.target.value)}
+                      placeholder="g"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-amber-500"
+                    />
                   </div>
                 </div>
               </div>
@@ -230,13 +433,13 @@ export function FoodJournal() {
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="px-6 py-3 rounded-xl font-bold text-neutral-400 hover:text-white transition-colors"
+                  className="px-5 py-3 rounded-xl font-bold text-neutral-400 hover:text-white transition-colors min-h-[44px]"
                 >
                   Abbrechen
                 </button>
                 <button
                   type="submit"
-                  className="bg-white text-black px-8 py-3 rounded-xl font-bold hover:bg-neutral-200 transition-all flex items-center gap-2"
+                  className="bg-amber-500 hover:bg-amber-400 text-neutral-950 px-7 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 min-h-[44px]"
                 >
                   {editingId ? 'Aktualisieren' : 'Speichern'}
                   <ArrowRight className="w-4 h-4" />
@@ -247,59 +450,77 @@ export function FoodJournal() {
         )}
       </AnimatePresence>
 
-      <div className="space-y-6">
+      <div className="space-y-4">
         {groupedEntries.length === 0 ? (
           <div className="bg-neutral-900/50 border border-dashed border-neutral-800 rounded-3xl p-12 text-center">
             <Utensils className="w-12 h-12 text-neutral-700 mx-auto mb-4" />
-            <p className="text-neutral-500">Noch keine Mahlzeiten erfasst. Starte heute mit deinem ersten Eintrag!</p>
+            <p className="text-neutral-400">
+              Noch keine Mahlzeiten erfasst. Starte heute mit deinem ersten Eintrag!
+            </p>
           </div>
         ) : (
           groupedEntries.map(([day, entries]) => {
             const totals = dailyTotals[day];
             const isExpanded = expandedDays.includes(day);
-            const isToday = isSameDay(new Date(day), new Date());
+            const dayDate = new Date(parseLocalDateInput(day));
+            const isToday = isSameDay(dayDate, new Date());
 
             return (
-              <div key={day} className="bg-neutral-950 border border-neutral-800 rounded-3xl overflow-hidden shadow-lg transition-all hover:border-neutral-700">
+              <div
+                key={day}
+                className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden transition-colors hover:border-neutral-700"
+              >
                 <button
+                  type="button"
                   onClick={() => toggleDay(day)}
-                  className="w-full text-left p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-neutral-900/50 transition-colors"
+                  className="w-full text-left p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-neutral-800/30 transition-colors"
                 >
                   <div className="flex items-center gap-4">
-                    <div className={cn(
-                      "p-3 rounded-xl",
-                      isToday ? "bg-amber-500/20 text-amber-500" : "bg-neutral-800 text-neutral-400"
-                    )}>
-                      <CalendarIcon className="w-6 h-6" />
+                    <div
+                      className={cn(
+                        'p-3 rounded-xl shrink-0',
+                        isToday ? 'bg-amber-500/15 text-amber-400' : 'bg-neutral-800 text-neutral-400'
+                      )}
+                    >
+                      <CalendarIcon className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                        {isToday ? 'Heute' : format(new Date(day), 'EEEE, dd. MMMM', { locale: de })}
+                      <h3 className="text-lg font-bold text-white capitalize">
+                        {isToday ? 'Heute' : format(dayDate, 'EEEE, dd. MMMM', { locale: de })}
                       </h3>
-                      <div className="flex items-center gap-4 mt-1">
-                        <span className="text-xs font-bold text-neutral-500 uppercase tracking-widest">{entries.length} Einträge</span>
-                        <div className="w-1 h-1 rounded-full bg-neutral-700" />
-                        <span className="text-xs font-bold text-amber-500 uppercase tracking-widest">{totals.calories} kcal</span>
+                      <div className="flex items-center gap-3 mt-0.5 text-xs">
+                        <span className="font-semibold text-neutral-400 tabular-nums">
+                          {entries.length} {entries.length === 1 ? 'Eintrag' : 'Einträge'}
+                        </span>
+                        <span className="text-neutral-700">·</span>
+                        <span className="font-bold text-amber-400 tabular-nums">
+                          {totals.calories} kcal
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4">
-                    <div className="hidden sm:flex items-center gap-3">
-                      <div className="text-center px-3 border-r border-neutral-800">
-                        <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-tighter">Prot</div>
-                        <div className="text-xs font-bold text-white">{totals.protein.toFixed(1)}g</div>
+                  <div className="flex items-center justify-between md:justify-end gap-4">
+                    <div className="flex items-center gap-3 text-xs tabular-nums">
+                      <div className="px-2.5 py-1 rounded-lg bg-neutral-950 border border-neutral-800">
+                        <span className="text-neutral-500 mr-1">P</span>
+                        <strong className="text-rose-400">{totals.protein.toFixed(0)}g</strong>
                       </div>
-                      <div className="text-center px-3 border-r border-neutral-800">
-                        <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-tighter">Carbs</div>
-                        <div className="text-xs font-bold text-white">{totals.carbs.toFixed(1)}g</div>
+                      <div className="px-2.5 py-1 rounded-lg bg-neutral-950 border border-neutral-800">
+                        <span className="text-neutral-500 mr-1">C</span>
+                        <strong className="text-amber-400">{totals.carbs.toFixed(0)}g</strong>
                       </div>
-                      <div className="text-center px-2">
-                        <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-tighter">Fat</div>
-                        <div className="text-xs font-bold text-white">{totals.fat.toFixed(1)}g</div>
+                      <div className="px-2.5 py-1 rounded-lg bg-neutral-950 border border-neutral-800">
+                        <span className="text-neutral-500 mr-1">F</span>
+                        <strong className="text-sky-400">{totals.fat.toFixed(0)}g</strong>
                       </div>
                     </div>
-                    <ChevronDown className={cn("w-6 h-6 text-neutral-500 transition-transform", isExpanded && "rotate-180")} />
+                    <ChevronDown
+                      className={cn(
+                        'w-5 h-5 text-neutral-500 transition-transform shrink-0',
+                        isExpanded && 'rotate-180'
+                      )}
+                    />
                   </div>
                 </button>
 
@@ -309,48 +530,57 @@ export function FoodJournal() {
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
-                      className="border-t border-neutral-800"
+                      className="border-t border-neutral-800 overflow-hidden"
                     >
-                      <div className="p-4 space-y-3">
-                        {entries.map(entry => (
-                          <div key={entry.id} className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-4 flex items-center justify-between group hover:border-neutral-700 transition-colors">
-                            <div className="flex items-center gap-4">
-                              <div className="bg-neutral-800 w-10 h-10 rounded-xl flex items-center justify-center text-[10px] font-bold text-neutral-400">
+                      <div className="p-4 space-y-2.5 bg-neutral-950/40">
+                        {entries.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className="bg-neutral-950 border border-neutral-800 rounded-xl p-3.5 flex items-center justify-between gap-3 hover:border-neutral-700 transition-colors"
+                          >
+                            <div className="flex items-center gap-3.5 min-w-0">
+                              <div className="bg-neutral-900 border border-neutral-800 w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold text-neutral-300 shrink-0">
                                 {entry.type.charAt(0)}
                               </div>
-                              <div>
-                                <h4 className="font-bold text-white">{entry.name}</h4>
-                                <div className="flex items-center gap-3 mt-0.5">
-                                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">{entry.type}</span>
-                                  <div className="w-1 h-1 rounded-full bg-neutral-700" />
-                                  <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">{entry.calories} kcal</span>
-                                  <div className="hidden sm:flex items-center gap-2">
-                                     <div className="w-1 h-1 rounded-full bg-neutral-700" />
-                                     <span className="text-[10px] font-medium text-neutral-500 italic">
-                                       P: {entry.protein || 0}g • C: {entry.carbs || 0}g • F: {entry.fat || 0}g
-                                     </span>
-                                  </div>
+                              <div className="min-w-0">
+                                <h4 className="font-bold text-white text-sm truncate">
+                                  {entry.name}
+                                </h4>
+                                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-0.5 text-xs">
+                                  <span className="font-semibold text-sky-400">{entry.type}</span>
+                                  <span className="text-neutral-700">·</span>
+                                  <span className="font-bold text-amber-400 tabular-nums">
+                                    {entry.calories} kcal
+                                  </span>
+                                  {(entry.protein || entry.carbs || entry.fat) ? (
+                                    <>
+                                      <span className="text-neutral-700 hidden sm:inline">·</span>
+                                      <span className="text-neutral-400 text-[11px] tabular-nums hidden sm:inline">
+                                        P: {entry.protein || 0}g · C: {entry.carbs || 0}g · F:{' '}
+                                        {entry.fat || 0}g
+                                      </span>
+                                    </>
+                                  ) : null}
                                 </div>
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1 shrink-0">
                               <button
+                                type="button"
                                 onClick={() => handleEdit(entry)}
-                                className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-500 hover:text-white transition-colors"
+                                className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
                                 title="Bearbeiten"
+                                aria-label={`${entry.name} bearbeiten`}
                               >
                                 <Edit2 className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => {
-                                  if (confirm('Eintrag löschen?')) {
-                                    deleteFoodEntry(entry.id);
-                                    toast.success('Eintrag gelöscht');
-                                  }
-                                }}
-                                className="p-2 hover:bg-red-500/10 rounded-lg text-neutral-500 hover:text-red-500 transition-colors"
+                                type="button"
+                                onClick={() => setDeleteTarget(entry)}
+                                className="p-2 hover:bg-rose-500/10 rounded-lg text-neutral-400 hover:text-rose-400 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
                                 title="Löschen"
+                                aria-label={`${entry.name} löschen`}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -366,12 +596,19 @@ export function FoodJournal() {
           })
         )}
       </div>
+
+      {deleteTarget && (
+        <DeleteConfirmationModal
+          title="Mahlzeit löschen?"
+          description={`Möchtest du "${deleteTarget.name}" (${deleteTarget.calories} kcal) wirklich aus deinem Food Journal entfernen?`}
+          onConfirm={() => {
+            deleteFoodEntry(deleteTarget.id);
+            toast.success('Eintrag gelöscht');
+            setDeleteTarget(null);
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }
-
-const ArrowRight = ({ className }: { className?: string }) => (
-  <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
-);

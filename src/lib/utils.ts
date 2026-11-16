@@ -16,6 +16,20 @@ export function triggerHapticFeedback(pattern: number | number[] = 50) {
   }
 }
 
+/**
+ * Parses an HTML <input type="date"> string ('YYYY-MM-DD') into a local-noon timestamp
+ * so negative UTC offsets never shift the entry to the previous calendar day.
+ */
+export function parseLocalDateInput(dateStr: string): number {
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+    const [year, month, day] = parts;
+    return new Date(year, month - 1, day, 12, 0, 0, 0).getTime();
+  }
+  const fallback = new Date(dateStr).getTime();
+  return Number.isFinite(fallback) ? fallback : Date.now();
+}
+
 export const SKILL_COLORS: Record<SkillType, string> = {
   Fitness: 'text-red-500',
   Fokus: 'text-blue-500',

@@ -150,6 +150,46 @@ service cloud.firestore {
              (!('fat' in data) || data.fat is number);
     }
 
+    function isValidWeeklyCoachSummary(data, summaryId) {
+      return hasOnlyAllowedFields(['id', 'weekStart', 'summary', 'avgMood', 'loggedDaysCount', 'totalXp', 'generatedAt']) &&
+             data.id is string && data.id == summaryId && isValidId(data.id) &&
+             data.weekStart is int &&
+             data.summary is string && data.summary.size() > 0 && data.summary.size() <= 6000 &&
+             (!('avgMood' in data) || data.avgMood == null || (data.avgMood is number && data.avgMood >= 1 && data.avgMood <= 5)) &&
+             data.loggedDaysCount is int && data.loggedDaysCount >= 0 && data.loggedDaysCount <= 7 &&
+             data.totalXp is number && data.totalXp >= 0 &&
+             data.generatedAt is int;
+    }
+
+    function isValidHealthRecord(data, recordId) {
+      return hasRequiredFields(['id', 'date', 'sleepDurationMinutes', 'activityDurationMinutes', 'sources', 'recoveryScore', 'recoveryState', 'syncedAt']) &&
+             hasOnlyAllowedFields([
+               'id',
+               'date',
+               'sleepDurationMinutes',
+               'activityDurationMinutes',
+               'avgHeartRate',
+               'sources',
+               'recoveryScore',
+               'recoveryState',
+               'acceptedSuggestionIds',
+               'dismissedSuggestionIds',
+               'syncedAt'
+             ]) &&
+             data.id is string && data.id == recordId && isValidId(data.id) &&
+             data.date is int &&
+             data.sleepDurationMinutes is int && data.sleepDurationMinutes >= 0 && data.sleepDurationMinutes <= 1440 &&
+             data.activityDurationMinutes is int && data.activityDurationMinutes >= 0 && data.activityDurationMinutes <= 1440 &&
+             (!('avgHeartRate' in data) || data.avgHeartRate == null || (data.avgHeartRate is number && data.avgHeartRate >= 25 && data.avgHeartRate <= 240)) &&
+             data.sources is list && data.sources.size() <= 6 &&
+             data.sources.hasOnly(['browser_idle', 'device_motion', 'web_bluetooth', 'health_export', 'aura_activity', 'manual']) &&
+             data.recoveryScore is int && data.recoveryScore >= 0 && data.recoveryScore <= 100 &&
+             data.recoveryState in ['depleted', 'strained', 'balanced', 'charged'] &&
+             (!('acceptedSuggestionIds' in data) || (data.acceptedSuggestionIds is list && data.acceptedSuggestionIds.size() <= 25 && (data.acceptedSuggestionIds.size() == 0 || data.acceptedSuggestionIds[0] is string))) &&
+             (!('dismissedSuggestionIds' in data) || (data.dismissedSuggestionIds is list && data.dismissedSuggestionIds.size() <= 25 && (data.dismissedSuggestionIds.size() == 0 || data.dismissedSuggestionIds[0] is string))) &&
+             data.syncedAt is int;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -199,6 +239,20 @@ service cloud.firestore {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidId(entryId) && isValidFoodEntry(request.resource.data);
         allow update: if isOwner(userId) && isValidId(entryId) && isValidFoodEntry(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /weeklyCoachSummaries/{summaryId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidId(summaryId) && isValidWeeklyCoachSummary(request.resource.data, summaryId);
+        allow update: if isOwner(userId) && isValidId(summaryId) && isValidWeeklyCoachSummary(request.resource.data, summaryId);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /healthRecords/{recordId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidId(recordId) && isValidHealthRecord(request.resource.data, recordId);
+        allow update: if isOwner(userId) && isValidId(recordId) && isValidHealthRecord(request.resource.data, recordId);
         allow delete: if isOwner(userId) || isAdmin();
       }
     }

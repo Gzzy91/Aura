@@ -96,6 +96,16 @@ export interface FoodEntry {
   type: 'Frühstück' | 'Mittagessen' | 'Abendessen' | 'Snack';
 }
 
+export interface WeeklyCoachSummary {
+  id: string; // YYYY-MM-DD of weekStart (Monday)
+  weekStart: number;
+  summary: string;
+  avgMood: number | null;
+  loggedDaysCount: number;
+  totalXp: number;
+  generatedAt: number;
+}
+
 export interface AppSettings {
   isPinEnabled: boolean;
   pin: string | null;
@@ -124,3 +134,46 @@ export interface Quest {
   completions?: { date: number; direction: 'positive' | 'negative' }[];
   visionId?: string;
 }
+
+export type HealthDataSource =
+  | 'browser_idle'
+  | 'device_motion'
+  | 'web_bluetooth'
+  | 'health_export'
+  | 'aura_activity'
+  | 'manual';
+
+export type RecoveryState = 'depleted' | 'strained' | 'balanced' | 'charged';
+
+export interface HealthDailyRecord {
+  id: string; // YYYY-MM-DD
+  date: number;
+  sleepDurationMinutes: number;
+  activityDurationMinutes: number;
+  avgHeartRate?: number | null;
+  sources: HealthDataSource[];
+  recoveryScore: number;
+  recoveryState: RecoveryState;
+  acceptedSuggestionIds?: string[];
+  dismissedSuggestionIds?: string[];
+  syncedAt: number;
+}
+
+export interface EnergyRecoverySuggestion {
+  id: string;
+  title: string;
+  description: string;
+  skill: SkillType;
+  xpReward: number;
+  recommendedDurationMinutes: number;
+  category:
+    | 'sleep_recovery'
+    | 'active_rest'
+    | 'mindful_reset'
+    | 'hydration_nutrition'
+    | 'movement_boost';
+  priority: 'high' | 'medium' | 'low';
+  reason: string;
+  tags: string[];
+}
+

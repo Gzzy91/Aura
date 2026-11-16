@@ -1,5 +1,8 @@
 {
   "name": "Aura",
   "description": "Ein persönliches Tagebuch zur Dokumentation von täglichem Wohlbefinden und Fortschritt.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -131,6 +131,40 @@
         "type": { "type": "string", "enum": ["Frühstück", "Mittagessen", "Abendessen", "Snack"] }
       },
       "required": ["id", "date", "name", "calories", "type"]
+    },
+    "WeeklyCoachSummary": {
+      "title": "WeeklyCoachSummary",
+      "description": "AI-Coach motivational summary generated from a week's mood and progress",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "weekStart": { "type": "integer" },
+        "summary": { "type": "string" },
+        "avgMood": { "type": ["number", "null"] },
+        "loggedDaysCount": { "type": "integer" },
+        "totalXp": { "type": "number" },
+        "generatedAt": { "type": "integer" }
+      },
+      "required": ["id", "weekStart", "summary", "loggedDaysCount", "totalXp", "generatedAt"]
+    },
+    "HealthRecord": {
+      "title": "HealthRecord",
+      "description": "Synchronized daily sleep and activity duration metrics with computed energy-recovery score",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "date": { "type": "integer" },
+        "sleepDurationMinutes": { "type": "integer" },
+        "activityDurationMinutes": { "type": "integer" },
+        "avgHeartRate": { "type": ["integer", "null"] },
+        "sources": { "type": "array", "items": { "type": "string" } },
+        "recoveryScore": { "type": "integer" },
+        "recoveryState": { "type": "string", "enum": ["depleted", "strained", "balanced", "charged"] },
+        "acceptedSuggestionIds": { "type": "array", "items": { "type": "string" } },
+        "dismissedSuggestionIds": { "type": "array", "items": { "type": "string" } },
+        "syncedAt": { "type": "integer" }
+      },
+      "required": ["id", "date", "sleepDurationMinutes", "activityDurationMinutes", "sources", "recoveryScore", "recoveryState", "syncedAt"]
     }
   },
   "firestore": {
@@ -161,6 +195,14 @@
     "/users/{userId}/foodEntries/{entryId}": {
       "schema": "FoodEntry",
       "description": "User's food journal entries"
+    },
+    "/users/{userId}/weeklyCoachSummaries/{summaryId}": {
+      "schema": "WeeklyCoachSummary",
+      "description": "Generated AI-Coach motivational weekly mood summaries"
+    },
+    "/users/{userId}/healthRecords/{recordId}": {
+      "schema": "HealthRecord",
+      "description": "Synchronized daily sleep and activity recovery records"
     }
   }
 }

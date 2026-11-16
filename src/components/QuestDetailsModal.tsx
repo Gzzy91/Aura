@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, X, ListTodo, Trash2, Calendar, Bell, Pencil, Repeat, Download, ExternalLink } from 'lucide-react';
+import { CheckCircle2, Circle, X, ListTodo, Trash2, Calendar, Bell, Pencil, Repeat, Download, ExternalLink, Check } from 'lucide-react';
 import { Quest } from '@/types';
 import { cn, SKILL_COLORS, SKILL_BORDER_COLORS } from '@/lib/utils';
 import { downloadICS, getGoogleCalendarLink } from '@/lib/calendarSync';
@@ -10,30 +10,63 @@ interface QuestDetailsModalProps {
   onEditRequest?: () => void;
   onReopen?: (id: string) => void;
   onToggleSubtask?: (questId: string, subtaskId: string) => void;
+  onComplete?: (quest: Quest) => void;
+  onFail?: (quest: Quest) => void;
+  onReschedule?: (id: string, dueDate: number) => void;
 }
 
-export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditRequest, onReopen, onToggleSubtask }: QuestDetailsModalProps) {
+export function QuestDetailsModal({
+  quest,
+  onClose,
+  onDeleteRequest,
+  onEditRequest,
+  onReopen,
+  onToggleSubtask,
+  onComplete,
+  onFail,
+  onReschedule,
+}: QuestDetailsModalProps) {
+  const reminderLabel =
+    quest.reminderTiming === '0m'
+      ? 'Zum Zeitpunkt'
+      : quest.reminderTiming === '1h'
+        ? '1 Stunde vorher'
+        : quest.reminderTiming === '2h'
+          ? '2 Stunden vorher'
+          : quest.reminderTiming === '1d'
+            ? '1 Tag vorher'
+            : quest.reminderTiming === '2d'
+              ? '2 Tage vorher'
+              : '';
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className={cn("bg-neutral-900 border-y border-r border-l-4 rounded-2xl w-full max-w-md shadow-2xl border-y-neutral-800 border-r-neutral-800 max-h-[85dvh] flex flex-col relative", SKILL_BORDER_COLORS[quest.skill])} onClick={e => e.stopPropagation()}>
-        
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4" onClick={onClose}>
+      <div
+        className={cn(
+          'bg-neutral-900 border rounded-2xl w-full max-w-md shadow-2xl max-h-[85dvh] flex flex-col relative',
+          SKILL_BORDER_COLORS[quest.skill]
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header - Sticky */}
-        <div className="p-6 pb-4 border-b border-neutral-800 shrink-0">
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-2xl font-bold text-white">{quest.title}</h3>
+        <div className="p-5 sm:p-6 pb-4 border-b border-neutral-800 shrink-0">
+          <div className="flex justify-between items-start gap-2">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-xl sm:text-2xl font-bold text-white break-words">{quest.title}</h3>
                 {onEditRequest && (
-                  <button 
+                  <button
+                    type="button"
                     onClick={onEditRequest}
-                    className="p-1.5 text-neutral-500 hover:text-amber-500 transition-colors"
+                    className="p-2 rounded-lg text-neutral-400 hover:text-amber-500 hover:bg-neutral-800 transition-colors shrink-0"
                     title="Quest bearbeiten"
+                    aria-label="Quest bearbeiten"
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
                 )}
               </div>
-              <p className="text-neutral-400 text-sm mt-1">
+              <p className="text-neutral-400 text-xs sm:text-sm mt-1">
                 {quest.completed ? (quest.failed ? 'Nicht durchgeführt am ' : 'Abgeschlossen am ') : 'Erstellt am '}
                 {new Date(quest.completedAt || quest.createdAt).toLocaleDateString('de-DE', {
                   weekday: 'long',
@@ -41,52 +74,64 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
                   month: 'long',
                   day: 'numeric',
                   hour: '2-digit',
-                  minute: '2-digit'
+                  minute: '2-digit',
                 })}
               </p>
             </div>
-            <button onClick={onClose} className="text-neutral-500 hover:text-white transition-colors">
-              <X className="w-6 h-6" />
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors shrink-0"
+              aria-label="Schließen"
+            >
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
-        
+
         {/* Scrollable Body */}
-        <div className="p-6 overflow-y-auto flex-1 min-h-0 space-y-6">
+        <div className="p-5 sm:p-6 overflow-y-auto flex-1 min-h-0 space-y-5">
           {quest.description && (
             <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
-              <p className="text-neutral-300 whitespace-pre-wrap">{quest.description}</p>
+              <p className="text-neutral-300 whitespace-pre-wrap text-sm leading-relaxed">{quest.description}</p>
             </div>
           )}
 
           {quest.tags && quest.tags.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {quest.tags.map(tag => (
-                <span key={tag} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-neutral-800 text-neutral-300 border border-neutral-700">
-                  {tag}
+              {quest.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-neutral-800 text-neutral-300 border border-neutral-700"
+                >
+                  #{tag}
                 </span>
               ))}
             </div>
           )}
 
           {quest.subtasks && quest.subtasks.length > 0 && (
-            <div className="space-y-3">
-              <h4 className="text-sm font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-2">
+            <div className="space-y-2.5">
+              <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-2">
                 <ListTodo className="w-4 h-4" />
-                Teilaufgaben
+                Teilaufgaben ({quest.subtasks.filter((s) => s.completed).length}/{quest.subtasks.length})
               </h4>
               <div className="bg-neutral-950 rounded-xl border border-neutral-800 overflow-hidden">
-                {quest.subtasks.map(s => (
-                  <div 
-                    key={s.id} 
+                {quest.subtasks.map((s) => (
+                  <div
+                    key={s.id}
                     className={cn(
-                      "flex items-center gap-3 p-3 border-b border-neutral-800 last:border-0",
-                      !quest.completed && "cursor-pointer hover:bg-neutral-900 transition-colors"
+                      'flex items-center gap-3 p-3 border-b border-neutral-800 last:border-0',
+                      !quest.completed && 'cursor-pointer hover:bg-neutral-900 transition-colors'
                     )}
                     onClick={() => !quest.completed && onToggleSubtask?.(quest.id, s.id)}
                   >
-                    {s.completed ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Circle className="w-4 h-4 text-neutral-600" />}
-                    <span className={cn("text-sm", s.completed ? "text-neutral-500 line-through" : "text-neutral-300")}>
+                    {s.completed ? (
+                      <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                    ) : (
+                      <Circle className="w-4 h-4 text-neutral-600 shrink-0" />
+                    )}
+                    <span className={cn('text-sm', s.completed ? 'text-neutral-500 line-through' : 'text-neutral-300')}>
                       {s.title}
                     </span>
                   </div>
@@ -95,18 +140,51 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
             </div>
           )}
 
-          <div className="grid gap-4 grid-cols-2">
-            <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 flex flex-col items-center justify-center text-center">
-              <span className="text-sm text-neutral-500 mb-1">Skill</span>
-              <span className={cn("font-bold text-lg", SKILL_COLORS[quest.skill])}>{quest.skill}</span>
+          <div className="grid gap-3 grid-cols-2">
+            <div className="bg-neutral-950 p-3.5 rounded-xl border border-neutral-800 flex flex-col items-center justify-center text-center">
+              <span className="text-xs text-neutral-500 mb-1">Skill</span>
+              <span className={cn('font-bold text-base sm:text-lg', SKILL_COLORS[quest.skill])}>{quest.skill}</span>
             </div>
-            <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 flex flex-col items-center justify-center text-center">
-              <span className="text-sm text-neutral-500 mb-1">{quest.completed ? (quest.failed ? 'Status' : 'EP verdient') : 'EP Belohnung'}</span>
-              <span className={cn("font-bold text-lg", quest.failed ? "text-rose-400" : "text-amber-500")}>
-                {quest.failed ? 'Nicht durchgeführt (0 EP)' : `+${quest.xpReward} EP`}
+            <div className="bg-neutral-950 p-3.5 rounded-xl border border-neutral-800 flex flex-col items-center justify-center text-center">
+              <span className="text-xs text-neutral-500 mb-1">
+                {quest.completed ? (quest.failed ? 'Status' : 'EP verdient') : 'EP Belohnung'}
+              </span>
+              <span className={cn('font-bold text-base sm:text-lg', quest.failed ? 'text-rose-400' : 'text-amber-500')}>
+                {quest.failed ? 'Nicht durchgeführt' : `+${quest.xpReward} EP`}
               </span>
             </div>
           </div>
+
+          {!quest.completed && onReschedule && (
+            <div className="bg-neutral-950 p-3.5 rounded-xl border border-neutral-800 flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-neutral-400">Schnell planen</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const today = new Date();
+                    today.setHours(23, 59, 59, 999);
+                    onReschedule(quest.id, today.getTime());
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-neutral-900 hover:bg-amber-500/15 border border-neutral-800 hover:border-amber-500/40 text-xs font-semibold text-neutral-300 hover:text-amber-400 transition-colors"
+                >
+                  Heute
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const tomorrow = new Date();
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    tomorrow.setHours(23, 59, 59, 999);
+                    onReschedule(quest.id, tomorrow.getTime());
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-neutral-900 hover:bg-sky-500/15 border border-neutral-800 hover:border-sky-500/40 text-xs font-semibold text-neutral-300 hover:text-sky-400 transition-colors"
+                >
+                  Morgen
+                </button>
+              </div>
+            </div>
+          )}
 
           {quest.dueDate && (
             <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800 space-y-2">
@@ -116,25 +194,20 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
                   Fällig am
                 </span>
                 <span className="text-white font-medium">
-                  {new Date(quest.dueDate).toLocaleDateString('de-DE', { 
-                    month: 'short', 
-                    day: 'numeric', 
-                    ...(quest.hasTime ? { hour: '2-digit', minute: '2-digit' } : {}) 
+                  {new Date(quest.dueDate).toLocaleDateString('de-DE', {
+                    month: 'short',
+                    day: 'numeric',
+                    ...(quest.hasTime ? { hour: '2-digit', minute: '2-digit' } : {}),
                   })}
                 </span>
               </div>
-              {quest.reminderTiming !== 'none' && (
+              {quest.reminderTiming && quest.reminderTiming !== 'none' && reminderLabel && (
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-neutral-500 flex items-center gap-2">
                     <Bell className="w-4 h-4" />
                     Erinnerung
                   </span>
-                  <span className="text-white font-medium">
-                    {quest.reminderTiming === '1h' ? '1 Stunde vorher' : 
-                     quest.reminderTiming === '2h' ? '2 Stunden vorher' :
-                     quest.reminderTiming === '1d' ? '1 Tag vorher' :
-                     quest.reminderTiming === '2d' ? '2 Tage vorher' : ''}
-                  </span>
+                  <span className="text-white font-medium">{reminderLabel}</span>
                 </div>
               )}
               {quest.recurrence && quest.recurrence !== 'none' && (
@@ -144,33 +217,36 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
                     Wiederholung
                   </span>
                   <span className="text-amber-500 font-medium">
-                    {quest.recurrence === 'daily' ? 'Täglich' : 
-                     quest.recurrence === 'weekly' ? 'Wöchentlich' : 
-                     'Monatlich'}
+                    {quest.recurrence === 'daily'
+                      ? 'Täglich'
+                      : quest.recurrence === 'weekly'
+                        ? 'Wöchentlich'
+                        : 'Monatlich'}
                   </span>
                 </div>
               )}
-              
+
               {!quest.completed && (
                 <div className="pt-3 mt-3 border-t border-neutral-800 flex flex-col gap-2">
-                  <a 
-                    href={getGoogleCalendarLink(quest)} 
-                    target="_blank" 
+                  <a
+                    href={getGoogleCalendarLink(quest)}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-2 w-full py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg text-sm text-neutral-300 hover:text-white transition-colors"
                   >
                     <ExternalLink className="w-4 h-4" />
                     Zu Google Kalender hinzufügen
                   </a>
-                  {quest.dueDate && (
-                    <button 
-                      onClick={() => downloadICS([quest], `${quest.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`)}
-                      className="flex items-center justify-center gap-2 w-full py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg text-sm text-neutral-300 hover:text-white transition-colors"
-                    >
-                      <Download className="w-4 h-4" />
-                      Als .ics herunterladen (Apple/Outlook)
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadICS([quest], `${quest.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`)
+                    }
+                    className="flex items-center justify-center gap-2 w-full py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg text-sm text-neutral-300 hover:text-white transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Als .ics herunterladen (Apple/Outlook)
+                  </button>
                 </div>
               )}
             </div>
@@ -178,31 +254,64 @@ export function QuestDetailsModal({ quest, onClose, onDeleteRequest, onEditReque
         </div>
 
         {/* Footer - Sticky Buttons */}
-        <div className="p-6 pt-4 border-t border-neutral-800 shrink-0">
-          <div className="flex gap-3">
+        <div className="p-4 sm:p-6 pt-3 sm:pt-4 border-t border-neutral-800 shrink-0 space-y-2.5">
+          {!quest.completed && (onComplete || onFail) && (
+            <div className="flex gap-2">
+              {onComplete && (
+                <button
+                  type="button"
+                  onClick={() => onComplete(quest)}
+                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 py-2.5 px-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-1.5 text-sm"
+                >
+                  <Check className="w-4 h-4 stroke-[2.5]" />
+                  Erledigt (+{quest.xpReward} EP)
+                </button>
+              )}
+              {onFail && (
+                <button
+                  type="button"
+                  onClick={() => onFail(quest)}
+                  className="px-3.5 py-2.5 bg-neutral-800 hover:bg-rose-500/20 text-neutral-300 hover:text-rose-400 border border-neutral-700 hover:border-rose-500/40 rounded-xl font-semibold transition-colors flex items-center justify-center gap-1.5 text-sm"
+                  title="Als nicht durchgeführt markieren"
+                >
+                  <X className="w-4 h-4 stroke-[2.5]" />
+                  <span className="hidden sm:inline">Nicht erledigt</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-2.5">
             {quest.completed && onReopen && (
-              <button 
-                onClick={() => { onReopen(quest.id); onClose(); }}
-                className="flex-1 bg-amber-500 text-neutral-950 py-3 rounded-xl font-bold hover:bg-amber-400 transition-colors"
+              <button
+                type="button"
+                onClick={() => {
+                  onReopen(quest.id);
+                  onClose();
+                }}
+                className="flex-1 bg-amber-500 text-neutral-950 py-2.5 sm:py-3 rounded-xl font-bold hover:bg-amber-400 transition-colors text-sm"
               >
                 Wieder eröffnen
               </button>
             )}
-            <button 
+            <button
+              type="button"
               onClick={onClose}
               className={cn(
-                "flex-1 bg-neutral-800 text-white py-3 rounded-xl font-bold hover:bg-neutral-700 transition-colors",
-                quest.completed && "flex-[0.5]"
+                'flex-1 bg-neutral-800 text-white py-2.5 sm:py-3 rounded-xl font-bold hover:bg-neutral-700 transition-colors text-sm',
+                quest.completed && 'flex-[0.5]'
               )}
             >
               Schließen
             </button>
-            <button 
+            <button
+              type="button"
               onClick={onDeleteRequest}
-              className="p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500/20 transition-colors"
+              className="p-2.5 sm:p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500/20 transition-colors"
               title="Quest löschen"
+              aria-label="Quest löschen"
             >
-              <Trash2 className="w-6 h-6" />
+              <Trash2 className="w-5 h-5" />
             </button>
           </div>
         </div>

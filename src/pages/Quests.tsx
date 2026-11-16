@@ -18,9 +18,17 @@ import {
   ChevronLeft,
   CalendarDays,
   Sparkles,
-  Award
+  Award,
+  HeartPulse,
+  Moon,
+  Activity
 } from 'lucide-react';
-import { SkillType, Quest } from '@/types';
+import { SkillType, Quest, EnergyRecoverySuggestion } from '@/types';
+import {
+  buildTodayHealthRecord,
+  formatMinutesAsHoursMinutes,
+  generateEnergyRecoveryQuests,
+} from '@/services/healthSyncService';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, SKILL_COLORS, SKILL_BG_COLORS, SKILL_BORDER_COLORS } from '@/lib/utils';
 import { QuestDetailsModal } from '@/components/QuestDetailsModal';
@@ -53,7 +61,12 @@ export function Quests() {
     toggleSubtask, 
     deleteQuest, 
     reopenQuest, 
-    updateQuest 
+    updateQuest,
+    healthRecords,
+    diaryEntries,
+    focusSessions,
+    saveHealthRecord,
+    markRecoverySuggestionDecision
   } = useStore();
 
   const [isAdding, setIsAdding] = useState(false);
@@ -64,6 +77,8 @@ export function Quests() {
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [completingType, setCompletingType] = useState<'success' | 'failed' | null>(null);
   const [expandedSubtasksId, setExpandedSubtasksId] = useState<string | null>(null);
+  const [quickTitle, setQuickTitle] = useState('');
+  const [quickSkill, setQuickSkill] = useState<SkillType>('Disziplin');
 
   // History Day Navigation
   const [historyDate, setHistoryDate] = useState<Date>(new Date());
@@ -98,7 +113,13 @@ export function Quests() {
     const current = new Date(now);
 
     if (dueDate < now) {
-      return { label: 'Überfällig', style: 'text-rose-400 bg-rose-500/15 border-rose-500/30' };
+      const overdueDateLabel = !isSameDay(due, current)
+        ? ` · ${due.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}`
+        : '';
+      return {
+        label: `Überfällig${overdueDateLabel}`,
+        style: 'text-rose-400 bg-rose-500/15 border-rose-500/30',
+      };
     }
     if (isSameDay(due, current)) {
       const timeStr = hasTime ? due.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -131,7 +152,8 @@ export function Quests() {
     const matchesTags = filterTags.length === 0 || (q.tags && filterTags.every(t => q.tags!.includes(t)));
     
     let matchesTime = true;
-    if (timeFilter !== 'all') {
+    const shouldApplyTimeFilter = timeFilter !== 'all' && !(view === 'history' && historyViewMode === 'day');
+    if (shouldApplyTimeFilter) {
       const dateToCompare = q.completedAt || q.dueDate || q.createdAt;
       if (dateToCompare) {
         const date = new Date(dateToCompare);
@@ -182,6 +204,79 @@ export function Quests() {
   const daySuccessCount = dayCompletedQuests.filter(q => !q.failed).length;
   const dayFailedCount = dayCompletedQuests.filter(q => q.failed).length;
   const dayXpEarned = dayCompletedQuests.reduce((acc, q) => acc + (!q.failed ? q.xpReward : 0), 0);
+
+  // Today's quick summary for active view
+  const todayStats = useMemo(() => {
+    const todayCompleted = quests.filter(
+      (q) => q.type !== 'habit' && q.completed && q.completedAt && isSameDay(new Date(q.completedAt), new Date(now))
+    );
+    const successCount = todayCompleted.filter((q) => !q.failed).length;
+    const xp = todayCompleted.reduce((sum, q) => sum + (!q.failed ? q.xpReward : 0), 0);
+    return { count: todayCompleted.length, successCount, xp };
+  }, [quests, now]);
+
+  // Personalized Energy-Recovery Quest suggestion based on browser health sync & Aura load
+  const todayKey = format(new Date(now), 'yyyy-MM-dd');
+  const storedTodayHealthRecord = useMemo(
+    () => healthRecords.find((r) => r.id === todayKey) || null,
+    [healthRecords, todayKey]
+  );
+
+  const todayHealthRecord = useMemo(
+    () =>
+      buildTodayHealthRecord({
+        existingRecord: storedTodayHealthRecord,
+        focusSessions,
+        quests,
+        diaryEntries,
+      }),
+    [storedTodayHealthRecord, focusSessions, quests, diaryEntries]
+  );
+
+  const topRecoverySuggestion = useMemo(() => {
+    const todayDate = new Date(now);
+    const todayMood = diaryEntries.find((e) => isSameDay(new Date(e.date), todayDate))?.mood ?? null;
+    const todayFocusMinutes = focusSessions
+      .filter((f) => isSameDay(new Date(f.completedAt), todayDate))
+      .reduce((sum, f) => sum + (f.durationMinutes || 0), 0);
+
+    const suggestions = generateEnergyRecoveryQuests({
+      record: todayHealthRecord,
+      todayMood,
+      todayFocusMinutes,
+      existingQuests: quests,
+    });
+    return suggestions[0] || null;
+  }, [todayHealthRecord, diaryEntries, focusSessions, quests, now]);
+
+  const handleAcceptRecoverySuggestion = async (suggestion: EnergyRecoverySuggestion) => {
+    if (!storedTodayHealthRecord) {
+      await saveHealthRecord(todayHealthRecord);
+    }
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    addQuest({
+      title: suggestion.title,
+      description: `${suggestion.description}\n\nAuslöser: ${suggestion.reason}`,
+      skill: suggestion.skill,
+      xpReward: suggestion.xpReward,
+      type: 'daily',
+      dueDate: todayEnd.getTime(),
+      hasTime: false,
+      reminderTiming: 'none',
+      recurrence: 'none',
+      tags: suggestion.tags,
+    });
+    await markRecoverySuggestionDecision(todayHealthRecord.id, suggestion.id, 'accepted');
+    toast.success(`Energy-Recovery Quest "${suggestion.title}" hinzugefügt`);
+  };
+
+  const handleDismissRecoverySuggestion = async (suggestionId: string) => {
+    if (!storedTodayHealthRecord) {
+      await saveHealthRecord(todayHealthRecord);
+    }
+    await markRecoverySuggestionDecision(todayHealthRecord.id, suggestionId, 'dismissed');
+  };
 
   // Find latest active history date if user wants to jump
   const latestCompletedDate = useMemo(() => {
@@ -256,8 +351,13 @@ export function Quests() {
       setCompletingId(null);
       setCompletingType(null);
       if (selectedQuestId === quest.id) setSelectedQuestId(null);
-      toast.success(`"${quest.title}" erledigt! +${quest.xpReward} EP`);
-    }, 400);
+      toast.success(`"${quest.title}" erledigt! +${quest.xpReward} EP`, {
+        action: {
+          label: 'Rückgängig',
+          onClick: () => reopenQuest(quest.id),
+        },
+      });
+    }, 350);
   };
 
   const handleCompleteFailed = (quest: Quest) => {
@@ -269,7 +369,34 @@ export function Quests() {
       setCompletingId(null);
       setCompletingType(null);
       if (selectedQuestId === quest.id) setSelectedQuestId(null);
-    }, 400);
+      toast.info(`"${quest.title}" als nicht durchgeführt markiert`, {
+        action: {
+          label: 'Rückgängig',
+          onClick: () => reopenQuest(quest.id),
+        },
+      });
+    }, 350);
+  };
+
+  const handleQuickAdd = (e: React.FormEvent) => {
+    e.preventDefault();
+    const title = quickTitle.trim();
+    if (!title) return;
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    addQuest({
+      title,
+      description: '',
+      skill: quickSkill,
+      xpReward: 10,
+      type: 'daily',
+      dueDate: todayEnd.getTime(),
+      hasTime: false,
+      reminderTiming: 'none',
+      recurrence: 'none',
+    });
+    setQuickTitle('');
+    toast.success(`Quest "${title}" hinzugefügt`);
   };
 
   const handleRepeat = (quest: Quest) => {
@@ -328,15 +455,13 @@ export function Quests() {
           </p>
         </div>
 
-        {(view === 'active' || view === 'upcoming') && (
-          <button 
-            onClick={() => setIsAdding(true)}
-            className="bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl flex items-center gap-1.5 shadow-lg shadow-amber-500/10 active:scale-95 transition-all text-xs sm:text-sm shrink-0"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span className="font-semibold">Quest erstellen</span>
-          </button>
-        )}
+        <button 
+          onClick={() => setIsAdding(true)}
+          className="bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl flex items-center gap-1.5 shadow-lg shadow-amber-500/10 active:scale-95 transition-all text-xs sm:text-sm shrink-0"
+        >
+          <Plus className="w-4 h-4 stroke-[2.5]" />
+          <span className="font-semibold">Quest erstellen</span>
+        </button>
       </header>
 
       {/* View Switcher Tabs (Segmented control) */}
@@ -344,15 +469,15 @@ export function Quests() {
         <button
           onClick={() => setView('active')}
           className={cn(
-            "flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs sm:text-sm font-semibold transition-all",
+            "flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1.5 sm:px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all min-w-0",
             view === 'active' 
               ? "bg-neutral-800 text-white shadow-sm" 
               : "text-neutral-400 hover:text-white hover:bg-neutral-800/40"
           )}
         >
           <Target className="w-3.5 h-3.5 shrink-0 text-amber-500" />
-          <span>Aktiv</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-neutral-950/60 font-mono text-neutral-300">
+          <span className="truncate">Aktiv</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-950/60 font-mono text-neutral-300 shrink-0">
             {totalActiveCount}
           </span>
         </button>
@@ -360,15 +485,15 @@ export function Quests() {
         <button
           onClick={() => setView('upcoming')}
           className={cn(
-            "flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs sm:text-sm font-semibold transition-all",
+            "flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1.5 sm:px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all min-w-0",
             view === 'upcoming' 
               ? "bg-neutral-800 text-white shadow-sm" 
               : "text-neutral-400 hover:text-white hover:bg-neutral-800/40"
           )}
         >
           <Calendar className="w-3.5 h-3.5 shrink-0 text-sky-400" />
-          <span>Bevorstehend</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-neutral-950/60 font-mono text-neutral-300">
+          <span className="truncate">Geplant</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-950/60 font-mono text-neutral-300 shrink-0">
             {totalUpcomingCount}
           </span>
         </button>
@@ -376,19 +501,121 @@ export function Quests() {
         <button
           onClick={() => setView('history')}
           className={cn(
-            "flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs sm:text-sm font-semibold transition-all",
+            "flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1.5 sm:px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all min-w-0",
             view === 'history' 
               ? "bg-neutral-800 text-white shadow-sm" 
               : "text-neutral-400 hover:text-white hover:bg-neutral-800/40"
           )}
         >
           <History className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-          <span>Verlauf</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-neutral-950/60 font-mono text-neutral-300">
+          <span className="truncate">Verlauf</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-950/60 font-mono text-neutral-300 shrink-0">
             {totalHistoryCount}
           </span>
         </button>
       </div>
+
+      {/* Quick-Add Bar & Today Momentum Strip (only in active view) */}
+      {view === 'active' && (
+        <div className="space-y-2">
+          <form onSubmit={handleQuickAdd} className="flex items-center gap-1.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl p-1.5">
+            <input
+              type="text"
+              value={quickTitle}
+              onChange={(e) => setQuickTitle(e.target.value)}
+              placeholder="Schnell-Quest für heute (+10 EP)..."
+              className="flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-xs sm:text-sm text-white placeholder-neutral-500 focus:outline-none"
+            />
+            <select
+              value={quickSkill}
+              onChange={(e) => setQuickSkill(e.target.value as SkillType)}
+              aria-label="Skill für Schnell-Quest"
+              className={cn(
+                "bg-neutral-950 border border-neutral-800 rounded-lg px-2 py-1.5 text-[11px] font-semibold focus:outline-none focus:border-amber-500 shrink-0",
+                SKILL_COLORS[quickSkill]
+              )}
+            >
+              {(['Fitness', 'Fokus', 'Disziplin', 'Wissen', 'Soziales'] as SkillType[]).map(s => (
+                <option key={s} value={s} className="text-white bg-neutral-900">{s}</option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              disabled={!quickTitle.trim()}
+              title="Schnell-Quest hinzufügen"
+              aria-label="Schnell-Quest hinzufügen"
+              className="w-8 h-8 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500 text-neutral-950 flex items-center justify-center transition-colors shrink-0"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+            </button>
+          </form>
+
+          {todayStats.count > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setHistoryDate(new Date());
+                setHistoryViewMode('day');
+                setView('history');
+              }}
+              className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/20 text-xs transition-colors"
+            >
+              <span className="text-neutral-300 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                Heute bereits <strong className="text-white">{todayStats.successCount}</strong> {todayStats.successCount === 1 ? 'Quest' : 'Quests'} geschafft
+              </span>
+              <span className="font-mono font-bold text-amber-400">+{todayStats.xp} EP →</span>
+            </button>
+          )}
+
+          {topRecoverySuggestion && (
+            <div className="rounded-xl bg-neutral-900/90 border border-amber-500/25 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="inline-flex items-center gap-1 font-semibold text-amber-400">
+                    <HeartPulse className="w-3.5 h-3.5" />
+                    Recovery {todayHealthRecord.recoveryScore}/100
+                  </span>
+                  <span className="text-neutral-600">•</span>
+                  <span className="inline-flex items-center gap-1 text-neutral-400">
+                    <Moon className="w-3 h-3 text-indigo-400" />
+                    {formatMinutesAsHoursMinutes(todayHealthRecord.sleepDurationMinutes)}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-neutral-400">
+                    <Activity className="w-3 h-3 text-emerald-400" />
+                    {todayHealthRecord.activityDurationMinutes}m Aktivität
+                  </span>
+                </div>
+                <div className="text-xs sm:text-sm font-semibold text-white truncate">
+                  {topRecoverySuggestion.title}
+                </div>
+                <p className="text-[11px] text-neutral-400 line-clamp-1">
+                  {topRecoverySuggestion.reason} · +{topRecoverySuggestion.xpReward} EP · {topRecoverySuggestion.recommendedDurationMinutes} Min
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleAcceptRecoverySuggestion(topRecoverySuggestion)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-colors whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Übernehmen</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDismissRecoverySuggestion(topRecoverySuggestion.id)}
+                  title="Vorschlag ausblenden"
+                  aria-label="Vorschlag ausblenden"
+                  className="p-1.5 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-white transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Compact Search & Filter Control Bar */}
       <div className="flex flex-col gap-2">
@@ -766,7 +993,7 @@ export function Quests() {
                         ? "bg-emerald-950/40 border-emerald-500/60 scale-[1.01]" 
                         : isFailedAction
                         ? "bg-rose-950/40 border-rose-500/60 scale-[0.99] opacity-75"
-                        : "bg-neutral-900/90 hover:bg-neutral-850 border-neutral-800/90",
+                        : "bg-neutral-900/90 hover:bg-neutral-800/70 border-neutral-800/90",
                       "border-l-[4px]",
                       SKILL_BORDER_COLORS[quest.skill]
                     )}
@@ -778,7 +1005,7 @@ export function Quests() {
                     >
                       {/* Left Check-off Action Buttons */}
                       <div 
-                        className="flex items-center gap-1.5 shrink-0" 
+                        className="flex items-center gap-2 sm:gap-1.5 shrink-0" 
                         onClick={(e) => e.stopPropagation()}
                       >
                         {/* 1. Erfolgreich abhaken Button */}
@@ -789,7 +1016,7 @@ export function Quests() {
                           title="Erfolgreich durchgeführt (+EP)"
                           aria-label="Quest erfolgreich erledigt"
                           className={cn(
-                            "w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150 active:scale-90 border",
+                            "w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition-all duration-150 active:scale-90 border",
                             isSuccessAction
                               ? "bg-emerald-500 text-neutral-950 border-emerald-400"
                               : "bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-500 border-emerald-500/20 hover:border-emerald-500/40"
@@ -806,7 +1033,7 @@ export function Quests() {
                           title="Nicht durchgeführt (0 EP)"
                           aria-label="Quest nicht durchgeführt"
                           className={cn(
-                            "w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150 active:scale-90 border",
+                            "w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition-all duration-150 active:scale-90 border",
                             isFailedAction
                               ? "bg-rose-500 text-white border-rose-400"
                               : "bg-neutral-800/60 hover:bg-rose-500/20 text-neutral-400 hover:text-rose-400 border-neutral-700/60 hover:border-rose-500/30"
@@ -847,7 +1074,7 @@ export function Quests() {
                           {dueInfo && (
                             <>
                               <span className="text-neutral-600 shrink-0">•</span>
-                              <span className={cn("text-[10px] px-1.5 py-0.2 rounded font-medium border shrink-0", dueInfo.style)}>
+                              <span className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium border shrink-0", dueInfo.style)}>
                                 {dueInfo.label}
                               </span>
                             </>
@@ -862,7 +1089,7 @@ export function Quests() {
                                   e.stopPropagation();
                                   setExpandedSubtasksId(isSubtasksExpanded ? null : quest.id);
                                 }}
-                                className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/80 transition-colors shrink-0"
+                                className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/80 transition-colors shrink-0"
                               >
                                 <ListTodo className="w-2.5 h-2.5" />
                                 <span>{completedSubtasksCount}/{totalSubtasksCount}</span>
@@ -906,7 +1133,7 @@ export function Quests() {
                                 key={subtask.id}
                                 type="button"
                                 onClick={() => handleToggleSubtask(quest.id, subtask.id)}
-                                className="w-full flex items-center gap-2 p-1.5 rounded-lg text-left text-xs text-neutral-300 hover:bg-neutral-850 transition-colors"
+                                className="w-full flex items-center gap-2 p-1.5 rounded-lg text-left text-xs text-neutral-300 hover:bg-neutral-800/70 transition-colors"
                               >
                                 {subtask.completed ? (
                                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
@@ -979,7 +1206,7 @@ export function Quests() {
                     animate={{ opacity: 1, y: 0 }}
                     className={cn(
                       "rounded-xl border transition-colors flex items-center justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3 cursor-pointer group",
-                      "bg-neutral-900/60 hover:bg-neutral-850/80 border-neutral-800/80",
+                      "bg-neutral-900/60 hover:bg-neutral-800/60 border-neutral-800/80",
                       "border-l-[3px]",
                       SKILL_BORDER_COLORS[quest.skill]
                     )}
@@ -1022,7 +1249,7 @@ export function Quests() {
                           </span>
                           <span className="text-neutral-600">•</span>
                           {isFailed ? (
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500/10 text-rose-400 font-semibold border border-rose-500/20">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 font-semibold border border-rose-500/20">
                               Nicht durchgeführt
                             </span>
                           ) : (
@@ -1040,7 +1267,7 @@ export function Quests() {
 
                     {/* Quick Reopen & Repeat Actions */}
                     <div 
-                      className="flex items-center gap-1 shrink-0" 
+                      className="flex items-center gap-1.5 shrink-0" 
                       onClick={(e) => e.stopPropagation()}
                     >
                       <button
@@ -1050,7 +1277,8 @@ export function Quests() {
                           toast.info(`"${quest.title}" wiedereröffnet`);
                         }}
                         title="Quest wiedereröffnen"
-                        className="p-1.5 text-neutral-400 hover:text-amber-400 hover:bg-neutral-800 rounded-lg transition-colors"
+                        aria-label="Quest wiedereröffnen"
+                        className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-amber-400 bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-800 rounded-lg transition-colors"
                       >
                         <RotateCcw className="w-4 h-4" />
                       </button>
@@ -1058,7 +1286,8 @@ export function Quests() {
                         type="button"
                         onClick={() => handleRepeat(quest)}
                         title="Quest wiederholen"
-                        className="p-1.5 text-neutral-400 hover:text-sky-400 hover:bg-neutral-800 rounded-lg transition-colors"
+                        aria-label="Quest wiederholen"
+                        className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-sky-400 bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-800 rounded-lg transition-colors"
                       >
                         <Plus className="w-4 h-4" />
                       </button>
@@ -1083,6 +1312,12 @@ export function Quests() {
           }}
           onReopen={reopenQuest}
           onToggleSubtask={handleToggleSubtask}
+          onComplete={handleCompleteSuccess}
+          onFail={handleCompleteFailed}
+          onReschedule={(id, dueDate) => {
+            updateQuest(id, { dueDate });
+            toast.success('Fälligkeitsdatum aktualisiert');
+          }}
         />
       )}
 

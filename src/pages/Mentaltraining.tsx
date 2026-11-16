@@ -1,11 +1,32 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Lightbulb, Target, ArrowRight, Brain, Dumbbell, BookOpen, Shield, Activity, Moon, Dna, History, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2, Filter, ArrowUpDown, X } from 'lucide-react';
+import {
+  Lightbulb,
+  Target,
+  ArrowRight,
+  Brain,
+  Dumbbell,
+  BookOpen,
+  Shield,
+  Activity,
+  Moon,
+  Dna,
+  History,
+  Calendar as CalendarIcon,
+  ChevronRight,
+  ChevronDown,
+  Filter,
+  ArrowUpDown,
+  Plus,
+  Check,
+  Sparkles,
+} from 'lucide-react';
 import { SkillType } from '@/types';
-import { format } from 'date-fns';
+import { format, isSameDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store/useStore';
 import { generateDailyTraining } from '@/services/coachService';
+import { toast } from 'sonner';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   Brain, Dumbbell, Shield, Activity, Moon, Dna, BookOpen
@@ -234,21 +255,6 @@ const DEEP_TRAINings = [
   }
 ];
 
-// Seeded random number generator
-function sfc32(a: number, b: number, c: number, d: number) {
-  return function() {
-    a >>>= 0; b >>>= 0; c >>>= 0; d >>>= 0; 
-    let t = (a + b) | 0;
-    a = b ^ b >>> 9;
-    b = c + (c << 3) | 0;
-    c = (c << 21 | c >>> 11);
-    d = d + 1 | 0;
-    t = t + d | 0;
-    c = c + t | 0;
-    return (t >>> 0) / 4294967296;
-  }
-}
-
 function getDailyIndices(date: Date, totalDeep: number) {
   // Use day count since epoch for deterministic cycling
   const dayCount = Math.floor(date.getTime() / (1000 * 60 * 60 * 24));
@@ -296,7 +302,7 @@ function renderMarkdown(text: string) {
 }
 
 export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
-  const { deepTrainings, lastTrainingGeneratedDate, addDeepTraining, setLastTrainingGeneratedDate } = useStore();
+  const { deepTrainings, lastTrainingGeneratedDate, addDeepTraining, setLastTrainingGeneratedDate, quests, addQuest } = useStore();
   const [currentDate] = useState(() => new Date());
   const [activeSubTab, setActiveSubTab] = useState<'impulse' | 'tiefentraining' | 'archiv'>('impulse');
   const [expandedTraining, setExpandedTraining] = useState<string | null>(null);
@@ -346,7 +352,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
     }
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     
-    if (lastTrainingGeneratedDate !== todayStr && !isGenerating && process.env.GEMINI_API_KEY) {
+    if (lastTrainingGeneratedDate !== todayStr && !isGenerating) {
       setIsGenerating(true);
       const existingTitles = allTrainings.map(t => t.title);
       generateDailyTraining(existingTitles).then((newTraining) => {
@@ -376,22 +382,42 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
     return days;
   }, []);
 
-  const getIndicesForDate = (date: Date) => {
-    return getDailyIndices(date, allTrainings.length);
-  };
-
   const dailyIndices = useMemo(() => {
-    return getIndicesForDate(currentDate);
-  }, [currentDate]);
+    return getDailyIndices(currentDate, allTrainings.length);
+  }, [currentDate, allTrainings.length]);
 
   const archiveIndices = useMemo(() => {
-    return getIndicesForDate(selectedArchiveDate);
-  }, [selectedArchiveDate]);
+    return getDailyIndices(selectedArchiveDate, allTrainings.length);
+  }, [selectedArchiveDate, allTrainings.length]);
 
   const skillKeys: SkillType[] = ['Fitness', 'Fokus', 'Disziplin', 'Wissen', 'Soziales'];
 
+  const handleAdoptExercise = (skill: SkillType, quote: string, exercise: string) => {
+    const title = `${skill}-Übung: ${quote.replace(/\.$/, '')}`;
+    const today = new Date();
+    const alreadyExists = quests.some(
+      (q) => q.title === title && q.createdAt && isSameDay(new Date(q.createdAt), today)
+    );
+    if (alreadyExists) {
+      toast.info('Diese Übung ist heute bereits in deinen Quests.');
+      return;
+    }
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    addQuest({
+      title,
+      description: exercise,
+      skill,
+      xpReward: 15,
+      type: 'daily',
+      dueDate: endOfToday.getTime(),
+      tags: ['Mentaltraining'],
+    });
+    toast.success(`Übung als Quest für heute übernommen (+15 ${skill} EP)`);
+  };
+
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <header className="mb-6">
         <h2 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
           <Lightbulb className="w-8 h-8 text-amber-400" />
@@ -446,35 +472,64 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
             {skillKeys.map((skill) => {
               const index = dailyIndices[skill];
               const tipData = DAILY_TIPS[skill][index];
-              
+              const questTitle = `${skill}-Übung: ${tipData.quote.replace(/\.$/, '')}`;
+              const isAdoptedToday = quests.some(
+                (q) => q.title === questTitle && q.createdAt && isSameDay(new Date(q.createdAt), currentDate)
+              );
+
               return (
-                <div key={skill} className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 relative overflow-hidden group hover:border-amber-500/30 transition-colors">
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="text-xs font-bold uppercase tracking-wider text-amber-500 bg-amber-500/10 px-3 py-1 rounded-full">
-                      {skill}
-                    </span>
+                <div key={skill} className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 flex flex-col justify-between gap-5 hover:border-amber-500/30 transition-colors">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-4">
+                      <span className="text-xs font-bold uppercase tracking-wider text-amber-500 bg-amber-500/10 px-3 py-1 rounded-full">
+                        {skill}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleAdoptExercise(skill, tipData.quote, tipData.exercise)}
+                        disabled={isAdoptedToday}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors min-h-[34px]',
+                          isAdoptedToday
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-default'
+                            : 'bg-neutral-950 border-neutral-800 hover:border-amber-500/50 text-neutral-300 hover:text-amber-400'
+                        )}
+                      >
+                        {isAdoptedToday ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            Übernommen
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5" />
+                            Als Quest
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <blockquote className="text-lg font-medium text-white mb-4 italic">
+                      &ldquo;{tipData.quote}&rdquo;
+                    </blockquote>
+
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-neutral-400 mb-1 flex items-center gap-2">
+                          <Target className="w-4 h-4" /> Insight
+                        </h4>
+                        <p className="text-neutral-300 text-sm leading-relaxed">
+                          {tipData.tip}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  
-                  <blockquote className="text-lg font-medium text-white mb-4 italic">
-                    "{tipData.quote}"
-                  </blockquote>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <h4 className="text-sm font-semibold text-neutral-400 mb-1 flex items-center gap-2">
-                        <Target className="w-4 h-4" /> Insight
-                      </h4>
-                      <p className="text-neutral-300 text-sm leading-relaxed">
-                        {tipData.tip}
-                      </p>
-                    </div>
-                    
-                    <div className="bg-amber-500/5 block border border-amber-500/20 rounded-2xl p-4">
-                      <h4 className="text-sm font-semibold text-amber-500 mb-1">🔥 Übung des Tages</h4>
-                      <p className="text-neutral-200 text-sm">
-                        {tipData.exercise}
-                      </p>
-                    </div>
+
+                  <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4">
+                    <h4 className="text-sm font-semibold text-amber-400 mb-1">Übung des Tages</h4>
+                    <p className="text-neutral-200 text-sm leading-relaxed">
+                      {tipData.exercise}
+                    </p>
                   </div>
                 </div>
               );
@@ -529,7 +584,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                       ))}
                     </select>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-500">
-                      ▼
+                      <ChevronDown className="w-4 h-4" />
                     </div>
                   </div>
                 </div>
@@ -541,14 +596,14 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                     <select
                       value={trainingSortOrder}
                       onChange={(e) => setTrainingSortOrder(e.target.value as any)}
-                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2.5 pl-10 pr-4 text-sm text-neutral-300 focus:outline-none focus:border-amber-500 transition-colors appearance-none"
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2.5 pl-10 pr-8 text-sm text-neutral-300 focus:outline-none focus:border-amber-500 transition-colors appearance-none"
                     >
                       <option value="newest">Zuletzt hinzugefügt</option>
                       <option value="oldest">Zuerst hinzugefügt</option>
                       <option value="alphabetical">Name (A-Z)</option>
                     </select>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-500">
-                      ▼
+                      <ChevronDown className="w-4 h-4" />
                     </div>
                   </div>
                 </div>
@@ -558,7 +613,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
              <div className="mb-8 p-1 bg-gradient-to-r from-amber-500/20 to-blue-500/20 rounded-2xl">
                <div className="bg-neutral-900 rounded-xl p-5 border border-white/5">
                  <div className="flex items-center gap-2 mb-3">
-                   <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                    <span className="text-xs font-bold text-amber-500 uppercase tracking-widest">Empfehlung für heute</span>
                  </div>
                  <div className="flex items-center justify-between">
@@ -621,9 +676,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                               <h4 className="text-lg font-bold text-white">{training.title}</h4>
                             </div>
                           </div>
-                          <div className={cn("text-neutral-400 transition-transform duration-300 transform", isExpanded ? "rotate-180" : "")}>
-                            ▼
-                          </div>
+                          <ChevronDown className={cn("w-5 h-5 text-neutral-400 transition-transform duration-300 shrink-0", isExpanded && "rotate-180")} />
                         </button>
                         
                         {isExpanded && (
@@ -672,7 +725,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                           {date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
                         </span>
                       </div>
-                      <ChevronRight className={cn("w-4 h-4 transition-transform", isSelected ? "translate-x-1" : "opacity-0 group-hover:opacity-100")} />
+                      <ChevronRight className={cn("w-4 h-4 transition-transform", isSelected ? "text-amber-500 translate-x-0.5" : "text-neutral-600 group-hover:text-neutral-300")} />
                     </button>
                   );
                 })}

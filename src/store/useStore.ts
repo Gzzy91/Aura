@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserStats, SkillStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry } from '../types';
+import { UserStats, SkillStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry, WeeklyCoachSummary, HealthDailyRecord } from '../types';
 import { User } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { toast } from 'sonner';
 import { triggerHapticFeedback } from '@/lib/utils';
+import { isSameDay, format, startOfDay } from 'date-fns';
 import { 
   doc, 
   setDoc, 
@@ -68,6 +69,7 @@ interface AppState {
   user: User | null;
   loading: boolean;
   isInitialized: boolean;
+  questsSynced: boolean;
   isLocked: boolean;
   settings: {
     isPinEnabled: boolean;
@@ -82,14 +84,17 @@ interface AppState {
   widgetOrder: string[];
   deepTrainings: DeepTraining[];
   foodEntries: FoodEntry[];
+  weeklyCoachSummaries: WeeklyCoachSummary[];
+  healthRecords: HealthDailyRecord[];
   lastTrainingGeneratedDate: string | null;
   setUser: (user: User | null) => void;
   setInitialized: (val: boolean) => void;
   setLocked: (val: boolean) => void;
   updateSettings: (updates: Partial<{ isPinEnabled: boolean; pin: string | null }>) => void;
   addQuest: (quest: Omit<Quest, 'id' | 'completed' | 'createdAt'>) => void;
-  completeQuest: (id: string, isNegativeHabit?: boolean) => void;
+  completeQuest: (id: string, isNegativeHabit?: boolean, customDate?: number) => number | void;
   failQuest: (id: string) => void;
+  autoFailOverdueQuests: () => number;
   toggleSubtask: (questId: string, subtaskId: string) => void;
   deleteQuest: (id: string) => void;
   reopenQuest: (id: string) => void;
@@ -100,6 +105,10 @@ interface AppState {
   addDiaryEntry: (entry: Omit<DiaryEntry, 'id'>) => void;
   updateDiaryEntry: (id: string, updates: Partial<Omit<DiaryEntry, 'id'>>) => void;
   deleteDiaryEntry: (id: string) => void;
+  setDailyMood: (mood: number, targetDate?: Date) => Promise<void>;
+  saveWeeklyCoachSummary: (summary: WeeklyCoachSummary) => Promise<void>;
+  saveHealthRecord: (record: HealthDailyRecord) => Promise<void>;
+  markRecoverySuggestionDecision: (recordId: string, suggestionId: string, decision: 'accepted' | 'dismissed') => Promise<void>;
   addFoodEntry: (entry: Omit<FoodEntry, 'id'>) => void;
   updateFoodEntry: (id: string, updates: Partial<Omit<FoodEntry, 'id'>>) => void;
   deleteFoodEntry: (id: string) => void;
@@ -258,12 +267,89 @@ export function calculateStatsFromHistory(
   };
 }
 
+function computeSingleNextRecurrence(
+  baseTimestamp: number,
+  recurrence: 'daily' | 'weekly' | 'monthly',
+  recurrenceDays?: number[]
+): number {
+  const base = new Date(baseTimestamp);
+  if (recurrence === 'daily') {
+    const next = new Date(base);
+    next.setDate(next.getDate() + 1);
+    return next.getTime();
+  }
+  if (recurrence === 'weekly') {
+    if (recurrenceDays && recurrenceDays.length > 0) {
+      for (let i = 1; i <= 7; i++) {
+        const nextDate = new Date(base);
+        nextDate.setDate(base.getDate() + i);
+        if (recurrenceDays.includes(nextDate.getDay())) {
+          return nextDate.getTime();
+        }
+      }
+    }
+    const fallback = new Date(base);
+    fallback.setDate(fallback.getDate() + 7);
+    return fallback.getTime();
+  }
+  // monthly
+  if (recurrenceDays && recurrenceDays.length > 0) {
+    const sortedDays = [...recurrenceDays].sort((a, b) => a - b);
+    for (let i = 0; i <= 12; i++) {
+      const monthStart = new Date(
+        base.getFullYear(),
+        base.getMonth() + i,
+        1,
+        base.getHours(),
+        base.getMinutes(),
+        base.getSeconds(),
+        base.getMilliseconds()
+      );
+      const lastDayOfMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+      for (const day of sortedDays) {
+        const candidate = new Date(monthStart);
+        candidate.setDate(Math.min(day, lastDayOfMonth));
+        if (candidate.getTime() > base.getTime()) {
+          return candidate.getTime();
+        }
+      }
+    }
+  }
+  const nextMonth = new Date(base);
+  const targetDay = base.getDate();
+  nextMonth.setDate(1);
+  nextMonth.setMonth(nextMonth.getMonth() + 1);
+  const lastDay = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
+  nextMonth.setDate(Math.min(targetDay, lastDay));
+  return nextMonth.getTime();
+}
+
+function getNextRecurrenceTimestamp(
+  baseTimestamp: number,
+  recurrence: 'daily' | 'weekly' | 'monthly',
+  recurrenceDays?: number[],
+  minTimestamp?: number
+): number {
+  let nextTs = computeSingleNextRecurrence(baseTimestamp, recurrence, recurrenceDays);
+  if (minTimestamp !== undefined) {
+    let safety = 0;
+    while (nextTs < minTimestamp && safety < 1000) {
+      const advanced = computeSingleNextRecurrence(nextTs, recurrence, recurrenceDays);
+      if (advanced <= nextTs) break;
+      nextTs = advanced;
+      safety++;
+    }
+  }
+  return nextTs;
+}
+
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
       user: null,
       loading: true,
       isInitialized: false,
+      questsSynced: false,
       isLocked: false,
       settings: {
         isPinEnabled: false,
@@ -275,12 +361,14 @@ export const useStore = create<AppState>()(
       visions: [],
       focusSessions: [],
       notifiedQuestIds: [],
-      widgetOrder: ['level', 'streak', 'chart', 'recurring_chart', 'calendar', 'today', 'reminders', 'settings'],
+      widgetOrder: ['level', 'streak', 'mood', 'energy_recovery', 'weekly_summary', 'food_mood_correlation', 'chart', 'recurring_chart', 'calendar', 'today', 'reminders', 'settings'],
       deepTrainings: [],
       foodEntries: [],
+      weeklyCoachSummaries: [],
+      healthRecords: [],
       lastTrainingGeneratedDate: null,
       
-      setUser: (user) => set({ user, loading: false }),
+      setUser: (user) => set({ user, loading: false, ...(user ? {} : { questsSynced: false }) }),
       setInitialized: (val) => set({ isInitialized: val }),
       setLocked: (val) => set({ isLocked: val }),
       
@@ -409,7 +497,9 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          setDoc(doc(db, 'users', user.uid, 'diaryEntries', id), cleanData(entry));
+          setDoc(doc(db, 'users', user.uid, 'diaryEntries', id), cleanData(entry)).catch((error) => {
+            handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/diaryEntries/${id}`);
+          });
         }
       },
 
@@ -422,7 +512,9 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid, 'diaryEntries', id), cleanUpdateData(updates));
+          updateDoc(doc(db, 'users', user.uid, 'diaryEntries', id), cleanUpdateData(updates)).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/diaryEntries/${id}`);
+          });
         }
       },
 
@@ -433,8 +525,157 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          deleteDoc(doc(db, 'users', user.uid, 'diaryEntries', id));
+          deleteDoc(doc(db, 'users', user.uid, 'diaryEntries', id)).catch((error) => {
+            handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/diaryEntries/${id}`);
+          });
         }
+      },
+
+      setDailyMood: async (mood, targetDate = new Date()) => {
+        const validMood = Math.min(5, Math.max(1, Math.round(mood)));
+        const dateKey = format(targetDate, 'yyyy-MM-dd');
+        const state = get();
+        const existing = state.diaryEntries.find(
+          (e) => e.id === `mood-${dateKey}` || isSameDay(new Date(e.date), targetDate)
+        );
+        const { user } = state;
+
+        if (existing) {
+          set((s) => ({
+            diaryEntries: s.diaryEntries
+              .map((e) => (e.id === existing.id ? { ...e, mood: validMood } : e))
+              .sort((a, b) => b.date - a.date)
+          }));
+
+          if (user) {
+            try {
+              await updateDoc(
+                doc(db, 'users', user.uid, 'diaryEntries', existing.id),
+                cleanUpdateData({ mood: validMood })
+              );
+            } catch (error) {
+              handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/diaryEntries/${existing.id}`);
+              throw error;
+            }
+          }
+        } else {
+          const id = `mood-${dateKey}`;
+          const entry: DiaryEntry = {
+            id,
+            date: targetDate.getTime(),
+            mood: validMood,
+            notes: '',
+            progress: '',
+            tags: [],
+          };
+
+          set((s) => ({
+            diaryEntries: [entry, ...s.diaryEntries].sort((a, b) => b.date - a.date)
+          }));
+
+          if (user) {
+            try {
+              await setDoc(doc(db, 'users', user.uid, 'diaryEntries', id), cleanData(entry));
+            } catch (error) {
+              handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/diaryEntries/${id}`);
+              throw error;
+            }
+          }
+        }
+      },
+
+      saveWeeklyCoachSummary: async (summary) => {
+        set((s) => {
+          const exists = s.weeklyCoachSummaries.some((item) => item.id === summary.id);
+          const next = exists
+            ? s.weeklyCoachSummaries.map((item) => (item.id === summary.id ? summary : item))
+            : [summary, ...s.weeklyCoachSummaries];
+          return {
+            weeklyCoachSummaries: next.sort((a, b) => b.weekStart - a.weekStart),
+          };
+        });
+
+        const { user } = get();
+        if (user) {
+          try {
+            await setDoc(
+              doc(db, 'users', user.uid, 'weeklyCoachSummaries', summary.id),
+              cleanData(summary)
+            );
+          } catch (error) {
+            handleFirestoreError(
+              error,
+              OperationType.CREATE,
+              `users/${user.uid}/weeklyCoachSummaries/${summary.id}`
+            );
+          }
+        }
+      },
+
+      saveHealthRecord: async (record) => {
+        const sanitized: HealthDailyRecord = {
+          id: record.id,
+          date: Math.round(record.date),
+          sleepDurationMinutes: Math.max(0, Math.min(1440, Math.round(record.sleepDurationMinutes))),
+          activityDurationMinutes: Math.max(0, Math.min(1440, Math.round(record.activityDurationMinutes))),
+          avgHeartRate:
+            typeof record.avgHeartRate === 'number'
+              ? Math.max(25, Math.min(240, Math.round(record.avgHeartRate)))
+              : null,
+          sources: Array.from(new Set(record.sources)).slice(0, 6),
+          recoveryScore: Math.max(0, Math.min(100, Math.round(record.recoveryScore))),
+          recoveryState: record.recoveryState,
+          acceptedSuggestionIds: (record.acceptedSuggestionIds || []).slice(0, 25),
+          dismissedSuggestionIds: (record.dismissedSuggestionIds || []).slice(0, 25),
+          syncedAt: Math.round(record.syncedAt || Date.now()),
+        };
+
+        set((s) => {
+          const exists = s.healthRecords.some((item) => item.id === sanitized.id);
+          const next = exists
+            ? s.healthRecords.map((item) => (item.id === sanitized.id ? sanitized : item))
+            : [sanitized, ...s.healthRecords];
+          return {
+            healthRecords: next.sort((a, b) => b.date - a.date),
+          };
+        });
+
+        const { user } = get();
+        if (user) {
+          try {
+            await setDoc(
+              doc(db, 'users', user.uid, 'healthRecords', sanitized.id),
+              cleanData(sanitized)
+            );
+          } catch (error) {
+            handleFirestoreError(
+              error,
+              OperationType.WRITE,
+              `users/${user.uid}/healthRecords/${sanitized.id}`
+            );
+          }
+        }
+      },
+
+      markRecoverySuggestionDecision: async (recordId, suggestionId, decision) => {
+        const existing = get().healthRecords.find((r) => r.id === recordId);
+        if (!existing) return;
+
+        const accepted = new Set(existing.acceptedSuggestionIds || []);
+        const dismissed = new Set(existing.dismissedSuggestionIds || []);
+
+        if (decision === 'accepted') {
+          accepted.add(suggestionId);
+          dismissed.delete(suggestionId);
+        } else {
+          dismissed.add(suggestionId);
+        }
+
+        await get().saveHealthRecord({
+          ...existing,
+          acceptedSuggestionIds: Array.from(accepted).slice(0, 25),
+          dismissedSuggestionIds: Array.from(dismissed).slice(0, 25),
+        });
       },
 
       addFoodEntry: (entryData) => {
@@ -487,7 +728,7 @@ export const useStore = create<AppState>()(
         }
       },
 
-      completeQuest: (id, isNegativeHabit = false) => {
+      completeQuest: (id, isNegativeHabit = false, customDate?: number) => {
         const state = get();
         const quest = state.quests.find(q => q.id === id);
         if (!quest || quest.completed) return;
@@ -497,6 +738,7 @@ export const useStore = create<AppState>()(
         const { user } = get();
         let nextQuests = [...state.quests];
         let newStats = { ...state.stats, skills: { ...state.stats.skills } };
+        const actionTimestamp = customDate ?? Date.now();
 
         if (isNegativeHabit) {
           newStats.xp -= quest.xpReward;
@@ -507,7 +749,7 @@ export const useStore = create<AppState>()(
           }
           if (newStats.xp < 0) newStats.xp = 0;
 
-          const skillStats = { ...newStats.skills[quest.skill] };
+          const skillStats = { ...(newStats.skills[quest.skill] || { level: 1, xp: 0, xpToNextLevel: 50 }) };
           skillStats.xp -= quest.xpReward;
           while (skillStats.xp < 0 && skillStats.level > 1) {
             skillStats.level -= 1;
@@ -535,7 +777,7 @@ export const useStore = create<AppState>()(
         }
 
         if (quest.type === 'habit') {
-          const newCompletion = { date: Date.now(), direction: isNegativeHabit ? 'negative' as const : 'positive' as const };
+          const newCompletion = { date: actionTimestamp, direction: isNegativeHabit ? 'negative' as const : 'positive' as const };
           nextQuests = state.quests.map(q => q.id === id ? { 
             ...q, 
             completions: [...(q.completions || []), newCompletion] 
@@ -546,6 +788,12 @@ export const useStore = create<AppState>()(
               completions: nextQuests.find(q => q.id === id)?.completions
             }));
           }
+
+          set({ quests: nextQuests, stats: newStats });
+          if (user) {
+            updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
+          }
+          return actionTimestamp;
         } else {
           nextQuests = state.quests.map(q => q.id === id ? { ...q, completed: true, completedAt: Date.now() } : q);
           
@@ -560,50 +808,11 @@ export const useStore = create<AppState>()(
           }
 
           if (quest.recurrence && quest.recurrence !== 'none') {
-            const date = new Date(quest.dueDate || Date.now());
-            if (quest.recurrence === 'daily') date.setDate(date.getDate() + 1);
-            else if (quest.recurrence === 'weekly') {
-              if (quest.recurrenceDays && quest.recurrenceDays.length > 0) {
-                // Find next selected weekday
-                let found = false;
-                for (let i = 1; i <= 7; i++) {
-                  const nextDate = new Date(date);
-                  nextDate.setDate(date.getDate() + i);
-                  if (quest.recurrenceDays.includes(nextDate.getDay())) {
-                    date.setTime(nextDate.getTime());
-                    found = true;
-                    break;
-                  }
-                }
-                if (!found) date.setDate(date.getDate() + 7);
-              } else {
-                date.setDate(date.getDate() + 7);
-              }
-            }
-            else if (quest.recurrence === 'monthly') {
-              if (quest.recurrenceDays && quest.recurrenceDays.length > 0) {
-                let found = false;
-                for (let i = 0; i < 12; i++) {
-                  const nextMonth = new Date(date);
-                  nextMonth.setMonth(date.getMonth() + i);
-                  const sortedDays = [...quest.recurrenceDays].sort((a, b) => a - b);
-                  for (const day of sortedDays) {
-                    const candidate = new Date(nextMonth);
-                    const lastDayOfMonth = new Date(candidate.getFullYear(), candidate.getMonth() + 1, 0).getDate();
-                    candidate.setDate(Math.min(day, lastDayOfMonth));
-                    if (candidate.getTime() > date.getTime()) {
-                      date.setTime(candidate.getTime());
-                      found = true;
-                      break;
-                    }
-                  }
-                  if (found) break;
-                }
-                if (!found) date.setMonth(date.getMonth() + 1);
-              } else {
-                date.setMonth(date.getMonth() + 1);
-              }
-            }
+            const nextDueDate = getNextRecurrenceTimestamp(
+              quest.dueDate || Date.now(),
+              quest.recurrence,
+              quest.recurrenceDays
+            );
 
             const recurringQuest: Quest = {
               ...quest,
@@ -611,7 +820,7 @@ export const useStore = create<AppState>()(
               completed: false,
               completedAt: undefined,
               createdAt: Date.now(),
-              dueDate: date.getTime(),
+              dueDate: nextDueDate,
               subtasks: quest.subtasks?.map(s => ({ ...s, completed: false }))
             };
             nextQuests.push(recurringQuest);
@@ -655,48 +864,11 @@ export const useStore = create<AppState>()(
         }
 
         if (quest.recurrence && quest.recurrence !== 'none') {
-          const date = new Date(quest.dueDate || Date.now());
-          if (quest.recurrence === 'daily') date.setDate(date.getDate() + 1);
-          else if (quest.recurrence === 'weekly') {
-            if (quest.recurrenceDays && quest.recurrenceDays.length > 0) {
-              let found = false;
-              for (let i = 1; i <= 7; i++) {
-                const nextDate = new Date(date);
-                nextDate.setDate(date.getDate() + i);
-                if (quest.recurrenceDays.includes(nextDate.getDay())) {
-                  date.setTime(nextDate.getTime());
-                  found = true;
-                  break;
-                }
-              }
-              if (!found) date.setDate(date.getDate() + 7);
-            } else {
-              date.setDate(date.getDate() + 7);
-            }
-          } else if (quest.recurrence === 'monthly') {
-            if (quest.recurrenceDays && quest.recurrenceDays.length > 0) {
-              let found = false;
-              for (let i = 0; i < 12; i++) {
-                const nextMonth = new Date(date);
-                nextMonth.setMonth(date.getMonth() + i);
-                const sortedDays = [...quest.recurrenceDays].sort((a, b) => a - b);
-                for (const day of sortedDays) {
-                  const candidate = new Date(nextMonth);
-                  const lastDayOfMonth = new Date(candidate.getFullYear(), candidate.getMonth() + 1, 0).getDate();
-                  candidate.setDate(Math.min(day, lastDayOfMonth));
-                  if (candidate.getTime() > date.getTime()) {
-                    date.setTime(candidate.getTime());
-                    found = true;
-                    break;
-                  }
-                }
-                if (found) break;
-              }
-              if (!found) date.setMonth(date.getMonth() + 1);
-            } else {
-              date.setMonth(date.getMonth() + 1);
-            }
-          }
+          const nextDueDate = getNextRecurrenceTimestamp(
+            quest.dueDate || Date.now(),
+            quest.recurrence,
+            quest.recurrenceDays
+          );
 
           const recurringQuest: Quest = {
             ...quest,
@@ -705,7 +877,7 @@ export const useStore = create<AppState>()(
             failed: false,
             completedAt: undefined,
             createdAt: Date.now(),
-            dueDate: date.getTime(),
+            dueDate: nextDueDate,
             subtasks: quest.subtasks?.map(s => ({ ...s, completed: false }))
           };
           nextQuests.push(recurringQuest);
@@ -716,7 +888,106 @@ export const useStore = create<AppState>()(
         }
 
         set({ quests: nextQuests });
-        toast.info(`"${quest.title}" als nicht durchgeführt markiert`);
+      },
+
+      autoFailOverdueQuests: () => {
+        const state = get();
+        if (state.user && !state.questsSynced) return 0;
+
+        const startOfTodayMs = startOfDay(new Date()).getTime();
+        const overdueQuests = state.quests.filter(
+          (q) =>
+            q.type !== 'habit' &&
+            !q.completed &&
+            typeof q.dueDate === 'number' &&
+            q.dueDate < startOfTodayMs
+        );
+
+        if (overdueQuests.length === 0) return 0;
+
+        const overdueIds = new Set(overdueQuests.map((q) => q.id));
+        const { user } = state;
+
+        const nextQuests: Quest[] = state.quests.map((q) =>
+          overdueIds.has(q.id)
+            ? {
+                ...q,
+                completed: true,
+                failed: true,
+                completedAt: q.dueDate,
+              }
+            : q
+        );
+
+        const newRecurringQuests: Quest[] = [];
+
+        for (const q of overdueQuests) {
+          if (user) {
+            updateDoc(
+              doc(db, 'users', user.uid, 'quests', q.id),
+              cleanUpdateData({
+                completed: true,
+                failed: true,
+                completedAt: q.dueDate,
+              })
+            ).catch((error) => {
+              handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/quests/${q.id}`);
+            });
+          }
+
+          if (q.recurrence && q.recurrence !== 'none' && typeof q.dueDate === 'number') {
+            const nextDueDate = getNextRecurrenceTimestamp(
+              q.dueDate,
+              q.recurrence,
+              q.recurrenceDays,
+              startOfTodayMs
+            );
+
+            const alreadyExists = [...nextQuests, ...newRecurringQuests].some(
+              (existing) =>
+                !existing.completed &&
+                existing.type !== 'habit' &&
+                existing.title === q.title &&
+                existing.recurrence === q.recurrence &&
+                typeof existing.dueDate === 'number' &&
+                isSameDay(new Date(existing.dueDate), new Date(nextDueDate))
+            );
+
+            if (!alreadyExists) {
+              const recurringQuest: Quest = {
+                ...q,
+                id: crypto.randomUUID(),
+                completed: false,
+                failed: false,
+                completedAt: undefined,
+                createdAt: Date.now(),
+                dueDate: nextDueDate,
+                subtasks: q.subtasks?.map((s) => ({ ...s, completed: false })),
+              };
+              newRecurringQuests.push(recurringQuest);
+            }
+          }
+        }
+
+        const finalQuests = [...nextQuests, ...newRecurringQuests];
+        set({ quests: finalQuests });
+
+        if (user) {
+          for (const recurringQuest of newRecurringQuests) {
+            setDoc(
+              doc(db, 'users', user.uid, 'quests', recurringQuest.id),
+              cleanData(recurringQuest)
+            ).catch((error) => {
+              handleFirestoreError(
+                error,
+                OperationType.CREATE,
+                `users/${user.uid}/quests/${recurringQuest.id}`
+              );
+            });
+          }
+        }
+
+        return overdueQuests.length;
       },
 
       toggleSubtask: (questId, subtaskId) => {
@@ -801,7 +1072,26 @@ export const useStore = create<AppState>()(
           newStats.skills[quest.skill] = skillStats;
         }
 
-        const newQuests = state.quests.map(q => q.id === id ? { ...q, completed: false, failed: false, completedAt: undefined } : q);
+        const startOfTodayMs = startOfDay(new Date()).getTime();
+        let updatedDueDate = quest.dueDate;
+        if (typeof quest.dueDate === 'number' && quest.dueDate < startOfTodayMs) {
+          const newDue = new Date();
+          if (quest.hasTime) {
+            const oldDue = new Date(quest.dueDate);
+            newDue.setHours(oldDue.getHours(), oldDue.getMinutes(), oldDue.getSeconds(), oldDue.getMilliseconds());
+          } else {
+            newDue.setHours(23, 59, 59, 999);
+          }
+          updatedDueDate = newDue.getTime();
+        }
+
+        const newQuests = state.quests.map(q => q.id === id ? {
+          ...q,
+          completed: false,
+          failed: false,
+          completedAt: undefined,
+          dueDate: updatedDueDate
+        } : q);
         set({ quests: newQuests, stats: newStats });
 
         const { user } = get();
@@ -809,7 +1099,8 @@ export const useStore = create<AppState>()(
           updateDoc(doc(db, 'users', user.uid, 'quests', id), {
             completed: false,
             failed: false,
-            completedAt: deleteField()
+            completedAt: deleteField(),
+            ...(updatedDueDate !== quest.dueDate ? { dueDate: updatedDueDate } : {})
           });
           updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
         }
@@ -842,7 +1133,7 @@ export const useStore = create<AppState>()(
             newStats.level += 1;
             newStats.xpToNextLevel = Math.floor(newStats.xpToNextLevel * 1.5);
           }
-          const skillStats = { ...newStats.skills[quest.skill] };
+          const skillStats = { ...(newStats.skills[quest.skill] || { level: 1, xp: 0, xpToNextLevel: 50 }) };
           skillStats.xp += quest.xpReward;
           while (skillStats.xp >= skillStats.xpToNextLevel) {
             skillStats.xp -= skillStats.xpToNextLevel;
@@ -858,7 +1149,7 @@ export const useStore = create<AppState>()(
             newStats.xp += newStats.xpToNextLevel;
           }
           if (newStats.xp < 0) newStats.xp = 0;
-          const skillStats = { ...newStats.skills[quest.skill] };
+          const skillStats = { ...(newStats.skills[quest.skill] || { level: 1, xp: 0, xpToNextLevel: 50 }) };
           skillStats.xp -= quest.xpReward;
           while (skillStats.xp < 0 && skillStats.level > 1) {
             skillStats.level -= 1;
@@ -923,6 +1214,7 @@ export const useStore = create<AppState>()(
       },
 
       syncWithFirestore: (userId) => {
+        set({ questsSynced: false });
         const userDocRef = doc(db, 'users', userId);
         const questsColRef = collection(db, 'users', userId, 'quests');
         const diaryColRef = collection(db, 'users', userId, 'diaryEntries');
@@ -930,6 +1222,8 @@ export const useStore = create<AppState>()(
         const focusColRef = collection(db, 'users', userId, 'focusSessions');
         const deepColRef = collection(db, 'users', userId, 'deepTrainings');
         const foodColRef = collection(db, 'users', userId, 'foodEntries');
+        const weeklyCoachSummariesColRef = collection(db, 'users', userId, 'weeklyCoachSummaries');
+        const healthRecordsColRef = collection(db, 'users', userId, 'healthRecords');
 
         // Initial check: if user doc doesn't exist, upload current local state
         getDoc(userDocRef).then((docSnap) => {
@@ -948,6 +1242,8 @@ export const useStore = create<AppState>()(
             state.focusSessions.forEach(f => setDoc(doc(focusColRef, f.id), cleanData(f)));
             state.deepTrainings.forEach(d => setDoc(doc(deepColRef, d.id), cleanData(d)));
             state.foodEntries.forEach(f => setDoc(doc(foodColRef, f.id), cleanData(f)));
+            state.weeklyCoachSummaries.forEach(w => setDoc(doc(weeklyCoachSummariesColRef, w.id), cleanData(w)));
+            state.healthRecords.forEach(h => setDoc(doc(healthRecordsColRef, h.id), cleanData(h)));
           }
         });
 
@@ -982,7 +1278,7 @@ export const useStore = create<AppState>()(
           snapshot.forEach((doc) => quests.push(doc.data() as Quest));
           const state = get();
           const newStats = calculateStatsFromHistory(quests, state.focusSessions, state.stats);
-          set({ quests, stats: newStats });
+          set({ quests, stats: newStats, questsSynced: true });
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/quests`);
         });
@@ -1029,6 +1325,22 @@ export const useStore = create<AppState>()(
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/foodEntries`);
         });
 
+        const unsubWeeklyCoachSummaries = onSnapshot(weeklyCoachSummariesColRef, (snapshot) => {
+          const weeklyCoachSummaries: WeeklyCoachSummary[] = [];
+          snapshot.forEach((doc) => weeklyCoachSummaries.push(doc.data() as WeeklyCoachSummary));
+          set({ weeklyCoachSummaries: weeklyCoachSummaries.sort((a, b) => b.weekStart - a.weekStart) });
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, `users/${userId}/weeklyCoachSummaries`);
+        });
+
+        const unsubHealthRecords = onSnapshot(healthRecordsColRef, (snapshot) => {
+          const healthRecords: HealthDailyRecord[] = [];
+          snapshot.forEach((doc) => healthRecords.push(doc.data() as HealthDailyRecord));
+          set({ healthRecords: healthRecords.sort((a, b) => b.date - a.date) });
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, `users/${userId}/healthRecords`);
+        });
+
         return () => {
           unsubUser();
           unsubQuests();
@@ -1037,6 +1349,8 @@ export const useStore = create<AppState>()(
           unsubFocus();
           unsubDeep();
           unsubFood();
+          unsubWeeklyCoachSummaries();
+          unsubHealthRecords();
         };
       }
     }),
@@ -1044,7 +1358,7 @@ export const useStore = create<AppState>()(
       name: 'rpg-storage',
       version: 1,
       partialize: (state) => {
-        const { isLocked, ...persistedState } = state;
+        const { isLocked, questsSynced, ...persistedState } = state;
         return persistedState;
       },
       migrate: (persistedState: any, version: number) => {

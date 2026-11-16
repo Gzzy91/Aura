@@ -1,53 +1,87 @@
-import { GoogleGenAI, Type } from '@google/genai';
 import { DeepTraining } from '../types';
 
-export async function generateDailyTraining(existingTitles: string[]): Promise<Omit<DeepTraining, 'id' | 'createdAt'>> {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  
-  const systemPrompt = `You are a High-Performance AI Coach in a Self-Improvement RPG app called "LifeQuest".
-Your task is to generate one new "Deep Training" module for the Coach Library.
-It should cover advanced psychological, anatomical, or cognitive concepts.
-It MUST be different from the following existing titles: ${existingTitles.join(", ")}.
+export interface WeeklySummaryDayPayload {
+  shortDay: string;
+  dateLabel: string;
+  mood: number | null;
+  moodLabel?: string | null;
+  xp: number;
+  completedCount: number;
+  focusMinutes: number;
+  notes?: string;
+  progress?: string;
+}
 
-Return your result using the "createDeepTraining" function.
-The "category" must be one of: "Fitness", "Fokus", "Disziplin", "Wissen", "Soziales" or a combination (e.g., "Fokus & Disziplin").
-The "iconName" must be one of: "Brain", "Dumbbell", "Shield", "Activity", "Moon", "Dna", "BookOpen".
-The "content" should use markdown formatting with sections, bold text, and a final "Dein Coaching-Auftrag:" actionable task.
-Write in GERMAN. Address the user as "Du".`;
+export interface WeeklySummaryRequestPayload {
+  weekLabel: string;
+  avgMood: number | null;
+  moodDelta: number | null;
+  loggedDaysCount: number;
+  totalXp: number;
+  xpDelta: number;
+  totalCompleted: number;
+  totalFocusMinutes: number;
+  topSkill: { skill: string; xp: number } | null;
+  moodDistribution: Record<string, number>;
+  dailyBreakdown: WeeklySummaryDayPayload[];
+  userLevel?: number;
+}
 
-  const createDeclaration = {
-    name: "createDeepTraining",
-    description: "Erstellt ein neues Training für die Coach-Bibliothek.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        title: { type: Type.STRING },
-        category: { type: Type.STRING },
-        iconName: { type: Type.STRING },
-        content: { type: Type.STRING }
-      },
-      required: ["title", "category", "iconName", "content"]
-    }
+export interface CoachChatContext {
+  level: number;
+  xp: number;
+  xpToNextLevel: number;
+  skills: Record<string, unknown>;
+  activeQuests: string[];
+  recentMoodSummary?: string;
+}
+
+export interface CoachChatResponse {
+  text?: string;
+  functionCall?: {
+    name?: string;
+    args?: Record<string, unknown>;
   };
+  priorHistory?: unknown[];
+}
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: "Erstelle ein neues Training.",
-    config: {
-      systemInstruction: systemPrompt,
-      tools: [{ functionDeclarations: [createDeclaration] }]
-    }
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
 
-  if (response.functionCalls && response.functionCalls.length > 0) {
-    const args = response.functionCalls[0].args as any;
-    return {
-      title: args.title || "Erweiterte Fokus-Strategie",
-      category: args.category || "Fokus",
-      iconName: args.iconName || "Brain",
-      content: args.content || "Hier ist dein neues Training."
-    };
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Anfrage fehlgeschlagen (${res.status})`);
   }
+  return data as T;
+}
 
-  throw new Error("Fehler bei der Generierung des Trainings");
+export async function generateDailyTraining(
+  existingTitles: string[]
+): Promise<Omit<DeepTraining, 'id' | 'createdAt'>> {
+  return postJson<Omit<DeepTraining, 'id' | 'createdAt'>>('/api/coach/daily-training', {
+    existingTitles,
+  });
+}
+
+export async function generateWeeklyMoodSummary(
+  payload: WeeklySummaryRequestPayload
+): Promise<{ summary: string }> {
+  return postJson<{ summary: string }>('/api/coach/weekly-summary', payload);
+}
+
+export async function sendCoachChatMessage(payload: {
+  history?: Array<{ role: 'user' | 'coach'; content: string }>;
+  userMessage?: string;
+  context: CoachChatContext;
+  functionCallResult?: {
+    priorHistory: unknown[];
+    call: unknown;
+    result: Record<string, unknown>;
+  };
+}): Promise<CoachChatResponse> {
+  return postJson<CoachChatResponse>('/api/coach/chat', payload);
 }
