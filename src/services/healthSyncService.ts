@@ -37,6 +37,203 @@ export interface ParsedHealthImportDay {
   activityDurationMinutes: number;
 }
 
+export type GoogleHealthApiMode = 'google_health' | 'google_fit';
+
+export interface HealthProvidersStatus {
+  garmin: {
+    configured: boolean;
+    connected: boolean;
+    callbackUrl: string;
+    connectedAt: number | null;
+  };
+  google: {
+    configured: boolean;
+    connected: boolean;
+    apiMode: GoogleHealthApiMode | null;
+    callbackUrl: string;
+    connectedAt: number | null;
+  };
+}
+
+export interface RemoteHealthDayMetric {
+  dateKey: string;
+  sleepDurationMinutes: number;
+  activityDurationMinutes: number;
+  avgHeartRate: number | null;
+}
+
+export interface RemoteHealthSyncResult {
+  provider: 'garmin_connect' | 'google_health';
+  apiMode?: GoogleHealthApiMode;
+  days: RemoteHealthDayMetric[];
+  syncedAt: number;
+}
+
+// Strict in-memory token cache (never stored in localStorage/sessionStorage)
+const inMemoryHealthSessions = new Map<'garmin' | 'google', string>();
+
+export function setHealthSessionToken(provider: 'garmin' | 'google', token: string): void {
+  inMemoryHealthSessions.set(provider, token);
+}
+
+export function getHealthSessionToken(provider: 'garmin' | 'google'): string | null {
+  return inMemoryHealthSessions.get(provider) || null;
+}
+
+export function clearHealthSessionToken(provider: 'garmin' | 'google'): void {
+  inMemoryHealthSessions.delete(provider);
+}
+
+export async function fetchHealthProvidersStatus(): Promise<HealthProvidersStatus> {
+  const res = await fetch('/api/health/providers/status', {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    throw new Error('Status der Health-Provider konnte nicht geladen werden.');
+  }
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('Health-Backend unter dieser URL nicht erreichbar (kein JSON).');
+  }
+  return (await res.json()) as HealthProvidersStatus;
+}
+
+export class ProviderNotConfiguredError extends Error {
+  callbackUrl: string;
+  constructor(message: string, callbackUrl: string) {
+    super(message);
+    this.name = 'ProviderNotConfiguredError';
+    this.callbackUrl = callbackUrl;
+  }
+}
+
+export async function openHealthProviderOAuthPopup(
+  provider: 'garmin' | 'google',
+  googleApiMode: GoogleHealthApiMode = 'google_health'
+): Promise<void> {
+  const endpoint =
+    provider === 'garmin'
+      ? '/api/health/garmin/auth-url'
+      : `/api/health/google/auth-url?api=${encodeURIComponent(googleApiMode)}`;
+
+  const res = await fetch(endpoint, {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+
+  const contentType = res.headers.get('content-type') || '';
+  const rawText = await res.text();
+  let data: {
+    url?: string;
+    error?: string;
+    configured?: boolean;
+    callbackUrl?: string;
+  } = {};
+
+  if (rawText.trim().startsWith('{')) {
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = {};
+    }
+  } else if (contentType.includes('text/html') || rawText.trim().startsWith('<')) {
+    throw new Error(
+      `OAuth-Endpunkt hat HTML statt JSON geliefert (HTTP ${res.status}). Bitte App neu laden oder die geteilte App neu veröffentlichen.`
+    );
+  }
+
+  if (data.configured === false) {
+    const fallbackCallback =
+      data.callbackUrl || `${window.location.origin}/api/health/${provider}/callback`;
+    throw new ProviderNotConfiguredError(
+      data.error || 'OAuth-Zugangsdaten fehlen in den Server-Secrets.',
+      fallbackCallback
+    );
+  }
+
+  if (!res.ok || !data.url) {
+    throw new Error(
+      data.error ||
+        `OAuth-Autorisierungs-URL konnte nicht erzeugt werden (HTTP ${res.status}).`
+    );
+  }
+
+  const popup = window.open(
+    data.url,
+    `aura_${provider}_oauth`,
+    'width=600,height=720,scrollbars=yes,resizable=yes'
+  );
+
+  if (!popup) {
+    throw new Error(
+      'Das Anmelde-Fenster wurde blockiert. Bitte erlaube Popups für diese Seite.'
+    );
+  }
+}
+
+export async function syncHealthProvider(
+  provider: 'garmin' | 'google'
+): Promise<RemoteHealthSyncResult> {
+  const token = getHealthSessionToken(provider);
+  const res = await fetch(`/api/health/${provider}/sync`, {
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: token ? { 'x-health-session': token } : undefined,
+  });
+
+  const contentType = res.headers.get('content-type') || '';
+  const rawText = await res.text();
+  let data: Partial<RemoteHealthSyncResult> & { error?: string } = {};
+
+  if (rawText.trim().startsWith('{')) {
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = {};
+    }
+  } else if (contentType.includes('text/html') || rawText.trim().startsWith('<')) {
+    throw new Error(
+      `Health-Sync hat HTML statt JSON geliefert (HTTP ${res.status}). Bitte App neu laden oder die geteilte App neu veröffentlichen.`
+    );
+  }
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      clearHealthSessionToken(provider);
+    }
+    throw new Error(
+      data.error ||
+        `${provider === 'garmin' ? 'Garmin Connect' : 'Google Health'}-Sync fehlgeschlagen (HTTP ${res.status}).`
+    );
+  }
+
+  if (!Array.isArray(data.days)) {
+    throw new Error(
+      data.error ||
+        `${provider === 'garmin' ? 'Garmin Connect' : 'Google Health'}-Sync lieferte keine gültigen Tagesdaten.`
+    );
+  }
+
+  return {
+    provider: data.provider || (provider === 'garmin' ? 'garmin_connect' : 'google_health'),
+    apiMode: data.apiMode,
+    days: data.days,
+    syncedAt: typeof data.syncedAt === 'number' ? data.syncedAt : Date.now(),
+  };
+}
+
+export async function disconnectHealthProvider(provider: 'garmin' | 'google'): Promise<void> {
+  const token = getHealthSessionToken(provider);
+  clearHealthSessionToken(provider);
+  await fetch(`/api/health/${provider}/disconnect`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: token ? { 'x-health-session': token } : undefined,
+  });
+}
+
 export function detectBrowserHealthCapabilities(): BrowserHealthCapabilities {
   if (typeof window === 'undefined') {
     return {
@@ -639,6 +836,7 @@ export function buildTodayHealthRecord(params: {
   diaryEntries: DiaryEntry[];
   overrideSleepMinutes?: number;
   overrideActivityMinutes?: number;
+  overrideAvgHeartRate?: number | null;
   extraSources?: HealthDataSource[];
   referenceDate?: Date;
 }): HealthDailyRecord {
@@ -710,7 +908,10 @@ export function buildTodayHealthRecord(params: {
 
   const todayMood =
     params.diaryEntries.find((e) => isSameDay(new Date(e.date), nowDate))?.mood ?? null;
-  const avgHeartRate = telemetry.bleAvgHeartRate ?? params.existingRecord?.avgHeartRate ?? null;
+  const avgHeartRate =
+    typeof params.overrideAvgHeartRate === 'number'
+      ? Math.round(params.overrideAvgHeartRate)
+      : telemetry.bleAvgHeartRate ?? params.existingRecord?.avgHeartRate ?? null;
 
   const { recoveryScore, recoveryState } = calculateRecoveryMetrics({
     sleepDurationMinutes,
@@ -725,7 +926,7 @@ export function buildTodayHealthRecord(params: {
     sleepDurationMinutes,
     activityDurationMinutes,
     avgHeartRate,
-    sources: Array.from(sourcesSet).slice(0, 6),
+    sources: Array.from(sourcesSet).slice(0, 8),
     recoveryScore,
     recoveryState,
     acceptedSuggestionIds: params.existingRecord?.acceptedSuggestionIds || [],

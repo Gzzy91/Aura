@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, ThinkingLevel, Type, GenerateContentResponse } from '@google/genai';
+import { registerHealthOAuthRoutes } from './server/healthOAuth';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -767,6 +768,8 @@ Write in GERMAN. Address the user as "Du".`;
       res.status(info.status).json({ error: info.message });
     }
   });
+
+  registerHealthOAuthRoutes(app);
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

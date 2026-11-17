@@ -94,9 +94,9 @@ export function AICoach() {
         : null,
       todayCalories > 0 ? `Heutige Ernährung: ${todayCalories} kcal` : null,
       latestRetro
-        ? `Letzte Sonntags-Retrospektive (${latestRetro.id}): ${latestRetro.headline} | Quote ${latestRetro.questCompletionRate}% | Ausblick: ${latestRetro.nextWeekOutlook.slice(0, 220)}`
+        ? `Letzte Sonntags-Retrospektive (${latestRetro.id}): ${latestRetro.headline || ''} | Quote ${latestRetro.questCompletionRate ?? 0}% | Ausblick: ${(latestRetro.nextWeekOutlook || '').slice(0, 220)}`
         : null,
-      latestSummary ? `Letztes Wochenfazit: ${latestSummary.summary.slice(0, 200)}` : null,
+      latestSummary ? `Letztes Wochenfazit: ${(latestSummary.summary || '').slice(0, 200)}` : null,
     ].filter(Boolean);
 
     return parts.length > 0 ? parts.join(' | ') : undefined;

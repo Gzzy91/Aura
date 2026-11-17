@@ -162,7 +162,13 @@
         "sleepDurationMinutes": { "type": "integer" },
         "activityDurationMinutes": { "type": "integer" },
         "avgHeartRate": { "type": ["integer", "null"] },
-        "sources": { "type": "array", "items": { "type": "string" } },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["browser_idle", "device_motion", "web_bluetooth", "health_export", "aura_activity", "garmin_connect", "google_health", "manual"]
+          }
+        },
         "recoveryScore": { "type": "integer" },
         "recoveryState": { "type": "string", "enum": ["depleted", "strained", "balanced", "charged"] },
         "acceptedSuggestionIds": { "type": "array", "items": { "type": "string" } },

@@ -17,6 +17,7 @@ import {
   X,
   Lightbulb,
   Utensils,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from './Logo';
@@ -60,12 +61,13 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: 'Fortschritt & Coach',
+    label: 'Fortschritt & Konto',
     items: [
       { id: 'visions', icon: Compass, label: 'Lebensziele' },
       { id: 'skills', icon: Brain, label: 'Fähigkeiten' },
       { id: 'avatar', icon: UserIcon, label: 'Avatar' },
       { id: 'coach', icon: Sparkles, label: 'KI-Coach' },
+      { id: 'settings', icon: SettingsIcon, label: 'Einstellungen' },
     ],
   },
 ];
@@ -214,6 +216,20 @@ export function Layout({ children, setActiveTab }: LayoutProps) {
               </button>
               <button
                 type="button"
+                onClick={() => setActiveTab('settings')}
+                title="Einstellungen"
+                aria-label="Einstellungen"
+                className={cn(
+                  'p-2 rounded-lg transition-colors shrink-0',
+                  activeTab === 'settings'
+                    ? 'text-amber-400 bg-amber-500/10'
+                    : 'text-neutral-500 hover:text-white hover:bg-neutral-800'
+                )}
+              >
+                <SettingsIcon className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
                 onClick={handleLogout}
                 title="Abmelden"
                 aria-label="Abmelden"
@@ -246,21 +262,36 @@ export function Layout({ children, setActiveTab }: LayoutProps) {
         </button>
 
         {user ? (
-          <button
-            type="button"
-            onClick={() => setActiveTab('avatar')}
-            className="flex items-center gap-2 min-h-[36px]"
-            aria-label="Profil öffnen"
-          >
-            <span className="text-xs font-mono font-semibold text-neutral-400 tabular-nums">
-              Lv.{stats.level}
-            </span>
-            <UserAvatar
-              photoURL={user.photoURL}
-              displayName={user.displayName}
-              sizeClass="w-8 h-8"
-            />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setActiveTab('settings')}
+              className={cn(
+                'p-2 rounded-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center',
+                activeTab === 'settings'
+                  ? 'text-amber-400 bg-amber-500/10'
+                  : 'text-neutral-400 hover:text-white'
+              )}
+              aria-label="Einstellungen öffnen"
+            >
+              <SettingsIcon className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('avatar')}
+              className="flex items-center gap-2 min-h-[36px]"
+              aria-label="Profil öffnen"
+            >
+              <span className="text-xs font-mono font-semibold text-neutral-400 tabular-nums">
+                Lv.{stats.level}
+              </span>
+              <UserAvatar
+                photoURL={user.photoURL}
+                displayName={user.displayName}
+                sizeClass="w-8 h-8"
+              />
+            </button>
+          </div>
         ) : (
           <button
             type="button"

@@ -18,6 +18,7 @@ import { Visions } from './pages/Visions';
 import { Focus } from './pages/Focus';
 import { Mentaltraining } from './pages/Mentaltraining';
 import { FoodJournal } from './pages/FoodJournal';
+import { Settings } from './pages/Settings';
 import { PinLock } from './components/PinLock';
 import { Toaster, toast } from 'sonner';
 import { NotificationManager } from './components/NotificationManager';
@@ -389,6 +390,7 @@ function AppContent() {
           <Route path="/food" element={<FoodJournal />} />
           <Route path="/mentaltraining" element={<Mentaltraining setActiveTab={handleSetActiveTab} />} />
           <Route path="/coach" element={<AICoach />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Layout>

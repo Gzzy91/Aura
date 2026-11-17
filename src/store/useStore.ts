@@ -392,7 +392,7 @@ export const useStore = create<AppState>()(
       visions: [],
       focusSessions: [],
       notifiedQuestIds: [],
-      widgetOrder: ['level', 'streak', 'mood', 'energy_recovery', 'weekly_summary', 'weekly_retrospective', 'food_mood_correlation', 'chart', 'recurring_chart', 'calendar', 'today', 'reminders', 'settings'],
+      widgetOrder: ['level', 'streak', 'mood', 'energy_recovery', 'weekly_summary', 'weekly_retrospective', 'food_mood_correlation', 'chart', 'recurring_chart', 'calendar', 'today', 'reminders'],
       deepTrainings: [],
       foodEntries: [],
       weeklyCoachSummaries: [],
@@ -711,7 +711,7 @@ export const useStore = create<AppState>()(
             typeof record.avgHeartRate === 'number'
               ? Math.max(25, Math.min(240, Math.round(record.avgHeartRate)))
               : null,
-          sources: Array.from(new Set(record.sources)).slice(0, 6),
+          sources: Array.from(new Set(record.sources || [])).slice(0, 8),
           recoveryScore: Math.max(0, Math.min(100, Math.round(record.recoveryScore))),
           recoveryState: record.recoveryState,
           acceptedSuggestionIds: (record.acceptedSuggestionIds || []).slice(0, 25),
@@ -1381,7 +1381,9 @@ export const useStore = create<AppState>()(
 
             set({ 
               stats: newStats,
-              widgetOrder: data.widgetOrder || state.widgetOrder,
+              widgetOrder: Array.isArray(data.widgetOrder)
+                ? data.widgetOrder.filter((w: string) => w !== 'settings')
+                : state.widgetOrder,
               notifiedQuestIds: data.notifiedQuestIds || state.notifiedQuestIds,
               settings: data.settings || state.settings,
               lastTrainingGeneratedDate: data.lastTrainingGeneratedDate || state.lastTrainingGeneratedDate

@@ -1,18 +1,13 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Activity,
   BatteryCharging,
-  Bluetooth,
   Check,
-  ChevronDown,
-  FileUp,
   HeartPulse,
   Moon,
   Plus,
   RefreshCw,
   SlidersHorizontal,
-  Smartphone,
-  Watch,
   X,
 } from 'lucide-react';
 import { format, isSameDay, startOfDay } from 'date-fns';
@@ -20,16 +15,16 @@ import { toast } from 'sonner';
 import { useStore } from '@/store/useStore';
 import { cn, SKILL_COLORS } from '@/lib/utils';
 import {
+  HealthProvidersStatus,
+  RemoteHealthDayMetric,
   buildTodayHealthRecord,
   calculateRecoveryMetrics,
-  connectBrowserIdleDetector,
-  connectWebBluetoothHeartRate,
-  detectBrowserHealthCapabilities,
+  fetchHealthProvidersStatus,
   formatMinutesAsHoursMinutes,
   generateEnergyRecoveryQuests,
+  getHealthSessionToken,
   loadBrowserTelemetry,
-  parseHealthExportFile,
-  startMotionActivityTracker,
+  syncHealthProvider,
 } from '@/services/healthSyncService';
 import { EnergyRecoverySuggestion, HealthDataSource, RecoveryState } from '@/types';
 
@@ -39,6 +34,8 @@ const SOURCE_LABELS: Record<HealthDataSource, string> = {
   web_bluetooth: 'Bluetooth-Sensor',
   health_export: 'Health-Export',
   aura_activity: 'Aura Aktivität',
+  garmin_connect: 'Garmin Connect',
+  google_health: 'Google Health',
   manual: 'Manuell',
 };
 
@@ -70,8 +67,10 @@ const RECOVERY_STATE_META: Record<
 
 export function EnergyRecoveryWidget({
   onNavigateToQuests,
+  onNavigateToSettings,
 }: {
   onNavigateToQuests?: () => void;
+  onNavigateToSettings?: () => void;
 }) {
   const {
     quests,
@@ -84,20 +83,8 @@ export function EnergyRecoveryWidget({
   } = useStore();
 
   const [isSyncing, setIsSyncing] = useState(false);
-  const [showSources, setShowSources] = useState(false);
+  const [providerStatus, setProviderStatus] = useState<HealthProvidersStatus | null>(null);
 
-  // Active browser sensor handles
-  const [idleActive, setIdleActive] = useState(false);
-  const [motionActive, setMotionActive] = useState(false);
-  const [bleDeviceName, setBleDeviceName] = useState<string | null>(null);
-  const [liveBpm, setLiveBpm] = useState<number | null>(null);
-
-  const idleStopRef = useRef<(() => void) | null>(null);
-  const motionStopRef = useRef<(() => void) | null>(null);
-  const bleDisconnectRef = useRef<(() => void) | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const capabilities = useMemo(() => detectBrowserHealthCapabilities(), []);
   const todayKey = format(new Date(), 'yyyy-MM-dd');
 
   const storedTodayRecord = useMemo(
@@ -105,7 +92,6 @@ export function EnergyRecoveryWidget({
     [healthRecords, todayKey]
   );
 
-  // Compute live preview record combining stored record + today's Aura load + browser telemetry
   const todayRecord = useMemo(() => {
     return buildTodayHealthRecord({
       existingRecord: storedTodayRecord,
@@ -115,30 +101,105 @@ export function EnergyRecoveryWidget({
     });
   }, [storedTodayRecord, focusSessions, quests, diaryEntries]);
 
-  // Manual calibration input fields
-  const [sleepHoursInput, setSleepHoursInput] = useState(() =>
-    String(Math.floor(todayRecord.sleepDurationMinutes / 60))
-  );
-  const [sleepMinutesInput, setSleepMinutesInput] = useState(() =>
-    String(todayRecord.sleepDurationMinutes % 60)
-  );
-  const [activityMinutesInput, setActivityMinutesInput] = useState(() =>
-    String(todayRecord.activityDurationMinutes)
-  );
-
-  useEffect(() => {
-    setSleepHoursInput(String(Math.floor(todayRecord.sleepDurationMinutes / 60)));
-    setSleepMinutesInput(String(todayRecord.sleepDurationMinutes % 60));
-    setActivityMinutesInput(String(todayRecord.activityDurationMinutes));
-  }, [todayRecord.sleepDurationMinutes, todayRecord.activityDurationMinutes]);
-
-  useEffect(() => {
-    return () => {
-      idleStopRef.current?.();
-      motionStopRef.current?.();
-      bleDisconnectRef.current?.();
-    };
+  const refreshProviderStatus = useCallback(async () => {
+    try {
+      const status = await fetchHealthProvidersStatus();
+      setProviderStatus({
+        garmin: {
+          ...status.garmin,
+          connected: status.garmin.connected || Boolean(getHealthSessionToken('garmin')),
+        },
+        google: {
+          ...status.google,
+          connected: status.google.connected || Boolean(getHealthSessionToken('google')),
+        },
+      });
+    } catch {
+      // Ignore transient status fetch failure on mount
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshProviderStatus();
+  }, [refreshProviderStatus]);
+
+  const persistRemoteDays = useCallback(
+    async (source: 'garmin_connect' | 'google_health', days?: RemoteHealthDayMetric[]) => {
+      const state = useStore.getState();
+      const safeDays = Array.isArray(days) ? days : [];
+      const targetDays = safeDays.slice(0, 14);
+
+      if (targetDays.length === 0) {
+        const freshToday = buildTodayHealthRecord({
+          existingRecord: state.healthRecords.find((r) => r.id === todayKey),
+          focusSessions: state.focusSessions,
+          quests: state.quests,
+          diaryEntries: state.diaryEntries,
+          extraSources: [source],
+        });
+        await saveHealthRecord(freshToday);
+        return 0;
+      }
+
+      for (const day of targetDays) {
+        const [y, m, d] = day.dateKey.split('-').map(Number);
+        const dayDate = new Date(y, m - 1, d, 12, 0, 0);
+        const existing = useStore.getState().healthRecords.find((r) => r.id === day.dateKey);
+        const dayMood =
+          state.diaryEntries.find((e) => isSameDay(new Date(e.date), dayDate))?.mood ?? null;
+
+        if (day.dateKey === todayKey) {
+          const baseToday = buildTodayHealthRecord({
+            existingRecord: existing,
+            focusSessions: state.focusSessions,
+            quests: state.quests,
+            diaryEntries: state.diaryEntries,
+            overrideSleepMinutes:
+              day.sleepDurationMinutes > 0
+                ? day.sleepDurationMinutes
+                : existing?.sleepDurationMinutes,
+            overrideActivityMinutes:
+              day.activityDurationMinutes > 0
+                ? Math.max(day.activityDurationMinutes, existing?.activityDurationMinutes || 0)
+                : undefined,
+            overrideAvgHeartRate: day.avgHeartRate ?? existing?.avgHeartRate ?? null,
+            extraSources: [source],
+          });
+          await saveHealthRecord(baseToday);
+        } else {
+          const sleepMin = day.sleepDurationMinutes || existing?.sleepDurationMinutes || 0;
+          const activityMin =
+            day.activityDurationMinutes || existing?.activityDurationMinutes || 0;
+          const avgHr = day.avgHeartRate ?? existing?.avgHeartRate ?? null;
+          const { recoveryScore, recoveryState } = calculateRecoveryMetrics({
+            sleepDurationMinutes: sleepMin,
+            activityDurationMinutes: activityMin,
+            avgHeartRate: avgHr,
+            todayMood: dayMood,
+          });
+
+          await saveHealthRecord({
+            id: day.dateKey,
+            date: startOfDay(dayDate).getTime(),
+            sleepDurationMinutes: sleepMin,
+            activityDurationMinutes: activityMin,
+            avgHeartRate: avgHr,
+            sources: Array.from(
+              new Set<HealthDataSource>([...(existing?.sources || []), source])
+            ).slice(0, 8),
+            recoveryScore,
+            recoveryState,
+            acceptedSuggestionIds: existing?.acceptedSuggestionIds || [],
+            dismissedSuggestionIds: existing?.dismissedSuggestionIds || [],
+            syncedAt: Date.now(),
+          });
+        }
+      }
+
+      return targetDays.length;
+    },
+    [saveHealthRecord, todayKey]
+  );
 
   const todayMood = useMemo(() => {
     return diaryEntries.find((e) => isSameDay(new Date(e.date), new Date()))?.mood ?? null;
@@ -167,15 +228,41 @@ export function EnergyRecoveryWidget({
   const handleSyncNow = async () => {
     setIsSyncing(true);
     try {
+      const syncedRemoteProviders: string[] = [];
+
+      if (providerStatus?.garmin.connected) {
+        try {
+          const res = await syncHealthProvider('garmin');
+          await persistRemoteDays(res.provider, res.days);
+          syncedRemoteProviders.push('Garmin Connect');
+        } catch (err: unknown) {
+          toast.error(err instanceof Error ? err.message : 'Garmin-Sync fehlgeschlagen.');
+        }
+      }
+
+      if (providerStatus?.google.connected) {
+        try {
+          const res = await syncHealthProvider('google');
+          await persistRemoteDays(res.provider, res.days);
+          syncedRemoteProviders.push('Google Health');
+        } catch (err: unknown) {
+          toast.error(err instanceof Error ? err.message : 'Google Health-Sync fehlgeschlagen.');
+        }
+      }
+
+      const latestState = useStore.getState();
       const freshRecord = buildTodayHealthRecord({
-        existingRecord: storedTodayRecord,
-        focusSessions,
-        quests,
-        diaryEntries,
+        existingRecord: latestState.healthRecords.find((r) => r.id === todayKey),
+        focusSessions: latestState.focusSessions,
+        quests: latestState.quests,
+        diaryEntries: latestState.diaryEntries,
       });
       await saveHealthRecord(freshRecord);
+
+      const providerNote =
+        syncedRemoteProviders.length > 0 ? ` (${syncedRemoteProviders.join(' & ')})` : '';
       toast.success(
-        `Gesundheitsdaten synchronisiert · Recovery-Score: ${freshRecord.recoveryScore}/100`
+        `Gesundheitsdaten synchronisiert${providerNote} · Recovery-Score: ${freshRecord.recoveryScore}/100`
       );
     } catch (error) {
       console.error('Health sync error:', error);
@@ -185,208 +272,7 @@ export function EnergyRecoveryWidget({
     }
   };
 
-  const handleToggleIdleDetector = async () => {
-    if (idleActive) {
-      idleStopRef.current?.();
-      idleStopRef.current = null;
-      setIdleActive(false);
-      toast.info('IdleDetector gestoppt');
-      return;
-    }
-
-    try {
-      const handle = await connectBrowserIdleDetector(async () => {
-        const fresh = buildTodayHealthRecord({
-          existingRecord: useStore.getState().healthRecords.find((r) => r.id === todayKey),
-          focusSessions: useStore.getState().focusSessions,
-          quests: useStore.getState().quests,
-          diaryEntries: useStore.getState().diaryEntries,
-          extraSources: ['browser_idle'],
-        });
-        await saveHealthRecord(fresh);
-      });
-      idleStopRef.current = handle.stop;
-      setIdleActive(true);
-      toast.success('Browser IdleDetector verbunden');
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'IdleDetector nicht verfügbar';
-      toast.error(msg);
-    }
-  };
-
-  const handleToggleMotion = async () => {
-    if (motionActive) {
-      motionStopRef.current?.();
-      motionStopRef.current = null;
-      setMotionActive(false);
-      await handleSyncNow();
-      return;
-    }
-
-    try {
-      const handle = await startMotionActivityTracker(async () => {
-        const fresh = buildTodayHealthRecord({
-          existingRecord: useStore.getState().healthRecords.find((r) => r.id === todayKey),
-          focusSessions: useStore.getState().focusSessions,
-          quests: useStore.getState().quests,
-          diaryEntries: useStore.getState().diaryEntries,
-          extraSources: ['device_motion'],
-        });
-        await saveHealthRecord(fresh);
-      });
-      motionStopRef.current = handle.stop;
-      setMotionActive(true);
-      toast.success('Bewegungssensor-Sync aktiv');
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Bewegungssensor nicht verfügbar';
-      toast.error(msg);
-    }
-  };
-
-  const handleToggleBluetooth = async () => {
-    if (bleDeviceName) {
-      bleDisconnectRef.current?.();
-      bleDisconnectRef.current = null;
-      setBleDeviceName(null);
-      setLiveBpm(null);
-      await handleSyncNow();
-      return;
-    }
-
-    try {
-      const handle = await connectWebBluetoothHeartRate(async (sample) => {
-        setLiveBpm(sample.bpm);
-        const fresh = buildTodayHealthRecord({
-          existingRecord: useStore.getState().healthRecords.find((r) => r.id === todayKey),
-          focusSessions: useStore.getState().focusSessions,
-          quests: useStore.getState().quests,
-          diaryEntries: useStore.getState().diaryEntries,
-          extraSources: ['web_bluetooth'],
-        });
-        await saveHealthRecord(fresh);
-      });
-      bleDisconnectRef.current = handle.disconnect;
-      setBleDeviceName(handle.deviceName);
-      toast.success(`Verbunden mit ${handle.deviceName}`);
-    } catch (error: unknown) {
-      const msg =
-        error instanceof Error ? error.message : 'Bluetooth-Verbindung abgebrochen';
-      if (!msg.toLowerCase().includes('cancelled') && !msg.toLowerCase().includes('abgebrochen')) {
-        toast.error(msg);
-      }
-    }
-  };
-
-  const processImportedFile = async (file: File) => {
-    try {
-      const parsedDays = await parseHealthExportFile(file);
-      if (parsedDays.length === 0) {
-        toast.error('Keine Schlaf- oder Aktivitätsdaten in dieser Datei erkannt.');
-        return;
-      }
-
-      const recentDays = parsedDays.slice(0, 14);
-      for (const day of recentDays) {
-        const [y, m, d] = day.dateKey.split('-').map(Number);
-        const dayDate = new Date(y, m - 1, d, 12, 0, 0);
-        const existing = healthRecords.find((r) => r.id === day.dateKey);
-        const dayMood =
-          diaryEntries.find((e) => isSameDay(new Date(e.date), dayDate))?.mood ?? null;
-
-        const sleepMin = day.sleepDurationMinutes || existing?.sleepDurationMinutes || 0;
-        const activityMin = day.activityDurationMinutes || existing?.activityDurationMinutes || 0;
-        const { recoveryScore, recoveryState } = calculateRecoveryMetrics({
-          sleepDurationMinutes: sleepMin,
-          activityDurationMinutes: activityMin,
-          avgHeartRate: existing?.avgHeartRate ?? null,
-          todayMood: dayMood,
-        });
-
-        await saveHealthRecord({
-          id: day.dateKey,
-          date: startOfDay(dayDate).getTime(),
-          sleepDurationMinutes: sleepMin,
-          activityDurationMinutes: activityMin,
-          avgHeartRate: existing?.avgHeartRate ?? null,
-          sources: Array.from(
-            new Set<HealthDataSource>([...(existing?.sources || []), 'health_export'])
-          ),
-          recoveryScore,
-          recoveryState,
-          acceptedSuggestionIds: existing?.acceptedSuggestionIds || [],
-          dismissedSuggestionIds: existing?.dismissedSuggestionIds || [],
-          syncedAt: Date.now(),
-        });
-      }
-
-      toast.success(
-        `${recentDays.length} ${recentDays.length === 1 ? 'Tag' : 'Tage'} aus Health-Export importiert`
-      );
-    } catch (error) {
-      console.error('Import health export failed:', error);
-      toast.error('Health-Datei konnte nicht gelesen werden.');
-    }
-  };
-
-  const handleImportExport = async () => {
-    if (capabilities.fileSystemAccess) {
-      try {
-        const picker = (
-          window as unknown as {
-            showOpenFilePicker: (opts: unknown) => Promise<{ getFile: () => Promise<File> }[]>;
-          }
-        ).showOpenFilePicker;
-        const [handle] = await picker({
-          multiple: false,
-          types: [
-            {
-              description: 'Health Export (Apple XML, Google Fit JSON, CSV)',
-              accept: {
-                'text/xml': ['.xml'],
-                'application/json': ['.json'],
-                'text/csv': ['.csv'],
-              },
-            },
-          ],
-        });
-        if (handle) {
-          const file = await handle.getFile();
-          await processImportedFile(file);
-        }
-        return;
-      } catch (error: unknown) {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        // Fallback to hidden file input if File System Access API is blocked in iframe
-      }
-    }
-    fileInputRef.current?.click();
-  };
-
-  const handleSaveCalibration = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const hrs = Math.max(0, Math.min(24, parseInt(sleepHoursInput, 10) || 0));
-    const mins = Math.max(0, Math.min(59, parseInt(sleepMinutesInput, 10) || 0));
-    const totalSleep = Math.min(1440, hrs * 60 + mins);
-    const totalActivity = Math.max(
-      0,
-      Math.min(1440, parseInt(activityMinutesInput, 10) || 0)
-    );
-
-    const record = buildTodayHealthRecord({
-      existingRecord: storedTodayRecord,
-      focusSessions,
-      quests,
-      diaryEntries,
-      overrideSleepMinutes: totalSleep,
-      overrideActivityMinutes: totalActivity,
-      extraSources: ['manual'],
-    });
-    await saveHealthRecord(record);
-    toast.success('Schlaf- & Aktivitätsdauer gespeichert');
-  };
-
   const handleAcceptSuggestion = async (suggestion: EnergyRecoverySuggestion) => {
-    // Ensure today's record exists in store before marking accepted
     if (!storedTodayRecord) {
       await saveHealthRecord(todayRecord);
     }
@@ -427,30 +313,24 @@ export function EnergyRecoveryWidget({
         <div className="min-w-0">
           <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2 text-white">
             <HeartPulse className="w-5 h-5 text-amber-500 shrink-0" />
-            <span>Energie & Erholung</span>
+            <span>Energie &amp; Erholung</span>
           </h3>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Browser-Health-Sync für Schlaf & Aktivitätsdauer · personalisierte Recovery-Quests
+            Recovery-Score &amp; personalisierte Energy-Recovery-Quests
           </p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowSources((prev) => !prev)}
-            className={cn(
-              'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors whitespace-nowrap min-h-[38px]',
-              showSources
-                ? 'bg-neutral-800 border-neutral-700 text-white'
-                : 'bg-neutral-950 border-neutral-800 text-neutral-300 hover:text-white'
-            )}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Quellen</span>
-            <ChevronDown
-              className={cn('w-3.5 h-3.5 transition-transform', showSources && 'rotate-180')}
-            />
-          </button>
+          {onNavigateToSettings && (
+            <button
+              type="button"
+              onClick={onNavigateToSettings}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border bg-neutral-950 border-neutral-800 text-neutral-300 hover:text-white hover:border-neutral-700 text-xs font-semibold transition-colors whitespace-nowrap min-h-[38px]"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Quellen</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -499,9 +379,13 @@ export function EnergyRecoveryWidget({
           </div>
           <div className="text-[11px] text-neutral-500 mt-1">
             Ziel: 7h 30m ·{' '}
-            {telemetry.overnightRestGapMinutes > 0
-              ? 'Browser-Ruhefenster erkannt'
-              : 'Import oder Kalibrierung'}
+            {todayRecord.sources.includes('garmin_connect')
+              ? 'Garmin Connect'
+              : todayRecord.sources.includes('google_health')
+              ? 'Google Health'
+              : telemetry.overnightRestGapMinutes > 0
+              ? 'Browser-Ruhefenster'
+              : 'Einstellungen → Quellen'}
           </div>
         </div>
 
@@ -514,205 +398,12 @@ export function EnergyRecoveryWidget({
             {todayRecord.activityDurationMinutes} Min
           </div>
           <div className="text-[11px] text-neutral-500 mt-1 tabular-nums">
-            {liveBpm
-              ? `Live: ${liveBpm} BPM`
-              : todayRecord.avgHeartRate
+            {todayRecord.avgHeartRate
               ? `Ø ${todayRecord.avgHeartRate} BPM`
               : `Fokus heute: ${todayFocusMinutes} Min`}
           </div>
         </div>
       </div>
-
-      {/* Connected Sources & Sync Controls Drawer */}
-      {showSources && (
-        <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-            <span className="font-semibold text-neutral-300">
-              Browser-Health-APIs & Datenquellen
-            </span>
-            <span className="text-neutral-500">
-              Aktiv: {todayRecord.sources.map((s) => SOURCE_LABELS[s]).join(' · ')}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {/* IdleDetector API */}
-            <button
-              type="button"
-              onClick={handleToggleIdleDetector}
-              disabled={!capabilities.idleDetector}
-              className={cn(
-                'flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border text-left transition-colors min-h-[44px]',
-                !capabilities.idleDetector
-                  ? 'bg-neutral-900/50 border-neutral-800/60 text-neutral-600 cursor-not-allowed'
-                  : idleActive
-                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                  : 'bg-neutral-900 border-neutral-800 text-neutral-300 hover:border-neutral-700'
-              )}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Moon className="w-4 h-4 shrink-0 text-indigo-400" />
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold truncate">IdleDetector API</div>
-                  <div className="text-[11px] text-neutral-500 truncate">
-                    {!capabilities.idleDetector
-                      ? 'Passives Ruhefenster aktiv'
-                      : idleActive
-                      ? 'Verbunden (aktiv)'
-                      : 'Ruhe- & Schlafphasen messen'}
-                  </div>
-                </div>
-              </div>
-              <span className="text-[11px] font-bold shrink-0">
-                {!capabilities.idleDetector ? 'N/V' : idleActive ? 'Stopp' : 'Start'}
-              </span>
-            </button>
-
-            {/* DeviceMotion / Accelerometer API */}
-            <button
-              type="button"
-              onClick={handleToggleMotion}
-              disabled={!capabilities.deviceMotion}
-              className={cn(
-                'flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border text-left transition-colors min-h-[44px]',
-                !capabilities.deviceMotion
-                  ? 'bg-neutral-900/50 border-neutral-800/60 text-neutral-600 cursor-not-allowed'
-                  : motionActive
-                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                  : 'bg-neutral-900 border-neutral-800 text-neutral-300 hover:border-neutral-700'
-              )}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Smartphone className="w-4 h-4 shrink-0 text-emerald-400" />
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold truncate">Bewegungssensor</div>
-                  <div className="text-[11px] text-neutral-500 truncate tabular-nums">
-                    {motionActive
-                      ? `Live aktiv (${Math.round(telemetry.motionActiveMinutes)} Min)`
-                      : 'DeviceMotion Aktivitätszeit'}
-                  </div>
-                </div>
-              </div>
-              <span className="text-[11px] font-bold shrink-0">
-                {!capabilities.deviceMotion ? 'N/V' : motionActive ? 'Stopp' : 'Start'}
-              </span>
-            </button>
-
-            {/* Web Bluetooth Heart Rate / Fitness */}
-            <button
-              type="button"
-              onClick={handleToggleBluetooth}
-              disabled={!capabilities.webBluetooth}
-              className={cn(
-                'flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border text-left transition-colors min-h-[44px]',
-                !capabilities.webBluetooth
-                  ? 'bg-neutral-900/50 border-neutral-800/60 text-neutral-600 cursor-not-allowed'
-                  : bleDeviceName
-                  ? 'bg-sky-500/15 border-sky-500/40 text-sky-300'
-                  : 'bg-neutral-900 border-neutral-800 text-neutral-300 hover:border-neutral-700'
-              )}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Bluetooth className="w-4 h-4 shrink-0 text-sky-400" />
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold truncate">
-                    {bleDeviceName || 'Web Bluetooth Pulsmesser'}
-                  </div>
-                  <div className="text-[11px] text-neutral-500 truncate tabular-nums">
-                    {bleDeviceName
-                      ? liveBpm
-                        ? `${liveBpm} BPM · verbunden`
-                        : 'Warte auf Messwerte...'
-                      : capabilities.webBluetooth
-                      ? 'Wearable / Brustgurt koppeln'
-                      : 'Vom Browser nicht unterstützt'}
-                  </div>
-                </div>
-              </div>
-              <span className="text-[11px] font-bold shrink-0">
-                {!capabilities.webBluetooth ? 'N/V' : bleDeviceName ? 'Trennen' : 'Koppeln'}
-              </span>
-            </button>
-
-            {/* File System Access / Health Export */}
-            <button
-              type="button"
-              onClick={handleImportExport}
-              className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border bg-neutral-900 border-neutral-800 text-neutral-300 hover:border-neutral-700 text-left transition-colors min-h-[44px]"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <FileUp className="w-4 h-4 shrink-0 text-amber-400" />
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold truncate">Health-Export importieren</div>
-                  <div className="text-[11px] text-neutral-500 truncate">
-                    Apple Health XML, Google Fit JSON, CSV
-                  </div>
-                </div>
-              </div>
-              <Watch className="w-4 h-4 text-neutral-500 shrink-0" />
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xml,.json,.csv"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  processImportedFile(file);
-                  e.target.value = '';
-                }
-              }}
-            />
-          </div>
-
-          {/* Direct Sleep & Activity Calibration */}
-          <form
-            onSubmit={handleSaveCalibration}
-            className="pt-3 border-t border-neutral-800/80 flex flex-wrap items-end gap-2.5"
-          >
-            <div>
-              <label className="block text-[11px] text-neutral-400 mb-1">Schlaf (Std)</label>
-              <input
-                type="number"
-                min={0}
-                max={24}
-                value={sleepHoursInput}
-                onChange={(e) => setSleepHoursInput(e.target.value)}
-                className="w-16 bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none focus:border-amber-500"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-neutral-400 mb-1">Schlaf (Min)</label>
-              <input
-                type="number"
-                min={0}
-                max={59}
-                value={sleepMinutesInput}
-                onChange={(e) => setSleepMinutesInput(e.target.value)}
-                className="w-16 bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none focus:border-amber-500"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-neutral-400 mb-1">Aktivität (Min)</label>
-              <input
-                type="number"
-                min={0}
-                max={1440}
-                value={activityMinutesInput}
-                onChange={(e) => setActivityMinutesInput(e.target.value)}
-                className="w-20 bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-white tabular-nums focus:outline-none focus:border-amber-500"
-              />
-            </div>
-            <button
-              type="submit"
-              className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold transition-colors min-h-[34px] whitespace-nowrap"
-            >
-              Werte übernehmen
-            </button>
-          </form>
-        </div>
-      )}
 
       {/* Personalized Energy-Recovery Quests */}
       <div className="space-y-2.5">

@@ -1,6 +1,6 @@
 import { useStore } from '@/store/useStore';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { Flame, Bell, Clock, Frown, Meh, Smile, Heart, Star, Calendar as CalendarIcon, ChevronLeft, ChevronRight, X, BookOpen, BarChart2, CheckCircle2, Target, Lock, Unlock, Eye, EyeOff, TrendingUp, TrendingDown, Sparkles, Award, RefreshCw, Bot, AlertCircle, Loader2, Utensils, ThumbsUp, ThumbsDown, SlidersHorizontal, RotateCcw } from 'lucide-react';
+import { Flame, Bell, Clock, Frown, Meh, Smile, Heart, Star, Calendar as CalendarIcon, ChevronLeft, ChevronRight, X, BookOpen, BarChart2, CheckCircle2, Target, Eye, EyeOff, TrendingUp, TrendingDown, Sparkles, Award, RefreshCw, Bot, AlertCircle, Loader2, Utensils, ThumbsUp, ThumbsDown, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { cn, SKILL_COLORS, SKILL_BG_COLORS, triggerHapticFeedback } from '@/lib/utils';
 import { memo, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -87,7 +87,6 @@ const DEFAULT_WIDGET_ORDER = [
   'calendar',
   'today',
   'reminders',
-  'settings',
 ];
 const WIDGET_LABELS: Record<string, string> = {
   avatar: 'Charakter & Skin',
@@ -104,7 +103,6 @@ const WIDGET_LABELS: Record<string, string> = {
   calendar: 'Stimmungs-Kalender',
   today: 'Heute erledigt',
   reminders: 'Anstehende Erinnerungen',
-  settings: 'Benachrichtigungen & Sicherheit',
 };
 const BAR_RADIUS_TOP_4: [number, number, number, number] = [4, 4, 0, 0];
 const BAR_RADIUS_TOP_6: [number, number, number, number] = [6, 6, 0, 0];
@@ -418,13 +416,8 @@ const WeeklyXpChart = memo(function WeeklyXpChart({ data }: { data: any[] }) {
 import { AvatarVisual } from '@/components/AvatarVisual';
 
 export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
-  const { user, isInitialized, stats, quests, diaryEntries, focusSessions, foodEntries, weeklyCoachSummaries, widgetOrder, updateWidgetOrder, settings, updateSettings, setLocked, updateQuest, setDailyMood, saveWeeklyCoachSummary } = useStore();
+  const { user, isInitialized, stats, quests, diaryEntries, focusSessions, foodEntries, weeklyCoachSummaries, widgetOrder, updateWidgetOrder, updateQuest, setDailyMood, saveWeeklyCoachSummary } = useStore();
   
-  // PIN setting state
-  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [showPins, setShowPins] = useState(false);
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>(() => {
     try {
@@ -459,12 +452,14 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
     toast.success('Dashboard-Layout zurückgesetzt');
   };
 
-  // Ensure all widgets are present in widgetOrder (for backwards compatibility with persisted state)
+  // Ensure all widgets are present in widgetOrder and remove retired 'settings' widget
   useEffect(() => {
     const allWidgets = DEFAULT_WIDGET_ORDER;
-    const missingWidgets = allWidgets.filter(w => !widgetOrder.includes(w));
-    if (missingWidgets.length > 0) {
-      const nextOrder = [...widgetOrder];
+    const hasDeprecatedSettings = widgetOrder.includes('settings');
+    const cleanedOrder = widgetOrder.filter(w => w !== 'settings');
+    const missingWidgets = allWidgets.filter(w => !cleanedOrder.includes(w));
+    if (hasDeprecatedSettings || missingWidgets.length > 0) {
+      const nextOrder = [...cleanedOrder];
       if (missingWidgets.includes('mood')) {
         const streakIdx = nextOrder.indexOf('streak');
         if (streakIdx !== -1) {
@@ -511,7 +506,6 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
       updateWidgetOrder([...nextOrder, ...remainingMissing]);
     }
   }, [widgetOrder, updateWidgetOrder]);
-  const [permission, setPermission] = useState<NotificationPermission>('default');
   const [viewDate, setViewDate] = useState(new Date());
   const [chartDate, setChartDate] = useState(new Date());
   const [selectedEntry, setSelectedEntry] = useState<DiaryEntry | null>(null);
@@ -602,47 +596,6 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
     start: calendarStart,
     end: calendarEnd,
   });
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      try {
-        setPermission(Notification.permission);
-      } catch (e) {
-        console.warn('Could not read Notification permission:', e);
-      }
-    }
-  }, []);
-
-  const requestPermission = async () => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      toast.error('Dein Browser unterstützt keine Desktop-Benachrichtigungen.');
-      return;
-    }
-
-    try {
-      if (Notification.permission === 'denied') {
-        toast.error(
-          'Benachrichtigungen sind blockiert. Klicke auf das Schloss-Symbol in der Adressleiste deines Browsers, wähle "Benachrichtigungen" und setze sie auf "Zulassen". Lade die Seite danach neu.',
-          { duration: 6000 }
-        );
-        return;
-      }
-
-      const result = await Notification.requestPermission();
-      setPermission(result);
-      if (result === 'granted') {
-        toast.success('Benachrichtigungen aktiviert!');
-      } else if (result === 'denied') {
-        toast.error(
-          'Benachrichtigungen wurden blockiert. Klicke auf das Schloss-Symbol in der Adressleiste deines Browsers, wähle "Benachrichtigungen" und setze sie auf "Zulassen". Lade die Seite danach neu.',
-          { duration: 6000 }
-        );
-      }
-    } catch (err) {
-      console.warn('Error requesting Notification permission:', err);
-      toast.error('Benachrichtigungen werden von diesem Gerät/Browser nicht unterstützt.');
-    }
-  };
 
   const progress = (stats.xp / stats.xpToNextLevel) * 100;
 
@@ -1359,17 +1312,6 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
               </span>
             )}
           </button>
-
-          {permission !== 'granted' && (
-            <button
-              type="button"
-              onClick={requestPermission}
-              className="flex items-center gap-2 bg-neutral-900 border border-neutral-800 px-3.5 py-2 rounded-xl text-xs font-bold text-neutral-300 hover:text-amber-400 hover:border-amber-500/40 transition-colors min-h-[40px]"
-            >
-              <Bell className="w-4 h-4" />
-              Benachrichtigungen
-            </button>
-          )}
         </div>
       </header>
 
@@ -1587,7 +1529,10 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                 case 'energy_recovery':
                   return (
                     <SortableWidget key="energy_recovery" id="energy_recovery" className="col-span-1 md:col-span-2 lg:col-span-2">
-                      <EnergyRecoveryWidget onNavigateToQuests={() => setActiveTab('quests')} />
+                      <EnergyRecoveryWidget
+                        onNavigateToQuests={() => setActiveTab('quests')}
+                        onNavigateToSettings={() => setActiveTab('settings')}
+                      />
                     </SortableWidget>
                   );
                 case 'weekly_summary': {
@@ -2724,117 +2669,6 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                       </div>
                     </SortableWidget>
                   ) : null;
-                case 'settings':
-                  return (
-                    <SortableWidget key="settings" id="settings" className="col-span-1">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full flex flex-col gap-6">
-                        <div>
-                          <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                            <Bell className="w-5 h-5 text-amber-500" />
-                            Benachrichtigungen
-                          </h3>
-                          <div className="flex flex-col gap-4">
-                            <div className="space-y-1">
-                              <div className="text-sm font-medium">Desktop-Benachrichtigungen</div>
-                              <div className="text-xs text-neutral-500">
-                                {permission === 'granted' 
-                                  ? 'Aktiviert - Du erhältst Push-Nachrichten.' 
-                                  : permission === 'denied' 
-                                  ? 'Blockiert - Bitte in den Browser-Einstellungen ändern.' 
-                                  : 'Nicht konfiguriert - In-App-Hinweise sind aktiv.'}
-                              </div>
-                            </div>
-                            {permission !== 'granted' ? (
-                              <button 
-                                type="button"
-                                onClick={requestPermission}
-                                className="bg-amber-500 text-neutral-950 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-amber-400 transition-colors w-full"
-                              >
-                                {permission === 'denied' ? 'Aktivieren' : 'Erlauben'}
-                              </button>
-                            ) : (
-                              <button 
-                                type="button"
-                                onClick={() => {
-                                  toast('Test-Benachrichtigung', {
-                                    description: 'So sehen deine Erinnerungen aus!',
-                                    icon: <Bell className="w-4 h-4 text-amber-500" />,
-                                  });
-                                  if ('Notification' in window && Notification.permission === 'granted') {
-                                    new Notification('Test-Benachrichtigung', {
-                                      body: 'So sehen deine Erinnerungen aus!',
-                                    });
-                                  }
-                                }}
-                                className="bg-neutral-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-neutral-700 transition-colors w-full flex items-center justify-center gap-2"
-                              >
-                                <Bell className="w-4 h-4" />
-                                Testen
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="pt-6 border-t border-neutral-800">
-                          <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                            <Lock className="w-5 h-5 text-amber-500" />
-                            Sicherheit
-                          </h3>
-                          <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                              <div className="space-y-1">
-                                <div className="text-sm font-medium">PIN-Sperre</div>
-                                <div className="text-xs text-neutral-500">
-                                  Schützt deine Daten bei Inaktivität.
-                                </div>
-                              </div>
-                              <button 
-                                onClick={() => {
-                                  if (settings.isPinEnabled) {
-                                    updateSettings({ isPinEnabled: false, pin: null });
-                                    toast.success('PIN-Sperre deaktiviert');
-                                  } else {
-                                    setIsPinModalOpen(true);
-                                  }
-                                }}
-                                className={cn(
-                                  "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
-                                  settings.isPinEnabled ? "bg-amber-500" : "bg-neutral-800 border border-neutral-700"
-                                )}
-                              >
-                                <span className={cn(
-                                  "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                                  settings.isPinEnabled ? "translate-x-6" : "translate-x-1"
-                                )} />
-                              </button>
-                            </div>
-                            
-                            {settings.isPinEnabled && (
-                              <div className="grid grid-cols-2 gap-3">
-                                <button
-                                  onClick={() => setIsPinModalOpen(true)}
-                                  className="py-2 bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
-                                >
-                                  <Lock className="w-3 h-3" />
-                                  PIN ändern
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setLocked(true);
-                                    toast.info('App gesperrt');
-                                  }}
-                                  className="py-2 border border-neutral-800 hover:bg-neutral-800 text-neutral-400 hover:text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
-                                >
-                                  <Unlock className="w-3 h-3" />
-                                  Sperren
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </SortableWidget>
-                  );
                 default:
                   return null;
               }
@@ -2845,102 +2679,6 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
 
       {/* Entry Detail Modal */}
       <AnimatePresence>
-        {isPinModalOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => {
-                setIsPinModalOpen(false);
-                setNewPin('');
-                setConfirmPin('');
-              }}
-              className="absolute inset-0 bg-black/90 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-sm bg-neutral-900 border border-neutral-800 rounded-3xl shadow-2xl overflow-hidden p-6"
-            >
-              <div className="flex flex-col items-center text-center gap-4 mb-8">
-                <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-                  <Lock className="w-8 h-8 text-amber-500" />
-                </div>
-                <h3 className="text-2xl font-bold">PIN {settings.isPinEnabled ? 'ändern' : 'einrichten'}</h3>
-                <p className="text-neutral-400 text-sm italic leading-relaxed">
-                  Gib einen 4-stelligen Code ein, um den Zugriff auf dein Tagebuch und deine Daten zu sichern.
-                </p>
-              </div>
-
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2 px-1">Neuer PIN</label>
-                  <div className="relative">
-                    <input
-                      type={showPins ? "text" : "password"}
-                      maxLength={4}
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={newPin}
-                      onChange={(e) => setNewPin(e.target.value.replace(/[^0-9]/g, ''))}
-                      className="w-full bg-black border border-neutral-800 rounded-xl py-4 px-4 text-center text-2xl font-black tracking-[1em] text-white focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all font-mono"
-                      placeholder="••••"
-                    />
-                    <button 
-                      onClick={() => setShowPins(!showPins)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white transition-colors"
-                    >
-                      {showPins ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2 px-1">PIN bestätigen</label>
-                  <input
-                    type={showPins ? "text" : "password"}
-                    maxLength={4}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={confirmPin}
-                    onChange={(e) => setConfirmPin(e.target.value.replace(/[^0-9]/g, ''))}
-                    className="w-full bg-black border border-neutral-800 rounded-xl py-4 px-4 text-center text-2xl font-black tracking-[1em] text-white focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all font-mono"
-                    placeholder="••••"
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => {
-                      setIsPinModalOpen(false);
-                      setNewPin('');
-                      setConfirmPin('');
-                    }}
-                    className="flex-1 py-4 bg-neutral-800 hover:bg-neutral-700 text-white rounded-2xl font-bold transition-all"
-                  >
-                    Abbrechen
-                  </button>
-                  <button
-                    disabled={newPin.length !== 4 || newPin !== confirmPin}
-                    onClick={() => {
-                      updateSettings({ isPinEnabled: true, pin: newPin });
-                      setIsPinModalOpen(false);
-                      setNewPin('');
-                      setConfirmPin('');
-                      toast.success('PIN erfolgreich gespeichert!');
-                    }}
-                    className="flex-1 py-4 bg-amber-500 disabled:opacity-50 disabled:grayscale text-neutral-950 rounded-2xl font-black transition-all shadow-lg shadow-amber-500/20"
-                  >
-                    Speichern
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-
         {selectedEntry && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div

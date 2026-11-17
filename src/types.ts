@@ -181,6 +181,8 @@ export type HealthDataSource =
   | 'web_bluetooth'
   | 'health_export'
   | 'aura_activity'
+  | 'garmin_connect'
+  | 'google_health'
   | 'manual';
 
 export type RecoveryState = 'depleted' | 'strained' | 'balanced' | 'charged';
