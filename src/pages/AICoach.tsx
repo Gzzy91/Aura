@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useStore } from '@/store/useStore';
-import { Sparkles, Send, Loader2, RotateCcw } from 'lucide-react';
+import { Sparkles, Send, Loader2, RotateCcw, AlertCircle, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { sendCoachChatMessage } from '@/services/coachService';
 import { SkillType } from '@/types';
@@ -11,6 +11,8 @@ const CHAT_STORAGE_KEY = 'aura_coach_chat_v1';
 interface ChatMessage {
   role: 'user' | 'coach';
   content: string;
+  isError?: boolean;
+  retryText?: string;
 }
 
 const WELCOME_MESSAGE: ChatMessage = {
@@ -22,7 +24,7 @@ const WELCOME_MESSAGE: ChatMessage = {
 const QUICK_PROMPTS = [
   'Plane meinen optimalen Tagesfokus',
   'Wie verbessere ich meine Erholung & Energie?',
-  'Werte meinen Wochenverlauf aus',
+  'Besprich meine letzte Sonntags-Retrospektive',
   'Schlage mir eine passende Quest für heute vor',
 ];
 
@@ -32,6 +34,7 @@ export function AICoach() {
     quests,
     diaryEntries,
     weeklyCoachSummaries,
+    weeklyRetrospectives,
     healthRecords,
     foodEntries,
     addQuest,
@@ -71,6 +74,7 @@ export function AICoach() {
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const recentMoods = diaryEntries.filter((e) => e.date >= sevenDaysAgo && e.mood >= 1);
     const latestSummary = [...weeklyCoachSummaries].sort((a, b) => b.weekStart - a.weekStart)[0];
+    const latestRetro = [...weeklyRetrospectives].sort((a, b) => b.weekStart - a.weekStart)[0];
     const todayHealth = healthRecords.find((r) => r.id === todayKey);
     const todayCalories = foodEntries
       .filter((f) => isSameDay(new Date(f.date), today))
@@ -89,19 +93,43 @@ export function AICoach() {
           ) / 10}h, Aktivität ${todayHealth.activityDurationMinutes}m`
         : null,
       todayCalories > 0 ? `Heutige Ernährung: ${todayCalories} kcal` : null,
-      latestSummary ? `Letztes Wochenfazit: ${latestSummary.summary.slice(0, 260)}` : null,
+      latestRetro
+        ? `Letzte Sonntags-Retrospektive (${latestRetro.id}): ${latestRetro.headline} | Quote ${latestRetro.questCompletionRate}% | Ausblick: ${latestRetro.nextWeekOutlook.slice(0, 220)}`
+        : null,
+      latestSummary ? `Letztes Wochenfazit: ${latestSummary.summary.slice(0, 200)}` : null,
     ].filter(Boolean);
 
     return parts.length > 0 ? parts.join(' | ') : undefined;
-  }, [diaryEntries, weeklyCoachSummaries, healthRecords, foodEntries]);
+  }, [diaryEntries, weeklyCoachSummaries, weeklyRetrospectives, healthRecords, foodEntries]);
 
-  const sendMessage = async (textToSend: string) => {
+  const sendMessage = async (textToSend: string, isRetry = false) => {
     const trimmed = textToSend.trim();
     if (!trimmed || isLoading) return;
 
-    setInput('');
-    const currentHistory = [...messages];
-    setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
+    if (!isRetry) {
+      setInput('');
+    }
+
+    // Exclude welcome message, error bubbles, and (on retry) the duplicated failed user turn
+    const cleanBaseMessages = messages.filter(
+      (msg, idx) => !(idx === 0 && msg.role === 'coach') && !msg.isError
+    );
+
+    const historyForApi = (
+      isRetry &&
+      cleanBaseMessages.length > 0 &&
+      cleanBaseMessages[cleanBaseMessages.length - 1]?.role === 'user' &&
+      cleanBaseMessages[cleanBaseMessages.length - 1]?.content === trimmed
+        ? cleanBaseMessages.slice(0, -1)
+        : cleanBaseMessages
+    ).map(({ role, content }) => ({ role, content }));
+
+    if (isRetry) {
+      setMessages((prev) => prev.filter((m) => !m.isError));
+    } else {
+      setMessages((prev) => [...prev.filter((m) => !m.isError), { role: 'user', content: trimmed }]);
+    }
+
     setIsLoading(true);
 
     const context = {
@@ -115,7 +143,7 @@ export function AICoach() {
 
     try {
       const response = await sendCoachChatMessage({
-        history: currentHistory,
+        history: historyForApi,
         userMessage: trimmed,
         context,
       });
@@ -158,13 +186,18 @@ export function AICoach() {
         ]);
       }
     } catch (error) {
-      console.error(error);
+      console.error('AI Coach chat error:', error);
+      const errorMessage =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Die Verbindung zum KI-Coach konnte nicht hergestellt werden.';
       setMessages((prev) => [
         ...prev,
         {
           role: 'coach',
-          content:
-            'Die Verbindung zum KI-Coach wurde kurz unterbrochen. Bitte versuche es gleich erneut.',
+          content: errorMessage,
+          isError: true,
+          retryText: trimmed,
         },
       ]);
     } finally {
@@ -214,10 +247,30 @@ export function AICoach() {
                 className={`max-w-[85%] sm:max-w-[78%] rounded-2xl p-4 text-sm leading-relaxed ${
                   msg.role === 'user'
                     ? 'bg-amber-500 text-neutral-950 font-medium rounded-tr-sm'
-                    : 'bg-neutral-950 border border-neutral-800 text-neutral-100 rounded-tl-sm'
+                    : msg.isError
+                      ? 'bg-rose-500/10 border border-rose-500/30 text-rose-200 rounded-tl-sm'
+                      : 'bg-neutral-950 border border-neutral-800 text-neutral-100 rounded-tl-sm'
                 }`}
               >
-                {msg.role === 'coach' ? (
+                {msg.isError ? (
+                  <div className="space-y-2.5">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                      <p className="text-xs sm:text-sm text-rose-200 leading-relaxed">{msg.content}</p>
+                    </div>
+                    {msg.retryText && (
+                      <button
+                        type="button"
+                        disabled={isLoading}
+                        onClick={() => sendMessage(msg.retryText!, true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 border border-rose-500/30 text-xs font-bold transition-colors min-h-[36px] disabled:opacity-50"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Erneut versuchen
+                      </button>
+                    )}
+                  </div>
+                ) : msg.role === 'coach' ? (
                   <div className="markdown-body prose prose-invert prose-sm max-w-none [&_p]:my-1.5 [&_strong]:text-amber-400">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>

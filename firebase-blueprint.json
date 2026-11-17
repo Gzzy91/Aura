@@ -38,7 +38,12 @@
       "properties": {
         "level": { "type": "integer" },
         "xp": { "type": "integer" },
-        "xpToNextLevel": { "type": "integer" }
+        "xpToNextLevel": { "type": "integer" },
+        "lastWorkedAt": { "type": "integer" },
+        "lastDecayAt": { "type": "integer" },
+        "decayedXpTotal": { "type": "integer" },
+        "lastDecayAmount": { "type": "integer" },
+        "lastDecayDemotedFrom": { "type": "integer" }
       },
       "required": ["level", "xp", "xpToNextLevel"]
     },
@@ -165,6 +170,69 @@
         "syncedAt": { "type": "integer" }
       },
       "required": ["id", "date", "sleepDurationMinutes", "activityDurationMinutes", "sources", "recoveryScore", "recoveryState", "syncedAt"]
+    },
+    "WeeklyRetrospective": {
+      "title": "WeeklyRetrospective",
+      "description": "Sunday AI-generated weekly retrospective analyzing mood fluctuations, goal achievement, and motivating next-week outlook",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "weekStart": { "type": "integer" },
+        "weekEnd": { "type": "integer" },
+        "headline": { "type": "string", "maxLength": 300 },
+        "moodFluctuationAnalysis": { "type": "string", "maxLength": 4000 },
+        "goalAchievementAnalysis": { "type": "string", "maxLength": 4000 },
+        "nextWeekOutlook": { "type": "string", "maxLength": 4000 },
+        "focusRecommendations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "skill": { "type": "string" },
+              "xpReward": { "type": "integer" }
+            }
+          }
+        },
+        "avgMood": { "type": ["number", "null"] },
+        "minMood": { "type": ["integer", "null"] },
+        "maxMood": { "type": ["integer", "null"] },
+        "moodSwingRange": { "type": ["number", "null"] },
+        "moodVolatility": { "type": ["number", "null"] },
+        "loggedMoodDays": { "type": "integer" },
+        "completedQuestsCount": { "type": "integer" },
+        "failedQuestsCount": { "type": "integer" },
+        "questCompletionRate": { "type": "integer" },
+        "habitPositiveCount": { "type": "integer" },
+        "habitNegativeCount": { "type": "integer" },
+        "totalXp": { "type": "number" },
+        "totalFocusMinutes": { "type": "integer" },
+        "adoptedRecommendationIds": { "type": "array", "items": { "type": "string" } },
+        "generatedAt": { "type": "integer" },
+        "triggerType": { "type": "string", "enum": ["sunday_auto", "manual"] }
+      },
+      "required": [
+        "id",
+        "weekStart",
+        "weekEnd",
+        "headline",
+        "moodFluctuationAnalysis",
+        "goalAchievementAnalysis",
+        "nextWeekOutlook",
+        "focusRecommendations",
+        "loggedMoodDays",
+        "completedQuestsCount",
+        "failedQuestsCount",
+        "questCompletionRate",
+        "habitPositiveCount",
+        "habitNegativeCount",
+        "totalXp",
+        "totalFocusMinutes",
+        "generatedAt",
+        "triggerType"
+      ]
     }
   },
   "firestore": {
@@ -203,6 +271,10 @@
     "/users/{userId}/healthRecords/{recordId}": {
       "schema": "HealthRecord",
       "description": "Synchronized daily sleep and activity recovery records"
+    },
+    "/users/{userId}/weeklyRetrospectives/{retroId}": {
+      "schema": "WeeklyRetrospective",
+      "description": "Sunday AI-powered weekly retrospectives analyzing mood swings and goal achievement"
     }
   }
 }

@@ -25,17 +25,24 @@ import { useStore } from './store/useStore';
 import { triggerLevelUpConfetti } from './lib/confetti';
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { startOfDay } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 import { recordBrowserActivityHeartbeat } from './services/healthSyncService';
+import {
+  computeWeeklyRetrospectiveMetrics,
+  getWeekBounds,
+  shouldAutoGenerateSundayRetrospective,
+} from './lib/retrospective';
+import { generateWeeklyRetrospective } from './services/coachService';
 
 import { Login } from './pages/Login';
 
 const INACTIVITY_TIMEOUT = 1 * 60 * 1000; // 1 minute
 
 function AppContent() {
-  const { user, loading, questsSynced, quests, stats, settings, setLocked, setUser, syncWithFirestore } = useStore();
+  const { user, loading, isInitialized, questsSynced, focusSynced, quests, focusSessions, stats, settings, setLocked, setUser, syncWithFirestore } = useStore();
   const prevLevelRef = useRef(stats.level);
   const lastActivityRef = useRef<number>(Date.now());
+  const autoRetroTriggeredRef = useRef<Set<string>>(new Set());
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -138,9 +145,165 @@ function AppContent() {
     }
   };
 
+  const runSkillDecayCheck = () => {
+    const {
+      user: currentUser,
+      isInitialized: initialized,
+      questsSynced: qSynced,
+      focusSynced: fSynced,
+      stats: beforeStats,
+      checkAndApplySkillDecay,
+    } = useStore.getState();
+    if (currentUser && (!initialized || !qSynced || !fSynced)) return;
+
+    const prevOverallLevel = beforeStats.level || 1;
+    const decayed = checkAndApplySkillDecay();
+    if (decayed.length > 0) {
+      const nextOverallLevel = useStore.getState().stats.level || 1;
+      const summary = decayed
+        .map((d) =>
+          d.newLevel < d.previousLevel
+            ? `${d.skill} (-${d.xpLost} EP, Stufe ${d.previousLevel} → ${d.newLevel})`
+            : `${d.skill} (-${d.xpLost} EP)`
+        )
+        .join(', ');
+      const overallNote =
+        nextOverallLevel < prevOverallLevel
+          ? ` · Gesamt-Level ${prevOverallLevel} → ${nextOverallLevel}`
+          : '';
+      toast.warning(`Inaktivitäts-Abzug (7+ Tage ohne Training): ${summary}${overallNote}`, {
+        id: 'weekly-skill-decay',
+        duration: 8000,
+      });
+    }
+  };
+
   useEffect(() => {
     runAutoFailCheck();
   }, [user, questsSynced, quests]);
+
+  useEffect(() => {
+    runSkillDecayCheck();
+  }, [user, isInitialized, questsSynced, focusSynced, quests, focusSessions]);
+
+  // Automatic Sunday Weekly Retrospective check
+  useEffect(() => {
+    if (user && (!isInitialized || !questsSynced)) return;
+
+    const checkSundayRetrospective = async () => {
+      const now = new Date();
+      if (now.getDay() !== 0) return;
+
+      const state = useStore.getState();
+      if (!shouldAutoGenerateSundayRetrospective(now, state.weeklyRetrospectives)) {
+        return;
+      }
+
+      const { weekKey } = getWeekBounds(now);
+      const triggerKey = `${format(now, 'yyyy-MM-dd')}-${weekKey}`;
+      if (autoRetroTriggeredRef.current.has(triggerKey)) return;
+      autoRetroTriggeredRef.current.add(triggerKey);
+
+      try {
+        const metrics = computeWeeklyRetrospectiveMetrics({
+          baseDate: now,
+          quests: state.quests,
+          diaryEntries: state.diaryEntries,
+          focusSessions: state.focusSessions,
+          visions: state.visions,
+          stats: state.stats,
+        });
+
+        const response = await generateWeeklyRetrospective({
+          weekLabel: metrics.weekLabel,
+          loggedMoodDays: metrics.loggedMoodDays,
+          avgMood: metrics.avgMood,
+          minMood: metrics.minMood,
+          maxMood: metrics.maxMood,
+          moodSwingRange: metrics.moodSwingRange,
+          moodVolatility: metrics.moodVolatility,
+          stabilityLabel: metrics.stabilityLabel,
+          biggestJump: metrics.biggestJump,
+          peakDay: metrics.peakDay,
+          lowDay: metrics.lowDay,
+          completedQuestsCount: metrics.completedQuestsCount,
+          failedQuestsCount: metrics.failedQuestsCount,
+          pendingWeekQuestsCount: metrics.pendingWeekQuestsCount,
+          questCompletionRate: metrics.questCompletionRate,
+          habitPositiveCount: metrics.habitPositiveCount,
+          habitNegativeCount: metrics.habitNegativeCount,
+          totalXp: metrics.totalXp,
+          totalFocusMinutes: metrics.totalFocusMinutes,
+          topSkill: metrics.topSkill,
+          completedQuestTitles: metrics.completedQuestTitles,
+          failedQuestTitles: metrics.failedQuestTitles,
+          visionProgress: metrics.visionProgress,
+          dailyBreakdown: metrics.dailyBreakdown.map((d) => ({
+            shortDay: d.shortDay,
+            dateLabel: d.dateLabel,
+            mood: d.mood,
+            moodLabel: d.moodLabel,
+            completedQuests: d.completedQuests,
+            failedQuests: d.failedQuests,
+            habitPositive: d.habitPositive,
+            habitNegative: d.habitNegative,
+            xp: d.xp,
+            focusMinutes: d.focusMinutes,
+            notes: d.notes,
+            progress: d.progress,
+          })),
+          userLevel: metrics.userLevel,
+          streak: metrics.streak,
+        });
+
+        const existing = state.weeklyRetrospectives.find((r) => r.id === metrics.weekKey);
+        await state.saveWeeklyRetrospective({
+          id: metrics.weekKey,
+          weekStart: metrics.weekStart.getTime(),
+          weekEnd: metrics.weekEnd.getTime(),
+          headline: response.headline,
+          moodFluctuationAnalysis: response.moodFluctuationAnalysis,
+          goalAchievementAnalysis: response.goalAchievementAnalysis,
+          nextWeekOutlook: response.nextWeekOutlook,
+          focusRecommendations: response.focusRecommendations,
+          avgMood: metrics.avgMood,
+          minMood: metrics.minMood,
+          maxMood: metrics.maxMood,
+          moodSwingRange: metrics.moodSwingRange,
+          moodVolatility: metrics.moodVolatility,
+          loggedMoodDays: metrics.loggedMoodDays,
+          completedQuestsCount: metrics.completedQuestsCount,
+          failedQuestsCount: metrics.failedQuestsCount,
+          questCompletionRate: metrics.questCompletionRate,
+          habitPositiveCount: metrics.habitPositiveCount,
+          habitNegativeCount: metrics.habitNegativeCount,
+          totalXp: metrics.totalXp,
+          totalFocusMinutes: metrics.totalFocusMinutes,
+          adoptedRecommendationIds: existing?.adoptedRecommendationIds || [],
+          generatedAt: Date.now(),
+          triggerType: 'sunday_auto',
+        });
+
+        toast.success('Deine Sonntags-Retrospektive ist bereit!', {
+          id: 'sunday-retrospective-ready',
+          duration: 6000,
+          action: {
+            label: 'Ansehen',
+            onClick: () => navigate('/dashboard'),
+          },
+        });
+      } catch (err) {
+        console.error('Automatic Sunday retrospective failed:', err);
+        autoRetroTriggeredRef.current.delete(triggerKey);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      void checkSundayRetrospective();
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [user, isInitialized, questsSynced, navigate]);
 
   useEffect(() => {
     recordBrowserActivityHeartbeat();
@@ -157,12 +320,14 @@ function AppContent() {
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible') {
         runAutoFailCheck();
+        runSkillDecayCheck();
         recordBrowserActivityHeartbeat();
       }
     };
 
     const interval = setInterval(() => {
       runAutoFailCheck();
+      runSkillDecayCheck();
       if (document.visibilityState === 'visible') {
         recordBrowserActivityHeartbeat();
       }

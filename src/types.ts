@@ -4,6 +4,11 @@ export interface SkillStats {
   level: number;
   xp: number;
   xpToNextLevel: number;
+  lastWorkedAt?: number;
+  lastDecayAt?: number;
+  decayedXpTotal?: number;
+  lastDecayAmount?: number;
+  lastDecayDemotedFrom?: number;
 }
 
 export interface Equipment {
@@ -104,6 +109,41 @@ export interface WeeklyCoachSummary {
   loggedDaysCount: number;
   totalXp: number;
   generatedAt: number;
+}
+
+export interface RetrospectiveFocusAction {
+  id: string;
+  title: string;
+  description: string;
+  skill: SkillType;
+  xpReward: number;
+}
+
+export interface WeeklyRetrospective {
+  id: string; // YYYY-MM-DD of weekStart (Monday)
+  weekStart: number;
+  weekEnd: number;
+  headline: string;
+  moodFluctuationAnalysis: string;
+  goalAchievementAnalysis: string;
+  nextWeekOutlook: string;
+  focusRecommendations: RetrospectiveFocusAction[];
+  avgMood: number | null;
+  minMood: number | null;
+  maxMood: number | null;
+  moodSwingRange: number | null;
+  moodVolatility: number | null;
+  loggedMoodDays: number;
+  completedQuestsCount: number;
+  failedQuestsCount: number;
+  questCompletionRate: number;
+  habitPositiveCount: number;
+  habitNegativeCount: number;
+  totalXp: number;
+  totalFocusMinutes: number;
+  adoptedRecommendationIds?: string[];
+  generatedAt: number;
+  triggerType: 'sunday_auto' | 'manual';
 }
 
 export interface AppSettings {

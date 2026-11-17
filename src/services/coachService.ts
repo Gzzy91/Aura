@@ -1,4 +1,4 @@
-import { DeepTraining } from '../types';
+import { DeepTraining, RetrospectiveFocusAction } from '../types';
 
 export interface WeeklySummaryDayPayload {
   shortDay: string;
@@ -25,6 +25,62 @@ export interface WeeklySummaryRequestPayload {
   moodDistribution: Record<string, number>;
   dailyBreakdown: WeeklySummaryDayPayload[];
   userLevel?: number;
+}
+
+export interface WeeklyRetrospectiveRequestPayload {
+  weekLabel: string;
+  loggedMoodDays: number;
+  avgMood: number | null;
+  minMood: number | null;
+  maxMood: number | null;
+  moodSwingRange: number | null;
+  moodVolatility: number | null;
+  stabilityLabel: string;
+  biggestJump?: { fromDay: string; toDay: string; delta: number } | null;
+  peakDay?: { shortDay: string; mood: number } | null;
+  lowDay?: { shortDay: string; mood: number } | null;
+  completedQuestsCount: number;
+  failedQuestsCount: number;
+  pendingWeekQuestsCount: number;
+  questCompletionRate: number;
+  habitPositiveCount: number;
+  habitNegativeCount: number;
+  totalXp: number;
+  totalFocusMinutes: number;
+  topSkill?: { skill: string; xp: number } | null;
+  completedQuestTitles: string[];
+  failedQuestTitles: string[];
+  visionProgress: Array<{
+    title: string;
+    completed: boolean;
+    linkedQuests: number;
+    completedLinkedQuests: number;
+    progressPercent: number;
+  }>;
+  dailyBreakdown: Array<{
+    shortDay: string;
+    dateLabel: string;
+    mood: number | null;
+    moodLabel?: string | null;
+    completedQuests: number;
+    failedQuests: number;
+    habitPositive: number;
+    habitNegative: number;
+    xp: number;
+    focusMinutes: number;
+    notes?: string;
+    progress?: string;
+  }>;
+  userLevel?: number;
+  streak?: number;
+}
+
+export interface WeeklyRetrospectiveResponse {
+  headline: string;
+  moodFluctuationAnalysis: string;
+  goalAchievementAnalysis: string;
+  nextWeekOutlook: string;
+  focusRecommendations: RetrospectiveFocusAction[];
 }
 
 export interface CoachChatContext {
@@ -71,6 +127,12 @@ export async function generateWeeklyMoodSummary(
   payload: WeeklySummaryRequestPayload
 ): Promise<{ summary: string }> {
   return postJson<{ summary: string }>('/api/coach/weekly-summary', payload);
+}
+
+export async function generateWeeklyRetrospective(
+  payload: WeeklyRetrospectiveRequestPayload
+): Promise<WeeklyRetrospectiveResponse> {
+  return postJson<WeeklyRetrospectiveResponse>('/api/coach/weekly-retrospective', payload);
 }
 
 export async function sendCoachChatMessage(payload: {

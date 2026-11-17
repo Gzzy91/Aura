@@ -78,12 +78,29 @@ service cloud.firestore {
     // Domain Validators
     // ===============================================================
 
+    function isValidSkillStats(skill) {
+      return skill is map &&
+             skill.level is int && skill.level >= 1 &&
+             skill.xp is number && skill.xp >= 0 &&
+             skill.xpToNextLevel is number && skill.xpToNextLevel > 0 &&
+             (!('lastWorkedAt' in skill) || skill.lastWorkedAt == null || skill.lastWorkedAt is int) &&
+             (!('lastDecayAt' in skill) || skill.lastDecayAt == null || skill.lastDecayAt is int) &&
+             (!('decayedXpTotal' in skill) || skill.decayedXpTotal is number) &&
+             (!('lastDecayAmount' in skill) || skill.lastDecayAmount is number) &&
+             (!('lastDecayDemotedFrom' in skill) || skill.lastDecayDemotedFrom == null || skill.lastDecayDemotedFrom is int);
+    }
+
     function isValidUserStats(stats) {
       return stats.level is int && stats.level >= 1 &&
              stats.xp is number && stats.xp >= 0 &&
              stats.xpToNextLevel is number && stats.xpToNextLevel > 0 &&
              stats.streak is int && stats.streak >= 0 &&
              stats.skills is map &&
+             (!('Fitness' in stats.skills) || isValidSkillStats(stats.skills.Fitness)) &&
+             (!('Fokus' in stats.skills) || isValidSkillStats(stats.skills.Fokus)) &&
+             (!('Disziplin' in stats.skills) || isValidSkillStats(stats.skills.Disziplin)) &&
+             (!('Wissen' in stats.skills) || isValidSkillStats(stats.skills.Wissen)) &&
+             (!('Soziales' in stats.skills) || isValidSkillStats(stats.skills.Soziales)) &&
              (!('equippedItems' in stats) || stats.equippedItems is map) &&
              (!('activeSkinId' in stats) || stats.activeSkinId is string);
     }
@@ -190,6 +207,49 @@ service cloud.firestore {
              data.syncedAt is int;
     }
 
+    function isValidWeeklyRetrospective(data, retroId) {
+      return hasRequiredFields([
+               'id', 'weekStart', 'weekEnd', 'headline',
+               'moodFluctuationAnalysis', 'goalAchievementAnalysis', 'nextWeekOutlook',
+               'focusRecommendations', 'loggedMoodDays', 'completedQuestsCount',
+               'failedQuestsCount', 'questCompletionRate', 'habitPositiveCount',
+               'habitNegativeCount', 'totalXp', 'totalFocusMinutes', 'generatedAt', 'triggerType'
+             ]) &&
+             hasOnlyAllowedFields([
+               'id', 'weekStart', 'weekEnd', 'headline',
+               'moodFluctuationAnalysis', 'goalAchievementAnalysis', 'nextWeekOutlook',
+               'focusRecommendations', 'avgMood', 'minMood', 'maxMood',
+               'moodSwingRange', 'moodVolatility', 'loggedMoodDays',
+               'completedQuestsCount', 'failedQuestsCount', 'questCompletionRate',
+               'habitPositiveCount', 'habitNegativeCount', 'totalXp', 'totalFocusMinutes',
+               'adoptedRecommendationIds', 'generatedAt', 'triggerType'
+             ]) &&
+             data.id is string && data.id == retroId && isValidId(data.id) &&
+             data.weekStart is int &&
+             data.weekEnd is int &&
+             data.headline is string && data.headline.size() > 0 && data.headline.size() <= 300 &&
+             data.moodFluctuationAnalysis is string && data.moodFluctuationAnalysis.size() <= 4000 &&
+             data.goalAchievementAnalysis is string && data.goalAchievementAnalysis.size() <= 4000 &&
+             data.nextWeekOutlook is string && data.nextWeekOutlook.size() <= 4000 &&
+             data.focusRecommendations is list && data.focusRecommendations.size() <= 5 &&
+             (!('avgMood' in data) || data.avgMood == null || (data.avgMood is number && data.avgMood >= 1 && data.avgMood <= 5)) &&
+             (!('minMood' in data) || data.minMood == null || (data.minMood is int && data.minMood >= 1 && data.minMood <= 5)) &&
+             (!('maxMood' in data) || data.maxMood == null || (data.maxMood is int && data.maxMood >= 1 && data.maxMood <= 5)) &&
+             (!('moodSwingRange' in data) || data.moodSwingRange == null || data.moodSwingRange is number) &&
+             (!('moodVolatility' in data) || data.moodVolatility == null || data.moodVolatility is number) &&
+             data.loggedMoodDays is int && data.loggedMoodDays >= 0 && data.loggedMoodDays <= 7 &&
+             data.completedQuestsCount is int && data.completedQuestsCount >= 0 &&
+             data.failedQuestsCount is int && data.failedQuestsCount >= 0 &&
+             data.questCompletionRate is int && data.questCompletionRate >= 0 && data.questCompletionRate <= 100 &&
+             data.habitPositiveCount is int && data.habitPositiveCount >= 0 &&
+             data.habitNegativeCount is int && data.habitNegativeCount >= 0 &&
+             data.totalXp is number && data.totalXp >= 0 &&
+             data.totalFocusMinutes is int && data.totalFocusMinutes >= 0 &&
+             (!('adoptedRecommendationIds' in data) || (data.adoptedRecommendationIds is list && data.adoptedRecommendationIds.size() <= 10)) &&
+             data.generatedAt is int &&
+             data.triggerType in ['sunday_auto', 'manual'];
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -253,6 +313,13 @@ service cloud.firestore {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidId(recordId) && isValidHealthRecord(request.resource.data, recordId);
         allow update: if isOwner(userId) && isValidId(recordId) && isValidHealthRecord(request.resource.data, recordId);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /weeklyRetrospectives/{retroId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidId(retroId) && isValidWeeklyRetrospective(request.resource.data, retroId);
+        allow update: if isOwner(userId) && isValidId(retroId) && isValidWeeklyRetrospective(request.resource.data, retroId);
         allow delete: if isOwner(userId) || isAdmin();
       }
     }

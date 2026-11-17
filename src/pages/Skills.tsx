@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
-import { Dumbbell, Brain, Target, BookOpen, Users, Play } from 'lucide-react';
+import { Dumbbell, Brain, Target, BookOpen, Users, Play, Clock, AlertTriangle } from 'lucide-react';
 import {
   PolarAngleAxis,
   PolarGrid,
@@ -13,6 +13,13 @@ import {
 import { SkillType } from '@/types';
 import { cn, SKILL_COLORS, SKILL_BG_COLORS, SKILL_PROGRESS_COLORS } from '@/lib/utils';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import {
+  SKILL_BASE_XP,
+  WEEK_MS,
+  computeLifetimeXp,
+  getSkillLastWorkedFromHistory,
+  getUpcomingWeeklyPenalty,
+} from '@/lib/skillDecay';
 
 const SKILL_ICONS: Record<SkillType, React.ElementType> = {
   Fitness: Dumbbell,
@@ -30,31 +37,54 @@ const SKILL_DESCRIPTIONS: Record<SkillType, string> = {
   Soziales: 'Beziehungen, Kommunikation & gemeinsame Aktivitäten',
 };
 
-function computeLifetimeXp(level: number, currentXp: number): number {
-  let total = currentXp;
-  let threshold = 50;
-  for (let lv = 1; lv < level; lv++) {
-    total += threshold;
-    threshold = Math.floor(threshold * 1.5);
-  }
-  return total;
-}
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function Skills() {
   const { stats, quests, focusSessions } = useStore();
   const navigate = useNavigate();
 
   const skillDetails = useMemo(() => {
+    const now = Date.now();
     const skillsList: SkillType[] = ['Fitness', 'Fokus', 'Disziplin', 'Wissen', 'Soziales'];
+    const historyLastWorked = getSkillLastWorkedFromHistory(quests, focusSessions);
+
     return skillsList.map((skill) => {
-      const skillStats = stats.skills[skill] || { level: 1, xp: 0, xpToNextLevel: 50 };
-      const totalXp = computeLifetimeXp(skillStats.level, skillStats.xp);
+      const skillStats = stats.skills[skill] || { level: 1, xp: 0, xpToNextLevel: SKILL_BASE_XP };
+      const totalXp = computeLifetimeXp(skillStats.level, skillStats.xp, SKILL_BASE_XP);
       const completedQuests = quests.filter(
         (q) => q.skill === skill && q.completed && !q.failed && q.type !== 'habit'
       ).length;
       const focusMinutes = focusSessions
         .filter((f) => f.skill === skill)
         .reduce((sum, f) => sum + (f.durationMinutes || 0), 0);
+
+      const historyTs = historyLastWorked[skill];
+      const storedTs = typeof skillStats.lastWorkedAt === 'number' ? skillStats.lastWorkedAt : null;
+      const lastWorkedAt =
+        historyTs !== null && storedTs !== null
+          ? Math.max(historyTs, storedTs)
+          : historyTs ?? storedTs;
+      const lastDecayAt = typeof skillStats.lastDecayAt === 'number' ? skillStats.lastDecayAt : null;
+      const anchor =
+        lastWorkedAt !== null
+          ? lastDecayAt !== null
+            ? Math.max(lastWorkedAt, lastDecayAt)
+            : lastWorkedAt
+          : null;
+
+      const daysSinceActivity =
+        lastWorkedAt !== null ? Math.max(0, Math.floor((now - lastWorkedAt) / DAY_MS)) : null;
+      const daysUntilDecay =
+        anchor !== null && totalXp > 0
+          ? Math.max(0, Math.ceil((anchor + WEEK_MS - now) / DAY_MS))
+          : null;
+      const nextPenaltyXp = getUpcomingWeeklyPenalty(skillStats.xpToNextLevel);
+      const hasRecentDecay = Boolean(
+        skillStats.lastDecayAmount &&
+          skillStats.lastDecayAmount > 0 &&
+          lastDecayAt !== null &&
+          (lastWorkedAt === null || lastDecayAt >= lastWorkedAt)
+      );
 
       return {
         skill,
@@ -63,6 +93,10 @@ export function Skills() {
         completedQuests,
         focusMinutes,
         progress: (skillStats.xp / skillStats.xpToNextLevel) * 100,
+        daysSinceActivity,
+        daysUntilDecay,
+        nextPenaltyXp,
+        hasRecentDecay,
       };
     });
   }, [stats.skills, quests, focusSessions]);
@@ -102,6 +136,16 @@ export function Skills() {
           </div>
         )}
       </header>
+
+      <div className="bg-neutral-900/70 border border-neutral-800 rounded-xl px-4 py-3 flex items-start sm:items-center gap-3 text-xs text-neutral-300">
+        <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+        <p>
+          <span className="font-semibold text-white">Wöchentlicher Skill-Erhalt:</span> Wird an einem
+          Skill 7 Tage lang nicht gearbeitet, werden{' '}
+          <span className="text-amber-400 font-semibold">25 % der Stufen-EP</span> abgezogen – inklusive
+          möglicher Level-Rückstufung.
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Skill Balance Radar Graphic */}
@@ -149,6 +193,8 @@ export function Skills() {
             const textColorClass = SKILL_COLORS[item.skill];
             const bgColorClass = SKILL_BG_COLORS[item.skill];
             const progressColorClass = SKILL_PROGRESS_COLORS[item.skill];
+            const isWarningWindow =
+              item.totalXp > 0 && item.daysUntilDecay !== null && item.daysUntilDecay <= 2;
 
             return (
               <div
@@ -177,7 +223,7 @@ export function Skills() {
                       {SKILL_DESCRIPTIONS[item.skill]}
                     </p>
 
-                    <div className="mt-3 space-y-1">
+                    <div className="mt-3 space-y-1.5">
                       <ProgressBar
                         progress={item.progress}
                         colorClass={progressColorClass}
@@ -191,6 +237,50 @@ export function Skills() {
                           {item.completedQuests} Quests · {item.focusMinutes}m Fokus
                         </span>
                       </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-[11px]">
+                        <span
+                          className={cn(
+                            'font-medium',
+                            item.daysSinceActivity === 0
+                              ? 'text-emerald-400'
+                              : isWarningWindow
+                              ? 'text-amber-400'
+                              : 'text-neutral-500'
+                          )}
+                        >
+                          {item.daysSinceActivity === null
+                            ? 'Noch keine Aktivität erfasst'
+                            : item.daysSinceActivity === 0
+                            ? 'Heute trainiert'
+                            : `Zuletzt vor ${item.daysSinceActivity} ${item.daysSinceActivity === 1 ? 'Tag' : 'Tagen'} trainiert`}
+                        </span>
+
+                        {item.totalXp > 0 && item.daysUntilDecay !== null && (
+                          <span
+                            className={cn(
+                              'tabular-nums',
+                              isWarningWindow ? 'text-amber-400 font-medium' : 'text-neutral-500'
+                            )}
+                          >
+                            {item.daysUntilDecay === 0
+                              ? `Abzug fällig (-${item.nextPenaltyXp} EP)`
+                              : `Verfall (-${item.nextPenaltyXp} EP) in ${item.daysUntilDecay} ${item.daysUntilDecay === 1 ? 'Tag' : 'Tagen'}`}
+                          </span>
+                        )}
+                      </div>
+
+                      {item.hasRecentDecay && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-rose-400 font-medium pt-0.5">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          <span>
+                            -{item.lastDecayAmount} EP durch Inaktivität abgezogen
+                            {item.lastDecayDemotedFrom && item.lastDecayDemotedFrom > item.level
+                              ? ` (Rückstufung von Stufe ${item.lastDecayDemotedFrom})`
+                              : ''}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

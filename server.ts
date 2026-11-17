@@ -4,25 +4,231 @@ import type { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type, GenerateContentResponse } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const GEMINI_MODEL = 'gemini-4-hydrogen';
+const FALLBACK_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
 function getAiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-    throw new Error('GEMINI_API_KEY ist nicht konfiguriert.');
+    throw new Error('GEMINI_API_KEY ist nicht konfiguriert. Bitte hinterlege deinen API-Key in Settings > Secrets.');
   }
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
+      timeout: 20000,
       headers: {
         'User-Agent': 'aistudio-build',
       },
     },
+  });
+}
+
+function extractGeminiError(error: unknown): { status: number; message: string; isTransient: boolean } {
+  const rawMessage = error instanceof Error ? error.message : String(error || '');
+  let parsedCode: number | undefined =
+    typeof (error as { status?: unknown })?.status === 'number'
+      ? ((error as { status: number }).status)
+      : undefined;
+  let parsedStatus: string | undefined;
+  let parsedMessage = rawMessage;
+
+  try {
+    const jsonMatch = rawMessage.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const obj = JSON.parse(jsonMatch[0]);
+      const inner = obj.error || obj;
+      if (typeof inner.code === 'number') parsedCode = inner.code;
+      if (typeof inner.status === 'string') parsedStatus = inner.status;
+      if (typeof inner.message === 'string') parsedMessage = inner.message;
+    }
+  } catch {
+    // ignore JSON parse issues
+  }
+
+  const lower = `${rawMessage} ${parsedMessage} ${parsedStatus || ''}`.toLowerCase();
+
+  if (lower.includes('gemini_api_key ist nicht konfiguriert')) {
+    return {
+      status: 500,
+      message: 'Der Gemini API-Key ist nicht konfiguriert. Bitte prüfe deine Secrets unter Settings > Secrets.',
+      isTransient: false,
+    };
+  }
+  if (parsedCode === 403 || parsedStatus === 'PERMISSION_DENIED' || (parsedCode === 400 && lower.includes('api_key_invalid')) || lower.includes('api key not valid')) {
+    return {
+      status: parsedCode === 400 ? 400 : 403,
+      message: 'Der Gemini API-Key ist ungültig oder hat keine Berechtigung. Bitte prüfe deinen API-Key unter Settings > Secrets.',
+      isTransient: false,
+    };
+  }
+  if (parsedCode === 429 || parsedStatus === 'RESOURCE_EXHAUSTED' || lower.includes('quota')) {
+    return {
+      status: 429,
+      message: 'Das KI-Anfragelimit wurde vorübergehend erreicht (429). Bitte versuche es gleich erneut oder prüfe dein API-Kontingent in Settings > Secrets.',
+      isTransient: true,
+    };
+  }
+  if (parsedCode === 404 || parsedStatus === 'NOT_FOUND') {
+    return {
+      status: 404,
+      message: 'Das angeforderte KI-Modell wurde nicht gefunden (404).',
+      isTransient: false,
+    };
+  }
+  if (
+    parsedCode === 503 ||
+    parsedStatus === 'UNAVAILABLE' ||
+    lower.includes('high demand') ||
+    lower.includes('unavailable') ||
+    lower.includes('overloaded')
+  ) {
+    return {
+      status: 503,
+      message: 'Der KI-Coach-Dienst ist momentan stark ausgelastet (503). Bitte versuche es in wenigen Sekunden erneut.',
+      isTransient: true,
+    };
+  }
+  if (
+    parsedCode === 504 ||
+    parsedCode === 502 ||
+    parsedCode === 500 ||
+    parsedStatus === 'DEADLINE_EXCEEDED' ||
+    parsedStatus === 'INTERNAL' ||
+    lower.includes('deadline') ||
+    lower.includes('timeout') ||
+    lower.includes('aborted') ||
+    lower.includes('econnreset') ||
+    lower.includes('etimedout') ||
+    lower.includes('fetch failed') ||
+    lower.includes('network')
+  ) {
+    return {
+      status: 504,
+      message: 'Zeitüberschreitung oder vorübergehender Serverfehler bei der KI-Anfrage. Bitte versuche es gleich erneut.',
+      isTransient: true,
+    };
+  }
+
+  return {
+    status: 500,
+    message: parsedMessage || 'Unbekannter Fehler bei der KI-Anfrage.',
+    isTransient: false,
+  };
+}
+
+async function generateWithResilience(
+  ai: GoogleGenAI,
+  params: {
+    contents: unknown;
+    config?: Record<string, unknown>;
+    thinkingLevel?: ThinkingLevel;
+  }
+): Promise<GenerateContentResponse> {
+  const buildConfig = (model: string, signal: AbortSignal) => {
+    const baseConfig = {
+      ...(params.config || {}),
+      abortSignal: signal,
+    } as Record<string, unknown>;
+    if (params.thinkingLevel && model === GEMINI_MODEL) {
+      baseConfig.thinkingConfig = { thinkingLevel: params.thinkingLevel };
+    }
+    return baseConfig;
+  };
+
+  const primaryController = new AbortController();
+  const fallbackController = new AbortController();
+
+  const runModel = (model: string, controller: AbortController) =>
+    ai.models.generateContent({
+      model,
+      contents: params.contents as any,
+      config: buildConfig(model, controller.signal) as any,
+    });
+
+  return await new Promise<GenerateContentResponse>((resolve, reject) => {
+    let settled = false;
+    let primaryError: unknown = null;
+    let fallbackError: unknown = null;
+    let primaryDone = false;
+    let fallbackDone = false;
+    let fallbackStarted = false;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const primaryTimeout = setTimeout(
+      () => primaryController.abort(new Error('Primary model timeout')),
+      15000
+    );
+
+    const cleanup = () => {
+      clearTimeout(primaryTimeout);
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
+    };
+
+    const finishSuccess = (res: GenerateContentResponse, winner: 'primary' | 'fallback') => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (winner === 'primary') {
+        fallbackController.abort();
+      } else {
+        primaryController.abort();
+      }
+      resolve(res);
+    };
+
+    const maybeRejectAll = () => {
+      if (settled) return;
+      if (primaryDone && fallbackDone) {
+        settled = true;
+        cleanup();
+        reject(fallbackError ?? primaryError);
+      }
+    };
+
+    const startFallback = () => {
+      if (settled || fallbackStarted) return;
+      fallbackStarted = true;
+      fallbackTimeout = setTimeout(
+        () => fallbackController.abort(new Error('Fallback model timeout')),
+        12000
+      );
+      runModel(FALLBACK_GEMINI_MODEL, fallbackController)
+        .then((res) => finishSuccess(res, 'fallback'))
+        .catch((err) => {
+          fallbackError = err;
+          fallbackDone = true;
+          maybeRejectAll();
+        });
+    };
+
+    // Start fallback in parallel if primary has not responded within 5.5s
+    fallbackTimer = setTimeout(startFallback, 5500);
+
+    runModel(GEMINI_MODEL, primaryController)
+      .then((res) => finishSuccess(res, 'primary'))
+      .catch((err) => {
+        primaryError = err;
+        primaryDone = true;
+        const info = extractGeminiError(err);
+        if (!info.isTransient) {
+          if (!settled) {
+            settled = true;
+            cleanup();
+            fallbackController.abort();
+            reject(err);
+          }
+          return;
+        }
+        startFallback();
+        maybeRejectAll();
+      });
   });
 }
 
@@ -172,9 +378,9 @@ Stärkster Skill: ${topSkillText}
 Tagesverlauf:
 ${dayLines}`;
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+      const response = await generateWithResilience(ai, {
         contents: prompt,
+        thinkingLevel: ThinkingLevel.LOW,
         config: {
           systemInstruction,
         },
@@ -188,9 +394,218 @@ ${dayLines}`;
 
       res.json({ summary });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Fehler bei der AI-Coach-Zusammenfassung.';
+      const info = extractGeminiError(error);
       console.error('Error in /api/coach/weekly-summary:', error);
-      res.status(500).json({ error: message });
+      res.status(info.status).json({ error: info.message });
+    }
+  });
+
+  // Sunday AI-Powered Weekly Retrospective (Mood Fluctuations + Goal Attainment + Next Week Outlook)
+  app.post('/api/coach/weekly-retrospective', async (req: Request, res: Response) => {
+    try {
+      const ai = getAiClient();
+      const body = req.body as {
+        weekLabel: string;
+        loggedMoodDays: number;
+        avgMood: number | null;
+        minMood: number | null;
+        maxMood: number | null;
+        moodSwingRange: number | null;
+        moodVolatility: number | null;
+        stabilityLabel: string;
+        biggestJump?: { fromDay: string; toDay: string; delta: number } | null;
+        peakDay?: { shortDay: string; mood: number } | null;
+        lowDay?: { shortDay: string; mood: number } | null;
+        completedQuestsCount: number;
+        failedQuestsCount: number;
+        pendingWeekQuestsCount: number;
+        questCompletionRate: number;
+        habitPositiveCount: number;
+        habitNegativeCount: number;
+        totalXp: number;
+        totalFocusMinutes: number;
+        topSkill?: { skill: string; xp: number } | null;
+        completedQuestTitles?: string[];
+        failedQuestTitles?: string[];
+        visionProgress?: Array<{
+          title: string;
+          completed: boolean;
+          linkedQuests: number;
+          completedLinkedQuests: number;
+          progressPercent: number;
+        }>;
+        dailyBreakdown: Array<{
+          shortDay: string;
+          dateLabel: string;
+          mood: number | null;
+          moodLabel?: string | null;
+          completedQuests: number;
+          failedQuests: number;
+          habitPositive: number;
+          habitNegative: number;
+          xp: number;
+          focusMinutes: number;
+          notes?: string;
+          progress?: string;
+        }>;
+        userLevel?: number;
+        streak?: number;
+      };
+
+      if (!body || !Array.isArray(body.dailyBreakdown) || !body.weekLabel) {
+        res.status(400).json({ error: 'Ungültige Retrospektive-Daten übermittelt.' });
+        return;
+      }
+
+      const dayLines = body.dailyBreakdown
+        .map((d) => {
+          const moodText =
+            d.mood !== null
+              ? `${d.mood}/5 ★ (${d.moodLabel || ''})`
+              : 'keine Stimmung';
+          const questText = `${d.completedQuests} erledigt, ${d.failedQuests} verpasst`;
+          const habitText = `Habits +${d.habitPositive}/-${d.habitNegative}`;
+          const notesPart =
+            d.notes || d.progress
+              ? ` | Reflexion: "${[d.notes, d.progress].filter(Boolean).join(' / ').slice(0, 180)}"`
+              : '';
+          return `- ${d.shortDay} (${d.dateLabel}): Stimmung ${moodText} | Quests: ${questText} | ${habitText} | +${d.xp} EP | ${d.focusMinutes} Min Fokus${notesPart}`;
+        })
+        .join('\n');
+
+      const visionLines =
+        Array.isArray(body.visionProgress) && body.visionProgress.length > 0
+          ? body.visionProgress
+              .map(
+                (v) =>
+                  `- "${v.title}": ${v.progressPercent}% (${v.completedLinkedQuests}/${v.linkedQuests} verknüpfte Quests${v.completed ? ', abgeschlossen' : ''})`
+              )
+              .join('\n')
+          : 'Keine aktiven Lebensziele verknüpft.';
+
+      const systemInstruction = `Du bist der "Sonntags-Mentor" (AI-Coach) in der persönlichen Entwicklungs-App "Aura".
+Jeden Sonntag erstellst du eine tiefgehende, konstruktive und motivierende "Wochen-Retrospektive" auf DEUTSCH für den Nutzer ("Du").
+
+Deine 4 Aufgaben:
+1. "headline": Eine prägnante, motivierende Überschrift (max. 70 Zeichen), die die Essenz der Woche einfängt.
+2. "moodFluctuationAnalysis": Analysiere konkret die STIMMUNGSSCHWANKUNGEN der Woche (Durchschnitt, Spannweite Min–Max, Stabilität/Volatilität, stärkster Umschwung zwischen Tagen, Zusammenhang mit Fokuszeit, Habits oder Tagebuch-Notizen). Ordne Hochs und Tiefs einfühlsam und ohne Vorwürfe ein. (2–4 klare Sätze)
+3. "goalAchievementAnalysis": Analysiere die ZIELERREICHUNG der Woche (abgeschlossene vs. nicht durchgeführte Quests, Erfolgsquote %, Habit-Balance +/-, Fortschritt bei Lebenszielen, verdiente EP und Fokusminuten). Würdige Konsequenz und gib bei verpassten Quests eine pragmatische Einordnung statt Kritik. (2–4 klare Sätze)
+4. "nextWeekOutlook": Formuliere einen maßgeschneiderten, motivierenden AUSBLICK FÜR DIE NÄCHSTE WOCHE, der direkt aus den Mustern dieser Woche lernt (z.B. wie man Stimmungstiefs abfedert, Energie-Hochs nutzt oder Überforderung bei Quests vermeidet). (3–4 inspirierende, konkrete Sätze)
+5. "focusRecommendations": Schlage 2–3 konkrete, realistische Quests/Fokus-Aktionen für die nächste Woche vor (Titel, kurze Begründung, passender Skill aus [Fitness, Fokus, Disziplin, Wissen, Soziales], XP zwischen 15 und 50).
+
+Wichtig: Erfinde keine nicht geloggten Tage als geloggt. Wenn wenig Daten vorliegen, erkenne das ehrlich an und motiviere sanft zur kommenden Woche.`;
+
+      const prompt = `Erstelle die Sonntags-Wochen-Retrospektive für die Woche ${body.weekLabel}:
+
+Helden-Status: Level ${body.userLevel ?? 1}, aktuelle Serie: ${body.streak ?? 0} Tage
+Stimmung & Schwankungen:
+- Geloggte Stimmungstage: ${body.loggedMoodDays} von 7
+- Durchschnitt: ${body.avgMood !== null ? `${body.avgMood.toFixed(2)} / 5 ★` : 'keine Daten'}
+- Min / Max: ${body.minMood !== null && body.maxMood !== null ? `${body.minMood}★ bis ${body.maxMood}★` : 'keine Daten'}
+- Schwankungsbreite: ${body.moodSwingRange !== null ? `${body.moodSwingRange} Sterne` : '–'} (Volatilität σ=${body.moodVolatility ?? '–'}, Einstufung: ${body.stabilityLabel})
+- Bester Stimmungstag: ${body.peakDay ? `${body.peakDay.shortDay} (${body.peakDay.mood}/5 ★)` : '–'}
+- Tiefster Stimmungstag: ${body.lowDay ? `${body.lowDay.shortDay} (${body.lowDay.mood}/5 ★)` : '–'}
+- Größter Tages-Umschwung: ${body.biggestJump ? `${body.biggestJump.fromDay} → ${body.biggestJump.toDay} (${body.biggestJump.delta >= 0 ? '+' : ''}${body.biggestJump.delta} ★)` : '–'}
+
+Zielerreichung:
+- Abgeschlossene Quests: ${body.completedQuestsCount}
+- Nicht durchgeführte/verpasste Quests: ${body.failedQuestsCount}
+- Noch offene Wochen-Quests: ${body.pendingWeekQuestsCount}
+- Quest-Erfolgsquote: ${body.questCompletionRate}%
+- Gewohnheiten (Habits): +${body.habitPositiveCount} positiv / -${body.habitNegativeCount} negativ
+- Wochen-EP: +${body.totalXp} EP | Fokuszeit: ${body.totalFocusMinutes} Min
+- Top-Skill: ${body.topSkill ? `${body.topSkill.skill} (+${body.topSkill.xp} EP)` : 'noch keiner'}
+- Erledigte Quest-Beispiele: ${(body.completedQuestTitles || []).join(', ') || 'keine'}
+- Verpasste Quest-Beispiele: ${(body.failedQuestTitles || []).join(', ') || 'keine'}
+
+Lebensziele (Visions):
+${visionLines}
+
+Tagesverlauf (Mo–So):
+${dayLines}`;
+
+      const response = await generateWithResilience(ai, {
+        contents: prompt,
+        thinkingLevel: ThinkingLevel.LOW,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              headline: { type: Type.STRING },
+              moodFluctuationAnalysis: { type: Type.STRING },
+              goalAchievementAnalysis: { type: Type.STRING },
+              nextWeekOutlook: { type: Type.STRING },
+              focusRecommendations: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    skill: {
+                      type: Type.STRING,
+                      enum: ['Fitness', 'Fokus', 'Disziplin', 'Wissen', 'Soziales'],
+                    },
+                    xpReward: { type: Type.INTEGER },
+                  },
+                  required: ['title', 'description', 'skill', 'xpReward'],
+                },
+              },
+            },
+            required: [
+              'headline',
+              'moodFluctuationAnalysis',
+              'goalAchievementAnalysis',
+              'nextWeekOutlook',
+              'focusRecommendations',
+            ],
+          },
+        },
+      });
+
+      const rawText = response.text?.trim();
+      if (!rawText) {
+        res.status(502).json({ error: 'Keine Antwort für die Wochen-Retrospektive erhalten.' });
+        return;
+      }
+
+      const parsed = JSON.parse(rawText) as {
+        headline?: string;
+        moodFluctuationAnalysis?: string;
+        goalAchievementAnalysis?: string;
+        nextWeekOutlook?: string;
+        focusRecommendations?: Array<{
+          title?: string;
+          description?: string;
+          skill?: string;
+          xpReward?: number;
+        }>;
+      };
+
+      const validSkills = new Set(['Fitness', 'Fokus', 'Disziplin', 'Wissen', 'Soziales']);
+      const recs = Array.isArray(parsed.focusRecommendations)
+        ? parsed.focusRecommendations.slice(0, 3).map((rec, idx) => ({
+            id: `retro-rec-${idx + 1}`,
+            title: String(rec.title || 'Fokus-Schritt nächste Woche').slice(0, 140),
+            description: String(rec.description || '').slice(0, 400),
+            skill: validSkills.has(String(rec.skill)) ? String(rec.skill) : 'Disziplin',
+            xpReward: Math.max(10, Math.min(100, Math.round(Number(rec.xpReward) || 25))),
+          }))
+        : [];
+
+      res.json({
+        headline: String(parsed.headline || 'Deine Sonntags-Retrospektive').slice(0, 280),
+        moodFluctuationAnalysis: String(parsed.moodFluctuationAnalysis || '').slice(0, 3800),
+        goalAchievementAnalysis: String(parsed.goalAchievementAnalysis || '').slice(0, 3800),
+        nextWeekOutlook: String(parsed.nextWeekOutlook || '').slice(0, 3800),
+        focusRecommendations: recs,
+      });
+    } catch (error: unknown) {
+      const info = extractGeminiError(error);
+      console.error('Error in /api/coach/weekly-retrospective:', error);
+      res.status(info.status).json({ error: info.message });
     }
   });
 
@@ -247,9 +662,9 @@ You have the ability to create quests for the user using the createQuest tool. U
           },
         ];
 
-        const followUp = await ai.models.generateContent({
-          model: GEMINI_MODEL,
-          contents: followUpContents as any,
+        const followUp = await generateWithResilience(ai, {
+          contents: followUpContents,
+          thinkingLevel: ThinkingLevel.LOW,
           config: {
             systemInstruction,
             tools: [{ functionDeclarations: [createQuestDeclaration] }],
@@ -267,15 +682,21 @@ You have the ability to create quests for the user using the createQuest tool. U
         return;
       }
 
-      const geminiHistory = (history || []).map((msg) => ({
-        role: msg.role === 'coach' ? 'model' : 'user',
-        parts: [{ text: msg.content }],
-      }));
-      geminiHistory.push({ role: 'user', parts: [{ text: userMessage }] });
+      // Normalize history so Gemini contents always start with a user turn and have non-empty text
+      const rawHistory = (history || [])
+        .filter((msg) => msg && typeof msg.content === 'string' && msg.content.trim().length > 0)
+        .map((msg) => ({
+          role: msg.role === 'coach' ? 'model' : 'user',
+          parts: [{ text: msg.content.trim() }],
+        }));
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: geminiHistory as any,
+      const firstUserIdx = rawHistory.findIndex((m) => m.role === 'user');
+      const geminiHistory = firstUserIdx >= 0 ? rawHistory.slice(firstUserIdx) : [];
+      geminiHistory.push({ role: 'user', parts: [{ text: userMessage.trim() }] });
+
+      const response = await generateWithResilience(ai, {
+        contents: geminiHistory,
+        thinkingLevel: ThinkingLevel.LOW,
         config: {
           systemInstruction,
           tools: [{ functionDeclarations: [createQuestDeclaration] }],
@@ -295,9 +716,9 @@ You have the ability to create quests for the user using the createQuest tool. U
         text: response.text || 'Ich denke über deinen Pfad nach...',
       });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Fehler im Orakel-Coach.';
+      const info = extractGeminiError(error);
       console.error('Error in /api/coach/chat:', error);
-      res.status(500).json({ error: message });
+      res.status(info.status).json({ error: info.message });
     }
   });
 
@@ -319,9 +740,9 @@ The "iconName" must be one of: "Brain", "Dumbbell", "Shield", "Activity", "Moon"
 The "content" should use markdown formatting with sections, bold text, and a final "Dein Coaching-Auftrag:" actionable task.
 Write in GERMAN. Address the user as "Du".`;
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+      const response = await generateWithResilience(ai, {
         contents: 'Erstelle ein neues Training.',
+        thinkingLevel: ThinkingLevel.LOW,
         config: {
           systemInstruction,
           tools: [{ functionDeclarations: [createDeepTrainingDeclaration] }],
@@ -341,9 +762,9 @@ Write in GERMAN. Address the user as "Du".`;
 
       res.status(502).json({ error: 'Fehler bei der Generierung des Trainings.' });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Fehler bei der Generierung des Trainings.';
+      const info = extractGeminiError(error);
       console.error('Error in /api/coach/daily-training:', error);
-      res.status(500).json({ error: message });
+      res.status(info.status).json({ error: info.message });
     }
   });
 

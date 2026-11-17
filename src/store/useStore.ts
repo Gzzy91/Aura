@@ -1,11 +1,22 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserStats, SkillStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry, WeeklyCoachSummary, HealthDailyRecord } from '../types';
+import { UserStats, SkillStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry, WeeklyCoachSummary, WeeklyRetrospective, HealthDailyRecord } from '../types';
 import { User } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { toast } from 'sonner';
 import { triggerHapticFeedback } from '@/lib/utils';
 import { isSameDay, format, startOfDay } from 'date-fns';
+import {
+  ALL_SKILLS,
+  OVERALL_BASE_XP,
+  SKILL_BASE_XP,
+  SKILL_MAPPING,
+  SkillDecayEvent,
+  adjustProgressionByDelta,
+  computeProgressionFromTotalXp,
+  evaluateWeeklySkillDecay,
+  getSkillLastWorkedFromHistory,
+} from '../lib/skillDecay';
 import { 
   doc, 
   setDoc, 
@@ -70,6 +81,7 @@ interface AppState {
   loading: boolean;
   isInitialized: boolean;
   questsSynced: boolean;
+  focusSynced: boolean;
   isLocked: boolean;
   settings: {
     isPinEnabled: boolean;
@@ -85,6 +97,7 @@ interface AppState {
   deepTrainings: DeepTraining[];
   foodEntries: FoodEntry[];
   weeklyCoachSummaries: WeeklyCoachSummary[];
+  weeklyRetrospectives: WeeklyRetrospective[];
   healthRecords: HealthDailyRecord[];
   lastTrainingGeneratedDate: string | null;
   setUser: (user: User | null) => void;
@@ -101,12 +114,15 @@ interface AppState {
   updateQuest: (id: string, updates: Partial<Omit<Quest, 'id' | 'completed' | 'createdAt'>>) => void;
   removeHabitCompletion: (questId: string, completionIndex: number) => void;
   gainXp: (skill: SkillType, amount: number) => void;
+  checkAndApplySkillDecay: () => SkillDecayEvent[];
   markNotified: (id: string) => void;
   addDiaryEntry: (entry: Omit<DiaryEntry, 'id'>) => void;
   updateDiaryEntry: (id: string, updates: Partial<Omit<DiaryEntry, 'id'>>) => void;
   deleteDiaryEntry: (id: string) => void;
   setDailyMood: (mood: number, targetDate?: Date) => Promise<void>;
   saveWeeklyCoachSummary: (summary: WeeklyCoachSummary) => Promise<void>;
+  saveWeeklyRetrospective: (retro: WeeklyRetrospective) => Promise<void>;
+  markRetroRecommendationAdopted: (retroId: string, recId: string) => Promise<void>;
   saveHealthRecord: (record: HealthDailyRecord) => Promise<void>;
   markRecoverySuggestionDecision: (recordId: string, suggestionId: string, decision: 'accepted' | 'dismissed') => Promise<void>;
   addFoodEntry: (entry: Omit<FoodEntry, 'id'>) => void;
@@ -125,17 +141,6 @@ interface AppState {
   syncWithFirestore: (userId: string) => () => void;
 }
 
-const SKILL_MAPPING: Record<string, SkillType> = {
-  'Focus': 'Fokus',
-  'Discipline': 'Disziplin',
-  'Knowledge': 'Wissen',
-  'Social': 'Soziales',
-  'Fitness': 'Fitness',
-  'Fokus': 'Fokus',
-  'Disziplin': 'Disziplin',
-  'Wissen': 'Wissen',
-  'Soziales': 'Soziales'
-};
 
 const INITIAL_STATS: UserStats = {
   level: 1,
@@ -204,55 +209,80 @@ export function calculateStatsFromHistory(
     skillXpMap[skill] += xpGained;
   }
 
-  const ALL_SKILLS: SkillType[] = ['Fitness', 'Fokus', 'Disziplin', 'Wissen', 'Soziales'];
-  
+  const baseStats = currentStats || INITIAL_STATS;
+  const historyLastWorked = getSkillLastWorkedFromHistory(quests || [], focusSessions || []);
   const skillsResult: Record<SkillType, SkillStats> = {
-    Fitness: { level: 1, xp: 0, xpToNextLevel: 50 },
-    Fokus: { level: 1, xp: 0, xpToNextLevel: 50 },
-    Disziplin: { level: 1, xp: 0, xpToNextLevel: 50 },
-    Wissen: { level: 1, xp: 0, xpToNextLevel: 50 },
-    Soziales: { level: 1, xp: 0, xpToNextLevel: 50 },
+    Fitness: { level: 1, xp: 0, xpToNextLevel: SKILL_BASE_XP },
+    Fokus: { level: 1, xp: 0, xpToNextLevel: SKILL_BASE_XP },
+    Disziplin: { level: 1, xp: 0, xpToNextLevel: SKILL_BASE_XP },
+    Wissen: { level: 1, xp: 0, xpToNextLevel: SKILL_BASE_XP },
+    Soziales: { level: 1, xp: 0, xpToNextLevel: SKILL_BASE_XP },
   };
 
+  let totalHistoryRawXp = 0;
   let totalOverallXp = 0;
+  let hasAnyDecay = false;
 
   for (const skill of ALL_SKILLS) {
-    const rawXp = Math.max(0, skillXpMap[skill] || 0);
-    totalOverallXp += rawXp;
+    const existing = baseStats.skills?.[skill];
+    const historyXp = Math.max(0, skillXpMap[skill] || 0);
+    totalHistoryRawXp += historyXp;
 
-    let level = 1;
-    let xp = rawXp;
-    let xpToNextLevel = 50;
-    while (xp >= xpToNextLevel) {
-      xp -= xpToNextLevel;
-      level += 1;
-      xpToNextLevel = Math.floor(xpToNextLevel * 1.5);
-    }
+    const decayedXpTotal = Math.max(0, existing?.decayedXpTotal || 0);
+    if (decayedXpTotal > 0) hasAnyDecay = true;
 
-    skillsResult[skill] = { level, xp, xpToNextLevel };
+    const netXp = Math.max(0, historyXp - decayedXpTotal);
+    totalOverallXp += netXp;
+
+    const prog = computeProgressionFromTotalXp(netXp, SKILL_BASE_XP);
+    const historyTs = historyLastWorked[skill];
+    const storedTs = typeof existing?.lastWorkedAt === 'number' ? existing.lastWorkedAt : null;
+    const mergedLastWorked =
+      historyTs !== null && storedTs !== null
+        ? Math.max(historyTs, storedTs)
+        : historyTs ?? storedTs;
+
+    skillsResult[skill] = {
+      ...prog,
+      ...(mergedLastWorked !== null ? { lastWorkedAt: mergedLastWorked } : {}),
+      ...(typeof existing?.lastDecayAt === 'number' ? { lastDecayAt: existing.lastDecayAt } : {}),
+      ...(decayedXpTotal > 0 ? { decayedXpTotal } : {}),
+      ...(typeof existing?.lastDecayAmount === 'number' && existing.lastDecayAmount > 0
+        ? { lastDecayAmount: existing.lastDecayAmount }
+        : {}),
+      ...(typeof existing?.lastDecayDemotedFrom === 'number'
+        ? { lastDecayDemotedFrom: existing.lastDecayDemotedFrom }
+        : {}),
+    };
   }
 
-  let overallLevel = 1;
-  let overallXp = totalOverallXp;
-  let overallXpToNextLevel = 100;
-  while (overallXp >= overallXpToNextLevel) {
-    overallXp -= overallXpToNextLevel;
-    overallLevel += 1;
-    overallXpToNextLevel = Math.floor(overallXpToNextLevel * 1.5);
-  }
+  const overallCalc = computeProgressionFromTotalXp(totalOverallXp, OVERALL_BASE_XP);
 
-  const baseStats = currentStats || INITIAL_STATS;
+  // Preserve loaded stats while history is still empty/loading, or if higher non-decayed stats exist.
+  // Once history is present and decay has occurred, allow demotions to stick.
+  const canDemoteFromHistory = hasAnyDecay && totalHistoryRawXp > 0;
+  const keepBaseOverall = !canDemoteFromHistory && (baseStats.level || 1) > overallCalc.level;
 
-  const finalLevel = Math.max(overallLevel, baseStats.level || 1);
-  const finalXp = finalLevel > overallLevel ? (baseStats.xp || 0) : overallXp;
-  const finalXpToNextLevel = finalLevel > overallLevel ? (baseStats.xpToNextLevel || 100) : overallXpToNextLevel;
+  const finalLevel = keepBaseOverall ? (baseStats.level || 1) : overallCalc.level;
+  const finalXp = keepBaseOverall ? (baseStats.xp || 0) : overallCalc.xp;
+  const finalXpToNextLevel = keepBaseOverall
+    ? (baseStats.xpToNextLevel || OVERALL_BASE_XP)
+    : overallCalc.xpToNextLevel;
 
-  const mergedSkills: Record<SkillType, SkillStats> = {} as any;
+  const mergedSkills: Record<SkillType, SkillStats> = {} as Record<SkillType, SkillStats>;
   for (const skill of ALL_SKILLS) {
     const calc = skillsResult[skill];
     const existing = baseStats.skills?.[skill];
-    if (existing && existing.level > calc.level) {
-      mergedSkills[skill] = existing;
+    const skillHasDecay = (existing?.decayedXpTotal || 0) > 0;
+    if (
+      existing &&
+      existing.level > calc.level &&
+      !(skillHasDecay && totalHistoryRawXp > 0)
+    ) {
+      mergedSkills[skill] = {
+        ...existing,
+        ...(calc.lastWorkedAt !== undefined ? { lastWorkedAt: calc.lastWorkedAt } : {}),
+      };
     } else {
       mergedSkills[skill] = calc;
     }
@@ -350,6 +380,7 @@ export const useStore = create<AppState>()(
       loading: true,
       isInitialized: false,
       questsSynced: false,
+      focusSynced: false,
       isLocked: false,
       settings: {
         isPinEnabled: false,
@@ -361,14 +392,15 @@ export const useStore = create<AppState>()(
       visions: [],
       focusSessions: [],
       notifiedQuestIds: [],
-      widgetOrder: ['level', 'streak', 'mood', 'energy_recovery', 'weekly_summary', 'food_mood_correlation', 'chart', 'recurring_chart', 'calendar', 'today', 'reminders', 'settings'],
+      widgetOrder: ['level', 'streak', 'mood', 'energy_recovery', 'weekly_summary', 'weekly_retrospective', 'food_mood_correlation', 'chart', 'recurring_chart', 'calendar', 'today', 'reminders', 'settings'],
       deepTrainings: [],
       foodEntries: [],
       weeklyCoachSummaries: [],
+      weeklyRetrospectives: [],
       healthRecords: [],
       lastTrainingGeneratedDate: null,
       
-      setUser: (user) => set({ user, loading: false, ...(user ? {} : { questsSynced: false }) }),
+      setUser: (user) => set({ user, loading: false, ...(user ? {} : { questsSynced: false, focusSynced: false }) }),
       setInitialized: (val) => set({ isInitialized: val }),
       setLocked: (val) => set({ isLocked: val }),
       
@@ -612,6 +644,63 @@ export const useStore = create<AppState>()(
         }
       },
 
+      saveWeeklyRetrospective: async (retro) => {
+        const sanitized: WeeklyRetrospective = {
+          ...retro,
+          weekStart: Math.round(retro.weekStart),
+          weekEnd: Math.round(retro.weekEnd),
+          loggedMoodDays: Math.max(0, Math.min(7, Math.round(retro.loggedMoodDays))),
+          completedQuestsCount: Math.max(0, Math.round(retro.completedQuestsCount)),
+          failedQuestsCount: Math.max(0, Math.round(retro.failedQuestsCount)),
+          questCompletionRate: Math.max(0, Math.min(100, Math.round(retro.questCompletionRate))),
+          habitPositiveCount: Math.max(0, Math.round(retro.habitPositiveCount)),
+          habitNegativeCount: Math.max(0, Math.round(retro.habitNegativeCount)),
+          totalXp: Math.max(0, retro.totalXp),
+          totalFocusMinutes: Math.max(0, Math.round(retro.totalFocusMinutes)),
+          minMood: retro.minMood !== null ? Math.round(retro.minMood) : null,
+          maxMood: retro.maxMood !== null ? Math.round(retro.maxMood) : null,
+          focusRecommendations: (retro.focusRecommendations || []).slice(0, 5),
+          adoptedRecommendationIds: (retro.adoptedRecommendationIds || []).slice(0, 10),
+          generatedAt: Math.round(retro.generatedAt || Date.now()),
+        };
+
+        set((s) => {
+          const exists = s.weeklyRetrospectives.some((item) => item.id === sanitized.id);
+          const next = exists
+            ? s.weeklyRetrospectives.map((item) => (item.id === sanitized.id ? sanitized : item))
+            : [sanitized, ...s.weeklyRetrospectives];
+          return {
+            weeklyRetrospectives: next.sort((a, b) => b.weekStart - a.weekStart),
+          };
+        });
+
+        const { user } = get();
+        if (user) {
+          try {
+            await setDoc(
+              doc(db, 'users', user.uid, 'weeklyRetrospectives', sanitized.id),
+              cleanData(sanitized)
+            );
+          } catch (error) {
+            handleFirestoreError(
+              error,
+              OperationType.WRITE,
+              `users/${user.uid}/weeklyRetrospectives/${sanitized.id}`
+            );
+          }
+        }
+      },
+
+      markRetroRecommendationAdopted: async (retroId, recId) => {
+        const existing = get().weeklyRetrospectives.find((r) => r.id === retroId);
+        if (!existing) return;
+        const adopted = Array.from(new Set([...(existing.adoptedRecommendationIds || []), recId])).slice(0, 10);
+        await get().saveWeeklyRetrospective({
+          ...existing,
+          adoptedRecommendationIds: adopted,
+        });
+      },
+
       saveHealthRecord: async (record) => {
         const sanitized: HealthDailyRecord = {
           id: record.id,
@@ -740,41 +829,31 @@ export const useStore = create<AppState>()(
         let newStats = { ...state.stats, skills: { ...state.stats.skills } };
         const actionTimestamp = customDate ?? Date.now();
 
-        if (isNegativeHabit) {
-          newStats.xp -= quest.xpReward;
-          while (newStats.xp < 0 && newStats.level > 1) {
-            newStats.level -= 1;
-            newStats.xpToNextLevel = Math.ceil(newStats.xpToNextLevel / 1.5);
-            newStats.xp += newStats.xpToNextLevel;
-          }
-          if (newStats.xp < 0) newStats.xp = 0;
+        const xpDelta = isNegativeHabit ? -quest.xpReward : quest.xpReward;
+        const nextOverall = adjustProgressionByDelta(newStats, xpDelta, OVERALL_BASE_XP);
+        newStats.level = nextOverall.level;
+        newStats.xp = nextOverall.xp;
+        newStats.xpToNextLevel = nextOverall.xpToNextLevel;
 
-          const skillStats = { ...(newStats.skills[quest.skill] || { level: 1, xp: 0, xpToNextLevel: 50 }) };
-          skillStats.xp -= quest.xpReward;
-          while (skillStats.xp < 0 && skillStats.level > 1) {
-            skillStats.level -= 1;
-            skillStats.xpToNextLevel = Math.ceil(skillStats.xpToNextLevel / 1.5);
-            skillStats.xp += skillStats.xpToNextLevel;
-          }
-          if (skillStats.xp < 0) skillStats.xp = 0;
-          newStats.skills[quest.skill] = skillStats;
-        } else {
-          newStats.xp += quest.xpReward;
-          while (newStats.xp >= newStats.xpToNextLevel) {
-            newStats.xp -= newStats.xpToNextLevel;
-            newStats.level += 1;
-            newStats.xpToNextLevel = Math.floor(newStats.xpToNextLevel * 1.5);
-          }
-
-          const skillStats = { ...(newStats.skills[quest.skill] || { level: 1, xp: 0, xpToNextLevel: 50 }) };
-          skillStats.xp += quest.xpReward;
-          while (skillStats.xp >= skillStats.xpToNextLevel) {
-            skillStats.xp -= skillStats.xpToNextLevel;
-            skillStats.level += 1;
-            skillStats.xpToNextLevel = Math.floor(skillStats.xpToNextLevel * 1.5);
-          }
-          newStats.skills[quest.skill] = skillStats;
+        const currentSkillStats = newStats.skills[quest.skill] || {
+          level: 1,
+          xp: 0,
+          xpToNextLevel: SKILL_BASE_XP,
+        };
+        const nextSkillProg = adjustProgressionByDelta(currentSkillStats, xpDelta, SKILL_BASE_XP);
+        const updatedSkillStats: SkillStats = {
+          ...currentSkillStats,
+          ...nextSkillProg,
+        };
+        if (!isNegativeHabit) {
+          updatedSkillStats.lastWorkedAt = Math.max(
+            currentSkillStats.lastWorkedAt || 0,
+            actionTimestamp
+          );
+          delete updatedSkillStats.lastDecayAmount;
+          delete updatedSkillStats.lastDecayDemotedFrom;
         }
+        newStats.skills[quest.skill] = updatedSkillStats;
 
         if (quest.type === 'habit') {
           const newCompletion = { date: actionTimestamp, direction: isNegativeHabit ? 'negative' as const : 'positive' as const };
@@ -1015,28 +1094,35 @@ export const useStore = create<AppState>()(
         const quest = state.quests.find(q => q.id === id);
         if (!quest) return;
 
+        const remainingQuests = state.quests.filter(q => q.id !== id);
         let newStats = { ...state.stats, skills: { ...state.stats.skills } };
         if (quest.completed && !quest.failed) {
-          newStats.xp -= quest.xpReward;
-          while (newStats.xp < 0 && newStats.level > 1) {
-            newStats.level -= 1;
-            newStats.xpToNextLevel = Math.ceil(newStats.xpToNextLevel / 1.5);
-            newStats.xp += newStats.xpToNextLevel;
+          const nextOverall = adjustProgressionByDelta(newStats, -quest.xpReward, OVERALL_BASE_XP);
+          newStats.level = nextOverall.level;
+          newStats.xp = nextOverall.xp;
+          newStats.xpToNextLevel = nextOverall.xpToNextLevel;
+
+          const currentSkill = newStats.skills[quest.skill] || {
+            level: 1,
+            xp: 0,
+            xpToNextLevel: SKILL_BASE_XP,
+          };
+          const nextSkillProg = adjustProgressionByDelta(currentSkill, -quest.xpReward, SKILL_BASE_XP);
+          const refreshedLastWorked = getSkillLastWorkedFromHistory(remainingQuests, state.focusSessions)[quest.skill];
+          const nextSkill: SkillStats = {
+            ...currentSkill,
+            ...nextSkillProg,
+          };
+          if (refreshedLastWorked !== null) {
+            nextSkill.lastWorkedAt = refreshedLastWorked;
+          } else {
+            delete nextSkill.lastWorkedAt;
           }
-          if (newStats.xp < 0) newStats.xp = 0;
-          const skillStats = { ...newStats.skills[quest.skill] };
-          skillStats.xp -= quest.xpReward;
-          while (skillStats.xp < 0 && skillStats.level > 1) {
-            skillStats.level -= 1;
-            skillStats.xpToNextLevel = Math.ceil(skillStats.xpToNextLevel / 1.5);
-            skillStats.xp += skillStats.xpToNextLevel;
-          }
-          if (skillStats.xp < 0) skillStats.xp = 0;
-          newStats.skills[quest.skill] = skillStats;
+          newStats.skills[quest.skill] = nextSkill;
         }
 
         set({
-          quests: state.quests.filter(q => q.id !== id),
+          quests: remainingQuests,
           stats: newStats
         });
 
@@ -1051,26 +1137,6 @@ export const useStore = create<AppState>()(
         const state = get();
         const quest = state.quests.find(q => q.id === id);
         if (!quest || !quest.completed) return;
-
-        let newStats = { ...state.stats, skills: { ...state.stats.skills } };
-        if (!quest.failed) {
-          newStats.xp -= quest.xpReward;
-          while (newStats.xp < 0 && newStats.level > 1) {
-            newStats.level -= 1;
-            newStats.xpToNextLevel = Math.ceil(newStats.xpToNextLevel / 1.5);
-            newStats.xp += newStats.xpToNextLevel;
-          }
-          if (newStats.xp < 0) newStats.xp = 0;
-          const skillStats = { ...newStats.skills[quest.skill] };
-          skillStats.xp -= quest.xpReward;
-          while (skillStats.xp < 0 && skillStats.level > 1) {
-            skillStats.level -= 1;
-            skillStats.xpToNextLevel = Math.ceil(skillStats.xpToNextLevel / 1.5);
-            skillStats.xp += skillStats.xpToNextLevel;
-          }
-          if (skillStats.xp < 0) skillStats.xp = 0;
-          newStats.skills[quest.skill] = skillStats;
-        }
 
         const startOfTodayMs = startOfDay(new Date()).getTime();
         let updatedDueDate = quest.dueDate;
@@ -1092,6 +1158,32 @@ export const useStore = create<AppState>()(
           completedAt: undefined,
           dueDate: updatedDueDate
         } : q);
+
+        let newStats = { ...state.stats, skills: { ...state.stats.skills } };
+        if (!quest.failed) {
+          const nextOverall = adjustProgressionByDelta(newStats, -quest.xpReward, OVERALL_BASE_XP);
+          newStats.level = nextOverall.level;
+          newStats.xp = nextOverall.xp;
+          newStats.xpToNextLevel = nextOverall.xpToNextLevel;
+
+          const currentSkill = newStats.skills[quest.skill] || {
+            level: 1,
+            xp: 0,
+            xpToNextLevel: SKILL_BASE_XP,
+          };
+          const nextSkillProg = adjustProgressionByDelta(currentSkill, -quest.xpReward, SKILL_BASE_XP);
+          const refreshedLastWorked = getSkillLastWorkedFromHistory(newQuests, state.focusSessions)[quest.skill];
+          const nextSkill: SkillStats = {
+            ...currentSkill,
+            ...nextSkillProg,
+          };
+          if (refreshedLastWorked !== null) {
+            nextSkill.lastWorkedAt = refreshedLastWorked;
+          } else {
+            delete nextSkill.lastWorkedAt;
+          }
+          newStats.skills[quest.skill] = nextSkill;
+        }
         set({ quests: newQuests, stats: newStats });
 
         const { user } = get();
@@ -1124,45 +1216,35 @@ export const useStore = create<AppState>()(
 
         const completion = quest.completions[completionIndex];
         const isNegativeHabit = completion.direction === 'negative';
-        let newStats = { ...state.stats, skills: { ...state.stats.skills } };
-        
-        if (isNegativeHabit) {
-          newStats.xp += quest.xpReward;
-          while (newStats.xp >= newStats.xpToNextLevel) {
-            newStats.xp -= newStats.xpToNextLevel;
-            newStats.level += 1;
-            newStats.xpToNextLevel = Math.floor(newStats.xpToNextLevel * 1.5);
-          }
-          const skillStats = { ...(newStats.skills[quest.skill] || { level: 1, xp: 0, xpToNextLevel: 50 }) };
-          skillStats.xp += quest.xpReward;
-          while (skillStats.xp >= skillStats.xpToNextLevel) {
-            skillStats.xp -= skillStats.xpToNextLevel;
-            skillStats.level += 1;
-            skillStats.xpToNextLevel = Math.floor(skillStats.xpToNextLevel * 1.5);
-          }
-          newStats.skills[quest.skill] = skillStats;
-        } else {
-          newStats.xp -= quest.xpReward;
-          while (newStats.xp < 0 && newStats.level > 1) {
-            newStats.level -= 1;
-            newStats.xpToNextLevel = Math.ceil(newStats.xpToNextLevel / 1.5);
-            newStats.xp += newStats.xpToNextLevel;
-          }
-          if (newStats.xp < 0) newStats.xp = 0;
-          const skillStats = { ...(newStats.skills[quest.skill] || { level: 1, xp: 0, xpToNextLevel: 50 }) };
-          skillStats.xp -= quest.xpReward;
-          while (skillStats.xp < 0 && skillStats.level > 1) {
-            skillStats.level -= 1;
-            skillStats.xpToNextLevel = Math.ceil(skillStats.xpToNextLevel / 1.5);
-            skillStats.xp += skillStats.xpToNextLevel;
-          }
-          if (skillStats.xp < 0) skillStats.xp = 0;
-          newStats.skills[quest.skill] = skillStats;
-        }
+        const xpDelta = isNegativeHabit ? quest.xpReward : -quest.xpReward;
 
         const newCompletions = [...quest.completions];
         newCompletions.splice(completionIndex, 1);
         const newQuests = state.quests.map(q => q.id === questId ? { ...q, completions: newCompletions } : q);
+
+        let newStats = { ...state.stats, skills: { ...state.stats.skills } };
+        const nextOverall = adjustProgressionByDelta(newStats, xpDelta, OVERALL_BASE_XP);
+        newStats.level = nextOverall.level;
+        newStats.xp = nextOverall.xp;
+        newStats.xpToNextLevel = nextOverall.xpToNextLevel;
+
+        const currentSkill = newStats.skills[quest.skill] || {
+          level: 1,
+          xp: 0,
+          xpToNextLevel: SKILL_BASE_XP,
+        };
+        const nextSkillProg = adjustProgressionByDelta(currentSkill, xpDelta, SKILL_BASE_XP);
+        const refreshedLastWorked = getSkillLastWorkedFromHistory(newQuests, state.focusSessions)[quest.skill];
+        const nextSkill: SkillStats = {
+          ...currentSkill,
+          ...nextSkillProg,
+        };
+        if (refreshedLastWorked !== null) {
+          nextSkill.lastWorkedAt = refreshedLastWorked;
+        } else {
+          delete nextSkill.lastWorkedAt;
+        }
+        newStats.skills[quest.skill] = nextSkill;
 
         set({ quests: newQuests, stats: newStats });
         const { user } = get();
@@ -1173,27 +1255,63 @@ export const useStore = create<AppState>()(
       },
 
       gainXp: (skill, amount) => {
+        const now = Date.now();
         let newStats = { ...get().stats, skills: { ...get().stats.skills } };
-        newStats.xp += amount;
-        while (newStats.xp >= newStats.xpToNextLevel) {
-          newStats.xp -= newStats.xpToNextLevel;
-          newStats.level += 1;
-          newStats.xpToNextLevel = Math.floor(newStats.xpToNextLevel * 1.5);
+        const nextOverall = adjustProgressionByDelta(newStats, amount, OVERALL_BASE_XP);
+        newStats.level = nextOverall.level;
+        newStats.xp = nextOverall.xp;
+        newStats.xpToNextLevel = nextOverall.xpToNextLevel;
+
+        const currentSkill = newStats.skills[skill] || {
+          level: 1,
+          xp: 0,
+          xpToNextLevel: SKILL_BASE_XP,
+        };
+        const nextSkillProg = adjustProgressionByDelta(currentSkill, amount, SKILL_BASE_XP);
+        const nextSkill: SkillStats = {
+          ...currentSkill,
+          ...nextSkillProg,
+        };
+        if (amount > 0) {
+          nextSkill.lastWorkedAt = Math.max(currentSkill.lastWorkedAt || 0, now);
+          delete nextSkill.lastDecayAmount;
+          delete nextSkill.lastDecayDemotedFrom;
         }
-        const skillStats = { ...(newStats.skills[skill] || { level: 1, xp: 0, xpToNextLevel: 50 }) };
-        skillStats.xp += amount;
-        while (skillStats.xp >= skillStats.xpToNextLevel) {
-          skillStats.xp -= skillStats.xpToNextLevel;
-          skillStats.level += 1;
-          skillStats.xpToNextLevel = Math.floor(skillStats.xpToNextLevel * 1.5);
-        }
-        newStats.skills[skill] = skillStats;
+        newStats.skills[skill] = nextSkill;
 
         set({ stats: newStats });
         const { user } = get();
         if (user) {
           updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
         }
+      },
+
+      checkAndApplySkillDecay: () => {
+        const state = get();
+        if (state.user && (!state.isInitialized || !state.questsSynced || !state.focusSynced)) {
+          return [];
+        }
+
+        const evaluation = evaluateWeeklySkillDecay({
+          stats: state.stats,
+          quests: state.quests,
+          focusSessions: state.focusSessions,
+          now: Date.now(),
+        });
+
+        if (evaluation.updated) {
+          set({ stats: evaluation.nextStats });
+          if (state.user) {
+            updateDoc(
+              doc(db, 'users', state.user.uid),
+              cleanUpdateData({ stats: evaluation.nextStats })
+            ).catch((error) => {
+              handleFirestoreError(error, OperationType.UPDATE, `users/${state.user!.uid}`);
+            });
+          }
+        }
+
+        return evaluation.decayedSkills;
       },
 
       markNotified: (id) => {
@@ -1214,7 +1332,7 @@ export const useStore = create<AppState>()(
       },
 
       syncWithFirestore: (userId) => {
-        set({ questsSynced: false });
+        set({ questsSynced: false, focusSynced: false });
         const userDocRef = doc(db, 'users', userId);
         const questsColRef = collection(db, 'users', userId, 'quests');
         const diaryColRef = collection(db, 'users', userId, 'diaryEntries');
@@ -1223,6 +1341,7 @@ export const useStore = create<AppState>()(
         const deepColRef = collection(db, 'users', userId, 'deepTrainings');
         const foodColRef = collection(db, 'users', userId, 'foodEntries');
         const weeklyCoachSummariesColRef = collection(db, 'users', userId, 'weeklyCoachSummaries');
+        const weeklyRetrospectivesColRef = collection(db, 'users', userId, 'weeklyRetrospectives');
         const healthRecordsColRef = collection(db, 'users', userId, 'healthRecords');
 
         // Initial check: if user doc doesn't exist, upload current local state
@@ -1243,6 +1362,7 @@ export const useStore = create<AppState>()(
             state.deepTrainings.forEach(d => setDoc(doc(deepColRef, d.id), cleanData(d)));
             state.foodEntries.forEach(f => setDoc(doc(foodColRef, f.id), cleanData(f)));
             state.weeklyCoachSummaries.forEach(w => setDoc(doc(weeklyCoachSummariesColRef, w.id), cleanData(w)));
+            state.weeklyRetrospectives.forEach(r => setDoc(doc(weeklyRetrospectivesColRef, r.id), cleanData(r)));
             state.healthRecords.forEach(h => setDoc(doc(healthRecordsColRef, h.id), cleanData(h)));
           }
         });
@@ -1304,7 +1424,7 @@ export const useStore = create<AppState>()(
           snapshot.forEach((doc) => focusSessions.push(doc.data() as FocusSession));
           const state = get();
           const newStats = calculateStatsFromHistory(state.quests, focusSessions, state.stats);
-          set({ focusSessions, stats: newStats });
+          set({ focusSessions, stats: newStats, focusSynced: true });
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/focusSessions`);
         });
@@ -1333,6 +1453,14 @@ export const useStore = create<AppState>()(
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/weeklyCoachSummaries`);
         });
 
+        const unsubWeeklyRetrospectives = onSnapshot(weeklyRetrospectivesColRef, (snapshot) => {
+          const weeklyRetrospectives: WeeklyRetrospective[] = [];
+          snapshot.forEach((doc) => weeklyRetrospectives.push(doc.data() as WeeklyRetrospective));
+          set({ weeklyRetrospectives: weeklyRetrospectives.sort((a, b) => b.weekStart - a.weekStart) });
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, `users/${userId}/weeklyRetrospectives`);
+        });
+
         const unsubHealthRecords = onSnapshot(healthRecordsColRef, (snapshot) => {
           const healthRecords: HealthDailyRecord[] = [];
           snapshot.forEach((doc) => healthRecords.push(doc.data() as HealthDailyRecord));
@@ -1350,6 +1478,7 @@ export const useStore = create<AppState>()(
           unsubDeep();
           unsubFood();
           unsubWeeklyCoachSummaries();
+          unsubWeeklyRetrospectives();
           unsubHealthRecords();
         };
       }
@@ -1358,7 +1487,7 @@ export const useStore = create<AppState>()(
       name: 'rpg-storage',
       version: 1,
       partialize: (state) => {
-        const { isLocked, questsSynced, ...persistedState } = state;
+        const { isLocked, questsSynced, focusSynced, ...persistedState } = state;
         return persistedState;
       },
       migrate: (persistedState: any, version: number) => {

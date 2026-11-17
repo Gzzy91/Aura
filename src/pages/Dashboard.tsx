@@ -16,6 +16,7 @@ import { GripHorizontal } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { generateWeeklyMoodSummary } from '@/services/coachService';
 import { EnergyRecoveryWidget } from '@/components/EnergyRecoveryWidget';
+import { WeeklyRetrospectiveWidget } from '@/components/WeeklyRetrospectiveWidget';
 
 function SortableWidget({ id, children, className }: { id: string, children: React.ReactNode, className?: string }) {
   const {
@@ -78,6 +79,7 @@ const DEFAULT_WIDGET_ORDER = [
   'mood',
   'energy_recovery',
   'weekly_summary',
+  'weekly_retrospective',
   'food_mood_correlation',
   'chart',
   'trend',
@@ -94,6 +96,7 @@ const WIDGET_LABELS: Record<string, string> = {
   mood: 'Tagesstimmung',
   energy_recovery: 'Energie & Erholung',
   weekly_summary: 'Wöchentliche Zusammenfassung',
+  weekly_retrospective: 'Sonntags-Retrospektive',
   food_mood_correlation: 'Ernährung & Stimmung',
   chart: 'Wöchentliche EP-Übersicht',
   trend: 'Fähigkeits-Trends (4 Wochen)',
@@ -486,15 +489,25 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
           nextOrder.unshift('weekly_summary');
         }
       }
-      if (missingWidgets.includes('food_mood_correlation')) {
+      if (missingWidgets.includes('weekly_retrospective')) {
         const weeklyIdx = nextOrder.indexOf('weekly_summary');
         if (weeklyIdx !== -1) {
-          nextOrder.splice(weeklyIdx + 1, 0, 'food_mood_correlation');
+          nextOrder.splice(weeklyIdx + 1, 0, 'weekly_retrospective');
+        } else {
+          nextOrder.unshift('weekly_retrospective');
+        }
+      }
+      if (missingWidgets.includes('food_mood_correlation')) {
+        const retroIdx = nextOrder.indexOf('weekly_retrospective');
+        const weeklyIdx = nextOrder.indexOf('weekly_summary');
+        const anchorIdx = retroIdx !== -1 ? retroIdx : weeklyIdx;
+        if (anchorIdx !== -1) {
+          nextOrder.splice(anchorIdx + 1, 0, 'food_mood_correlation');
         } else {
           nextOrder.unshift('food_mood_correlation');
         }
       }
-      const remainingMissing = missingWidgets.filter(w => w !== 'mood' && w !== 'energy_recovery' && w !== 'weekly_summary' && w !== 'food_mood_correlation');
+      const remainingMissing = missingWidgets.filter(w => w !== 'mood' && w !== 'energy_recovery' && w !== 'weekly_summary' && w !== 'weekly_retrospective' && w !== 'food_mood_correlation');
       updateWidgetOrder([...nextOrder, ...remainingMissing]);
     }
   }, [widgetOrder, updateWidgetOrder]);
@@ -1889,6 +1902,15 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                     </SortableWidget>
                   );
                 }
+                case 'weekly_retrospective':
+                  return (
+                    <SortableWidget key="weekly_retrospective" id="weekly_retrospective" className="col-span-1 md:col-span-2 lg:col-span-3">
+                      <WeeklyRetrospectiveWidget
+                        onNavigateToQuests={() => setActiveTab('quests')}
+                        onNavigateToCoach={() => setActiveTab('coach')}
+                      />
+                    </SortableWidget>
+                  );
                 case 'food_mood_correlation': {
                   const data = foodMoodCorrelationData;
                   return (
