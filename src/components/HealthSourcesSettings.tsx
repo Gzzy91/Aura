@@ -113,6 +113,7 @@ export function HealthSourcesSettings() {
       const status = await fetchHealthProvidersStatus();
       setProviderBackendError(null);
       setProviderStatus({
+        backendAvailable: status.backendAvailable,
         garmin: {
           ...status.garmin,
           connected: status.garmin.connected || Boolean(getHealthSessionToken('garmin')),
@@ -566,6 +567,8 @@ export function HealthSourcesSettings() {
                   <div className="text-xs text-neutral-400 truncate">
                     {providerStatus?.garmin.connected
                       ? 'Verbunden · Dailies & Schlaf'
+                      : providerStatus?.backendAvailable === false
+                      ? 'Node-Server erforderlich'
                       : providerStatus?.garmin.configured
                       ? 'OAuth 2.0 PKCE bereit'
                       : 'OAuth-Secrets erforderlich'}
@@ -635,6 +638,8 @@ export function HealthSourcesSettings() {
                             ? 'Google Fit'
                             : 'Health API v4'
                         })`
+                      : providerStatus?.backendAvailable === false
+                      ? 'Direkter Google-OAuth bereit'
                       : providerStatus?.google.configured
                       ? 'OAuth 2.0 Direktabruf'
                       : 'OAuth-Secrets erforderlich'}

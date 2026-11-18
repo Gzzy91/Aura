@@ -8,6 +8,13 @@ import {
   RecoveryState,
 } from '@/types';
 import { format, isSameDay, startOfDay } from 'date-fns';
+import {
+  GoogleAuthProvider,
+  linkWithPopup,
+  reauthenticateWithPopup,
+  signInWithPopup,
+} from 'firebase/auth';
+import { auth } from '@/firebase';
 
 const TELEMETRY_STORAGE_KEY = 'aura_health_telemetry_v1';
 
@@ -40,6 +47,7 @@ export interface ParsedHealthImportDay {
 export type GoogleHealthApiMode = 'google_health' | 'google_fit';
 
 export interface HealthProvidersStatus {
+  backendAvailable?: boolean;
   garmin: {
     configured: boolean;
     connected: boolean;
@@ -72,36 +80,88 @@ export interface RemoteHealthSyncResult {
 // Strict in-memory token cache (never stored in localStorage/sessionStorage)
 const inMemoryHealthSessions = new Map<'garmin' | 'google', string>();
 
+const CLIENT_GOOGLE_SESSION_MARKER = '__firebase_client_oauth__';
+
+interface ClientGoogleOAuthSession {
+  accessToken: string;
+  apiMode: GoogleHealthApiMode;
+  connectedAt: number;
+  expiresAt: number;
+}
+
+let clientGoogleOAuthSession: ClientGoogleOAuthSession | null = null;
+let cachedBackendAvailable: boolean | null = null;
+
+function hasValidClientGoogleSession(): boolean {
+  return Boolean(clientGoogleOAuthSession && Date.now() < clientGoogleOAuthSession.expiresAt);
+}
+
 export function setHealthSessionToken(provider: 'garmin' | 'google', token: string): void {
   inMemoryHealthSessions.set(provider, token);
 }
 
 export function getHealthSessionToken(provider: 'garmin' | 'google'): string | null {
+  if (provider === 'google' && hasValidClientGoogleSession()) {
+    return CLIENT_GOOGLE_SESSION_MARKER;
+  }
   return inMemoryHealthSessions.get(provider) || null;
 }
 
 export function clearHealthSessionToken(provider: 'garmin' | 'google'): void {
   inMemoryHealthSessions.delete(provider);
+  if (provider === 'google') {
+    clientGoogleOAuthSession = null;
+  }
+}
+
+function buildStaticLiveStatus(): HealthProvidersStatus {
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const validClientSession = hasValidClientGoogleSession() ? clientGoogleOAuthSession : null;
+  return {
+    backendAvailable: false,
+    garmin: {
+      configured: false,
+      connected: false,
+      callbackUrl: `${origin}/api/health/garmin/callback`,
+      connectedAt: null,
+    },
+    google: {
+      configured: true,
+      connected: Boolean(validClientSession),
+      apiMode: validClientSession?.apiMode || null,
+      callbackUrl: `${origin}/api/health/google/callback`,
+      connectedAt: validClientSession?.connectedAt || null,
+    },
+  };
 }
 
 export async function fetchHealthProvidersStatus(): Promise<HealthProvidersStatus> {
-  const res = await fetch('/api/health/providers/status', {
-    credentials: 'include',
-    cache: 'no-store',
-  });
-  if (!res.ok) {
-    if (res.status === 404) {
-      throw new Error(
-        'Health-Backend nicht erreichbar (HTTP 404). Die Live-App muss mit dem Node-Server neu veröffentlicht werden.'
-      );
+  try {
+    const res = await fetch('/api/health/providers/status', {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const contentType = res.headers.get('content-type') || '';
+    if (res.status === 404 || !contentType.includes('application/json')) {
+      cachedBackendAvailable = false;
+      return buildStaticLiveStatus();
     }
-    throw new Error(`Status der Health-Provider konnte nicht geladen werden (HTTP ${res.status}).`);
+    if (!res.ok) {
+      throw new Error(`Status der Health-Provider konnte nicht geladen werden (HTTP ${res.status}).`);
+    }
+    cachedBackendAvailable = true;
+    const json = (await res.json()) as HealthProvidersStatus;
+    return {
+      ...json,
+      backendAvailable: true,
+    };
+  } catch (error: unknown) {
+    if (error instanceof TypeError) {
+      cachedBackendAvailable = false;
+      return buildStaticLiveStatus();
+    }
+    throw error;
   }
-  const contentType = res.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) {
-    throw new Error('Health-Backend unter dieser URL nicht erreichbar (kein JSON).');
-  }
-  return (await res.json()) as HealthProvidersStatus;
 }
 
 export class ProviderNotConfiguredError extends Error {
@@ -113,19 +173,131 @@ export class ProviderNotConfiguredError extends Error {
   }
 }
 
+async function connectGoogleHealthViaFirebasePopup(
+  googleApiMode: GoogleHealthApiMode
+): Promise<void> {
+  const provider = new GoogleAuthProvider();
+  const scopes =
+    googleApiMode === 'google_fit'
+      ? [
+          'https://www.googleapis.com/auth/fitness.activity.read',
+          'https://www.googleapis.com/auth/fitness.sleep.read',
+          'https://www.googleapis.com/auth/fitness.heart_rate.read',
+        ]
+      : [
+          'https://www.googleapis.com/auth/googlehealth.sleep.readonly',
+          'https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly',
+          'https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly',
+        ];
+
+  for (const scope of scopes) {
+    provider.addScope(scope);
+  }
+  provider.setCustomParameters({
+    prompt: 'consent select_account',
+    include_granted_scopes: 'true',
+  });
+
+  try {
+    const currentUser = auth.currentUser;
+    let result;
+    if (currentUser) {
+      const hasGoogleProvider = currentUser.providerData.some(
+        (p) => p.providerId === 'google.com'
+      );
+      result = hasGoogleProvider
+        ? await reauthenticateWithPopup(currentUser, provider)
+        : await linkWithPopup(currentUser, provider);
+    } else {
+      result = await signInWithPopup(auth, provider);
+    }
+
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const accessToken = credential?.accessToken;
+    if (!accessToken) {
+      throw new Error(
+        'Google hat kein Access-Token zurückgegeben. Bitte erteile im Anmeldefenster alle Gesundheits-Berechtigungen.'
+      );
+    }
+
+    const connectedAt = Date.now();
+    clientGoogleOAuthSession = {
+      accessToken,
+      apiMode: googleApiMode,
+      connectedAt,
+      expiresAt: connectedAt + 50 * 60 * 1000,
+    };
+    setHealthSessionToken('google', CLIENT_GOOGLE_SESSION_MARKER);
+
+    window.postMessage(
+      {
+        type: 'HEALTH_OAUTH_SUCCESS',
+        provider: 'google',
+        apiMode: googleApiMode,
+        sessionToken: CLIENT_GOOGLE_SESSION_MARKER,
+        connectedAt,
+      },
+      window.location.origin
+    );
+  } catch (error: unknown) {
+    const code = (error as { code?: string })?.code;
+    if (code === 'auth/popup-blocked') {
+      throw new Error(
+        'Das Anmelde-Fenster wurde blockiert. Bitte erlaube Popups für diese Seite.'
+      );
+    }
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      throw new Error('Google Health-Anmeldung wurde abgebrochen.');
+    }
+    if (code === 'auth/unauthorized-domain') {
+      throw new Error(
+        'Diese Live-Domain ist in Firebase Authentication noch nicht unter Autorisierte Domains freigegeben.'
+      );
+    }
+    if (code === 'auth/user-mismatch') {
+      throw new Error(
+        'Bitte wähle im Google-Fenster dasselbe Google-Konto aus, mit dem du in Aura angemeldet bist.'
+      );
+    }
+    if (code === 'auth/credential-already-in-use') {
+      throw new Error(
+        'Dieses Google-Konto ist bereits mit einem anderen Aura-Konto verknüpft. Bitte melde dich mit deinem Google-Konto an.'
+      );
+    }
+    throw error instanceof Error
+      ? error
+      : new Error('Google Health-Anmeldung fehlgeschlagen.');
+  }
+}
+
 export async function openHealthProviderOAuthPopup(
   provider: 'garmin' | 'google',
   googleApiMode: GoogleHealthApiMode = 'google_health'
 ): Promise<void> {
+  if (provider === 'google' && cachedBackendAvailable === false) {
+    await connectGoogleHealthViaFirebasePopup(googleApiMode);
+    return;
+  }
+
   const endpoint =
     provider === 'garmin'
       ? '/api/health/garmin/auth-url'
       : `/api/health/google/auth-url?api=${encodeURIComponent(googleApiMode)}`;
 
-  const res = await fetch(endpoint, {
-    credentials: 'include',
-    cache: 'no-store',
-  });
+  let res: globalThis.Response;
+  try {
+    res = await fetch(endpoint, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+  } catch {
+    if (provider === 'google') {
+      cachedBackendAvailable = false;
+      await connectGoogleHealthViaFirebasePopup(googleApiMode);
+      return;
+    }
+    throw new Error('Verbindung zum Health-Backend fehlgeschlagen.');
+  }
 
   const contentType = res.headers.get('content-type') || '';
   const rawText = await res.text();
@@ -142,10 +314,23 @@ export async function openHealthProviderOAuthPopup(
     } catch {
       data = {};
     }
+  } else if (
+    provider === 'google' &&
+    (res.status === 404 || contentType.includes('text/html') || rawText.trim().startsWith('<'))
+  ) {
+    cachedBackendAvailable = false;
+    await connectGoogleHealthViaFirebasePopup(googleApiMode);
+    return;
   } else if (contentType.includes('text/html') || rawText.trim().startsWith('<')) {
     throw new Error(
-      `OAuth-Endpunkt hat HTML statt JSON geliefert (HTTP ${res.status}). Bitte App neu laden oder die geteilte App neu veröffentlichen.`
+      `OAuth-Endpunkt hat HTML statt JSON geliefert (HTTP ${res.status}). Bitte App neu laden oder als Node-Server veröffentlichen.`
     );
+  }
+
+  if (provider === 'google' && res.status === 404 && !data.url && data.configured !== false) {
+    cachedBackendAvailable = false;
+    await connectGoogleHealthViaFirebasePopup(googleApiMode);
+    return;
   }
 
   if (data.configured === false) {
@@ -160,7 +345,7 @@ export async function openHealthProviderOAuthPopup(
   if (!res.ok || !data.url) {
     if (res.status === 404 && !data.error) {
       throw new Error(
-        'OAuth-Autorisierungs-URL konnte nicht erzeugt werden (HTTP 404): Der Backend-Server antwortet in dieser Live-Umgebung nicht auf /api/health/*. Bitte stelle sicher, dass kein rein statisches Hosting genutzt wird und die App neu geteilt/deployed wurde.'
+        'Garmin Connect benötigt einen laufenden Node-Backend-Server (/api/health/garmin/*), der in dieser statischen Live-Umgebung nicht aktiv ist.'
       );
     }
     throw new Error(
@@ -182,9 +367,454 @@ export async function openHealthProviderOAuthPopup(
   }
 }
 
+function toClientDateKey(tsMs: number): string {
+  const d = new Date(tsMs);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function mergeClientDayMetric(
+  map: Map<string, { sleepMinutes: number; activityMinutes: number; hrValues: number[] }>,
+  dateKey: string,
+  partial: { sleepMinutes?: number; activityMinutes?: number; avgHeartRate?: number | null }
+) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+  const entry = map.get(dateKey) || { sleepMinutes: 0, activityMinutes: 0, hrValues: [] };
+  if (typeof partial.sleepMinutes === 'number' && Number.isFinite(partial.sleepMinutes)) {
+    entry.sleepMinutes = Math.min(
+      1440,
+      Math.max(entry.sleepMinutes, Math.round(partial.sleepMinutes))
+    );
+  }
+  if (typeof partial.activityMinutes === 'number' && Number.isFinite(partial.activityMinutes)) {
+    entry.activityMinutes = Math.min(
+      1440,
+      Math.max(entry.activityMinutes, Math.round(partial.activityMinutes))
+    );
+  }
+  if (
+    typeof partial.avgHeartRate === 'number' &&
+    Number.isFinite(partial.avgHeartRate) &&
+    partial.avgHeartRate >= 25 &&
+    partial.avgHeartRate <= 240
+  ) {
+    entry.hrValues.push(partial.avgHeartRate);
+  }
+  map.set(dateKey, entry);
+}
+
+function finalizeClientDayMap(
+  map: Map<string, { sleepMinutes: number; activityMinutes: number; hrValues: number[] }>
+): RemoteHealthDayMetric[] {
+  return Array.from(map.entries())
+    .map(([dateKey, v]) => ({
+      dateKey,
+      sleepDurationMinutes: Math.max(0, Math.min(1440, Math.round(v.sleepMinutes))),
+      activityDurationMinutes: Math.max(0, Math.min(1440, Math.round(v.activityMinutes))),
+      avgHeartRate:
+        v.hrValues.length > 0
+          ? Math.round(v.hrValues.reduce((s, n) => s + n, 0) / v.hrValues.length)
+          : null,
+    }))
+    .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+}
+
+async function parseClientGoogleApiError(
+  resp: globalThis.Response,
+  apiLabel: string
+): Promise<string> {
+  const raw = await resp.text().catch(() => '');
+  let message = '';
+  let reason = '';
+  let activationUrl = '';
+
+  try {
+    const json = JSON.parse(raw) as {
+      error?: {
+        message?: string;
+        status?: string;
+        errors?: Array<{ reason?: string }>;
+        details?: Array<{ metadata?: { activationUrl?: string }; reason?: string }>;
+      };
+    };
+    message = json?.error?.message || '';
+    reason =
+      json?.error?.errors?.[0]?.reason ||
+      json?.error?.details?.find((d) => d.reason)?.reason ||
+      json?.error?.status ||
+      '';
+    activationUrl =
+      json?.error?.details?.find((d) => d.metadata?.activationUrl)?.metadata?.activationUrl || '';
+  } catch {
+    message = raw.slice(0, 200);
+  }
+
+  const lower = `${message} ${reason}`.toLowerCase();
+  if (
+    lower.includes('servicedisabled') ||
+    lower.includes('service_disabled') ||
+    lower.includes('accessnotconfigured') ||
+    lower.includes('has not been used in project') ||
+    lower.includes('it is disabled')
+  ) {
+    const linkHint = activationUrl ? ` (${activationUrl})` : '';
+    return `${apiLabel} ist in deinem Google Cloud Projekt nicht aktiviert. Bitte aktiviere die API in Google Cloud${linkHint}.`;
+  }
+  if (
+    lower.includes('insufficient') ||
+    lower.includes('scope') ||
+    lower.includes('insufficientpermissions')
+  ) {
+    return `Fehlende Google-Berechtigungen (HTTP ${resp.status}). Bitte trenne Google Health kurz und setze beim erneuten Verbinden alle Häkchen.`;
+  }
+  return `${apiLabel} Zugriff verweigert (HTTP ${resp.status})${
+    message ? `: ${message}` : '. Bitte API-Aktivierung in Google Cloud prüfen.'
+  }`;
+}
+
+async function fetchGoogleHealthV4MetricsClient(
+  accessToken: string,
+  startMs: number,
+  endMs: number
+): Promise<RemoteHealthDayMetric[]> {
+  const startIso = new Date(startMs).toISOString();
+  const endIso = new Date(endMs).toISOString();
+  const headers = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' };
+  const dayMap = new Map<
+    string,
+    { sleepMinutes: number; activityMinutes: number; hrValues: number[] }
+  >();
+  const authErrors: string[] = [];
+  let succeededCount = 0;
+
+  let sleepJson: { dataPoints?: Array<Record<string, any>> } | null = null;
+  const sleepReconcileUrl = `https://health.googleapis.com/v4/users/me/dataTypes/sleep/dataPoints:reconcile?filter=${encodeURIComponent(
+    `sleep.interval.end_time>="${startIso}" AND sleep.interval.end_time<="${endIso}"`
+  )}`;
+  const sleepRes = await fetch(sleepReconcileUrl, { headers });
+  if (sleepRes.ok) {
+    succeededCount += 1;
+    sleepJson = (await sleepRes.json()) as { dataPoints?: Array<Record<string, any>> };
+  } else {
+    const rawSleepRes = await fetch(
+      'https://health.googleapis.com/v4/users/me/dataTypes/sleep/dataPoints',
+      { headers }
+    );
+    if (rawSleepRes.ok) {
+      succeededCount += 1;
+      sleepJson = (await rawSleepRes.json()) as { dataPoints?: Array<Record<string, any>> };
+    } else if (rawSleepRes.status === 401 || rawSleepRes.status === 403) {
+      authErrors.push(await parseClientGoogleApiError(rawSleepRes, 'Google Health API v4'));
+    }
+  }
+
+  const sleepByDay = new Map<string, number>();
+  for (const dp of sleepJson?.dataPoints || []) {
+    const sleep = dp.sleep || dp;
+    const endTime = sleep?.interval?.endTime || sleep?.interval?.end_time;
+    const startTime = sleep?.interval?.startTime || sleep?.interval?.start_time;
+    const endParsed = endTime ? Date.parse(endTime) : NaN;
+    if (Number.isNaN(endParsed) || endParsed < startMs || endParsed > endMs) continue;
+    const dateKey = toClientDateKey(endParsed);
+
+    let mins = Number(sleep?.summary?.minutesAsleep ?? sleep?.summary?.minutes_asleep ?? 0);
+    if (!mins && Array.isArray(sleep?.stages)) {
+      let asleepMs = 0;
+      for (const stage of sleep.stages) {
+        const type = String(stage.type || stage.stageType || '').toLowerCase();
+        if (type && !type.includes('awake') && !type.includes('out_of_bed')) {
+          const s = Date.parse(stage.interval?.startTime || stage.startTime || '');
+          const e = Date.parse(stage.interval?.endTime || stage.endTime || '');
+          if (!Number.isNaN(s) && !Number.isNaN(e) && e > s) asleepMs += e - s;
+        }
+      }
+      mins = Math.round(asleepMs / 60_000);
+    }
+    if (!mins && startTime) {
+      const startParsed = Date.parse(startTime);
+      if (!Number.isNaN(startParsed) && endParsed > startParsed) {
+        mins = Math.round((endParsed - startParsed) / 60_000);
+      }
+    }
+    if (mins > 0) sleepByDay.set(dateKey, (sleepByDay.get(dateKey) || 0) + mins);
+  }
+  for (const [dateKey, mins] of sleepByDay.entries()) {
+    mergeClientDayMetric(dayMap, dateKey, { sleepMinutes: mins });
+  }
+
+  const activeRes = await fetch(
+    'https://health.googleapis.com/v4/users/me/dataTypes/active-minutes/dataPoints',
+    { headers }
+  );
+  if (activeRes.ok) {
+    succeededCount += 1;
+    const activeJson = (await activeRes.json()) as { dataPoints?: Array<Record<string, any>> };
+    const activeByDay = new Map<string, number>();
+    for (const dp of activeJson.dataPoints || []) {
+      const am = dp.activeMinutes || dp.active_minutes || dp;
+      const endTime = am?.interval?.endTime || am?.interval?.end_time || dp.endTime;
+      const endParsed = endTime ? Date.parse(endTime) : NaN;
+      if (Number.isNaN(endParsed) || endParsed < startMs || endParsed > endMs) continue;
+      const dateKey = toClientDateKey(endParsed);
+      const mins = Number(am?.minutes ?? am?.activeMinutes ?? am?.value ?? 0);
+      if (mins > 0) activeByDay.set(dateKey, (activeByDay.get(dateKey) || 0) + mins);
+    }
+    for (const [dateKey, mins] of activeByDay.entries()) {
+      mergeClientDayMetric(dayMap, dateKey, { activityMinutes: mins });
+    }
+  } else if (activeRes.status === 401 || activeRes.status === 403) {
+    authErrors.push(await parseClientGoogleApiError(activeRes, 'Google Health API v4'));
+  }
+
+  const exerciseRes = await fetch(
+    'https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints',
+    { headers }
+  );
+  if (exerciseRes.ok) {
+    succeededCount += 1;
+    const exJson = (await exerciseRes.json()) as { dataPoints?: Array<Record<string, any>> };
+    const exByDay = new Map<string, number>();
+    for (const dp of exJson.dataPoints || []) {
+      const ex = dp.exercise || dp;
+      const startTime = ex?.interval?.startTime || ex?.interval?.start_time;
+      const endTime = ex?.interval?.endTime || ex?.interval?.end_time;
+      const s = startTime ? Date.parse(startTime) : NaN;
+      const e = endTime ? Date.parse(endTime) : NaN;
+      if (Number.isNaN(s) || Number.isNaN(e) || e < startMs || e > endMs || e <= s) continue;
+      const dateKey = toClientDateKey(e);
+      exByDay.set(dateKey, (exByDay.get(dateKey) || 0) + Math.round((e - s) / 60_000));
+    }
+    for (const [dateKey, mins] of exByDay.entries()) {
+      mergeClientDayMetric(dayMap, dateKey, { activityMinutes: mins });
+    }
+  } else if (exerciseRes.status === 401 || exerciseRes.status === 403) {
+    authErrors.push(await parseClientGoogleApiError(exerciseRes, 'Google Health API v4'));
+  }
+
+  const hrRes = await fetch(
+    'https://health.googleapis.com/v4/users/me/dataTypes/heart-rate/dataPoints',
+    { headers }
+  );
+  if (hrRes.ok) {
+    succeededCount += 1;
+    const hrJson = (await hrRes.json()) as { dataPoints?: Array<Record<string, any>> };
+    for (const dp of hrJson.dataPoints || []) {
+      const hr = dp.heartRate || dp.heart_rate || dp;
+      const ts = hr?.sampleTime || hr?.interval?.endTime || hr?.time;
+      const parsed = ts ? Date.parse(ts) : NaN;
+      const bpm = Number(hr?.beatsPerMinute ?? hr?.bpm ?? 0);
+      if (!Number.isNaN(parsed) && parsed >= startMs && parsed <= endMs && bpm > 0) {
+        mergeClientDayMetric(dayMap, toClientDateKey(parsed), { avgHeartRate: bpm });
+      }
+    }
+  } else if (hrRes.status === 401 || hrRes.status === 403) {
+    authErrors.push(await parseClientGoogleApiError(hrRes, 'Google Health API v4'));
+  }
+
+  if (succeededCount === 0 && authErrors.length > 0) {
+    throw new Error(authErrors[0]);
+  }
+  return finalizeClientDayMap(dayMap);
+}
+
+async function fetchGoogleFitMetricsClient(
+  accessToken: string,
+  startMs: number,
+  endMs: number
+): Promise<RemoteHealthDayMetric[]> {
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  };
+  const dayMap = new Map<
+    string,
+    { sleepMinutes: number; activityMinutes: number; hrValues: number[] }
+  >();
+  const authErrors: string[] = [];
+  let succeededCount = 0;
+
+  const sleepByDay = new Map<string, number>();
+  const sleepResp = await fetch(
+    'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        aggregateBy: [{ dataTypeName: 'com.google.sleep.segment' }],
+        startTimeMillis: startMs,
+        endTimeMillis: endMs,
+      }),
+    }
+  );
+  if (sleepResp.ok) {
+    succeededCount += 1;
+    const data = (await sleepResp.json()) as {
+      bucket?: Array<{
+        dataset?: Array<{
+          point?: Array<{
+            startTimeNanos?: string;
+            endTimeNanos?: string;
+            value?: Array<{ intVal?: number }>;
+          }>;
+        }>;
+      }>;
+    };
+    for (const b of data.bucket || []) {
+      for (const ds of b.dataset || []) {
+        for (const p of ds.point || []) {
+          const stage = p.value?.[0]?.intVal ?? 2;
+          if (stage === 1 || stage === 3) continue;
+          const sMs = Number(p.startTimeNanos || 0) / 1_000_000;
+          const eMs = Number(p.endTimeNanos || 0) / 1_000_000;
+          if (eMs > sMs) {
+            const dk = toClientDateKey(eMs);
+            sleepByDay.set(dk, (sleepByDay.get(dk) || 0) + (eMs - sMs) / 60_000);
+          }
+        }
+      }
+    }
+  } else if (sleepResp.status === 401 || sleepResp.status === 403) {
+    authErrors.push(await parseClientGoogleApiError(sleepResp, 'Google Fit API'));
+  }
+
+  if (sleepByDay.size === 0) {
+    const sessResp = await fetch(
+      `https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${encodeURIComponent(
+        new Date(startMs).toISOString()
+      )}&endTime=${encodeURIComponent(new Date(endMs).toISOString())}&activityType=72`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (sessResp.ok) {
+      succeededCount += 1;
+      const sessJson = (await sessResp.json()) as {
+        session?: Array<{ startTimeMillis?: string; endTimeMillis?: string }>;
+      };
+      for (const s of sessJson.session || []) {
+        const sMs = Number(s.startTimeMillis || 0);
+        const eMs = Number(s.endTimeMillis || 0);
+        if (eMs > sMs) {
+          const dk = toClientDateKey(eMs);
+          sleepByDay.set(dk, (sleepByDay.get(dk) || 0) + (eMs - sMs) / 60_000);
+        }
+      }
+    } else if (sessResp.status === 401 || sessResp.status === 403) {
+      authErrors.push(await parseClientGoogleApiError(sessResp, 'Google Fit API'));
+    }
+  }
+  for (const [dateKey, mins] of sleepByDay.entries()) {
+    mergeClientDayMetric(dayMap, dateKey, { sleepMinutes: Math.round(mins) });
+  }
+
+  const actResp = await fetch(
+    'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        aggregateBy: [{ dataTypeName: 'com.google.active_minutes' }],
+        bucketByTime: { durationMillis: 86400000 },
+        startTimeMillis: startMs,
+        endTimeMillis: endMs,
+      }),
+    }
+  );
+  if (actResp.ok) {
+    succeededCount += 1;
+    const actJson = (await actResp.json()) as {
+      bucket?: Array<{
+        startTimeMillis?: string;
+        endTimeMillis?: string;
+        dataset?: Array<{
+          point?: Array<{ value?: Array<{ intVal?: number; fpVal?: number }> }>;
+        }>;
+      }>;
+    };
+    for (const b of actJson.bucket || []) {
+      const midMs =
+        (Number(b.startTimeMillis || 0) + Number(b.endTimeMillis || 0)) / 2 || Date.now();
+      const dateKey = toClientDateKey(midMs);
+      for (const ds of b.dataset || []) {
+        for (const p of ds.point || []) {
+          const mins = p.value?.[0]?.intVal ?? Math.round(p.value?.[0]?.fpVal || 0);
+          if (mins > 0) mergeClientDayMetric(dayMap, dateKey, { activityMinutes: mins });
+        }
+      }
+    }
+  } else if (actResp.status === 401 || actResp.status === 403) {
+    authErrors.push(await parseClientGoogleApiError(actResp, 'Google Fit API'));
+  }
+
+  const hrResp = await fetch(
+    'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        aggregateBy: [{ dataTypeName: 'com.google.heart_rate.bpm' }],
+        bucketByTime: { durationMillis: 86400000 },
+        startTimeMillis: startMs,
+        endTimeMillis: endMs,
+      }),
+    }
+  );
+  if (hrResp.ok) {
+    succeededCount += 1;
+    const hrJson = (await hrResp.json()) as {
+      bucket?: Array<{
+        startTimeMillis?: string;
+        endTimeMillis?: string;
+        dataset?: Array<{
+          point?: Array<{ value?: Array<{ fpVal?: number; intVal?: number }> }>;
+        }>;
+      }>;
+    };
+    for (const b of hrJson.bucket || []) {
+      const midMs =
+        (Number(b.startTimeMillis || 0) + Number(b.endTimeMillis || 0)) / 2 || Date.now();
+      const dateKey = toClientDateKey(midMs);
+      for (const ds of b.dataset || []) {
+        for (const p of ds.point || []) {
+          const bpm = p.value?.[0]?.fpVal ?? p.value?.[0]?.intVal ?? 0;
+          if (bpm > 0) mergeClientDayMetric(dayMap, dateKey, { avgHeartRate: bpm });
+        }
+      }
+    }
+  } else if (hrResp.status === 401 || hrResp.status === 403) {
+    authErrors.push(await parseClientGoogleApiError(hrResp, 'Google Fit API'));
+  }
+
+  if (succeededCount === 0 && authErrors.length > 0) {
+    throw new Error(authErrors[0]);
+  }
+  return finalizeClientDayMap(dayMap);
+}
+
 export async function syncHealthProvider(
   provider: 'garmin' | 'google'
 ): Promise<RemoteHealthSyncResult> {
+  if (provider === 'google' && clientGoogleOAuthSession) {
+    if (!hasValidClientGoogleSession()) {
+      clearHealthSessionToken('google');
+      throw new Error('Google Health-Sitzung abgelaufen. Bitte erneut verbinden.');
+    }
+    const { accessToken, apiMode } = clientGoogleOAuthSession;
+    const endMs = Date.now();
+    const startMs = endMs - 7 * 24 * 60 * 60 * 1000;
+    const days =
+      apiMode === 'google_fit'
+        ? await fetchGoogleFitMetricsClient(accessToken, startMs, endMs)
+        : await fetchGoogleHealthV4MetricsClient(accessToken, startMs, endMs);
+
+    return {
+      provider: 'google_health',
+      apiMode,
+      days,
+      syncedAt: Date.now(),
+    };
+  }
+
   const token = getHealthSessionToken(provider);
   const res = await fetch(`/api/health/${provider}/sync`, {
     method: 'POST',
@@ -236,12 +866,34 @@ export async function syncHealthProvider(
 
 export async function disconnectHealthProvider(provider: 'garmin' | 'google'): Promise<void> {
   const token = getHealthSessionToken(provider);
+  const clientTokenToRevoke =
+    provider === 'google' ? clientGoogleOAuthSession?.accessToken : undefined;
   clearHealthSessionToken(provider);
-  await fetch(`/api/health/${provider}/disconnect`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: token ? { 'x-health-session': token } : undefined,
-  });
+
+  if (clientTokenToRevoke) {
+    try {
+      await fetch(
+        `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(clientTokenToRevoke)}`,
+        { method: 'POST' }
+      );
+    } catch {
+      // Ignore revocation failures on disconnect
+    }
+  }
+
+  if (token === CLIENT_GOOGLE_SESSION_MARKER || cachedBackendAvailable === false) {
+    return;
+  }
+
+  try {
+    await fetch(`/api/health/${provider}/disconnect`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: token ? { 'x-health-session': token } : undefined,
+    });
+  } catch {
+    // Ignore disconnect network errors
+  }
 }
 
 export function detectBrowserHealthCapabilities(): BrowserHealthCapabilities {
