@@ -367,6 +367,56 @@ export async function openHealthProviderOAuthPopup(
   }
 }
 
+interface ClientTimeInterval {
+  start: number;
+  end: number;
+}
+
+function mergeClientTimeIntervals(intervals: ClientTimeInterval[]): ClientTimeInterval[] {
+  const valid = intervals
+    .filter((iv) => Number.isFinite(iv.start) && Number.isFinite(iv.end) && iv.end > iv.start)
+    .sort((a, b) => a.start - b.start);
+  if (valid.length === 0) return [];
+  const merged: ClientTimeInterval[] = [{ ...valid[0] }];
+  for (let i = 1; i < valid.length; i++) {
+    const prev = merged[merged.length - 1];
+    const cur = valid[i];
+    if (cur.start <= prev.end) {
+      prev.end = Math.max(prev.end, cur.end);
+    } else {
+      merged.push({ ...cur });
+    }
+  }
+  return merged;
+}
+
+function subtractClientTimeIntervals(
+  base: ClientTimeInterval[],
+  subtract: ClientTimeInterval[]
+): ClientTimeInterval[] {
+  if (base.length === 0 || subtract.length === 0) return base;
+  let current = base;
+  for (const sub of subtract) {
+    const next: ClientTimeInterval[] = [];
+    for (const b of current) {
+      if (sub.end <= b.start || sub.start >= b.end) {
+        next.push(b);
+      } else {
+        if (sub.start > b.start) next.push({ start: b.start, end: sub.start });
+        if (sub.end < b.end) next.push({ start: sub.end, end: b.end });
+      }
+    }
+    current = next;
+  }
+  return current;
+}
+
+function getLocalDayAlignedStartMs(endMs: number, daysCount: number): number {
+  const d = new Date(endMs);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() - Math.max(0, daysCount - 1) * 86_400_000;
+}
+
 function toClientDateKey(tsMs: number): string {
   const d = new Date(tsMs);
   const y = d.getFullYear();
@@ -474,12 +524,49 @@ async function parseClientGoogleApiError(
   }`;
 }
 
+async function fetchGoogleHealthV4PagedClient(
+  baseUrl: string,
+  headers: Record<string, string>
+): Promise<{
+  ok: boolean;
+  status: number;
+  resp?: globalThis.Response;
+  dataPoints: Array<Record<string, any>>;
+}> {
+  const dataPoints: Array<Record<string, any>> = [];
+  let pageToken = '';
+  for (let page = 0; page < 5; page++) {
+    const sep = baseUrl.includes('?') ? '&' : '?';
+    const url = `${baseUrl}${sep}pageSize=100${
+      pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''
+    }`;
+    const resp = await fetch(url, { headers });
+    if (!resp.ok) {
+      if (page === 0) return { ok: false, status: resp.status, resp, dataPoints };
+      break;
+    }
+    const json = (await resp.json()) as {
+      dataPoints?: Array<Record<string, any>>;
+      nextPageToken?: string;
+    };
+    if (Array.isArray(json.dataPoints)) {
+      dataPoints.push(...json.dataPoints);
+    }
+    if (!json.nextPageToken) {
+      return { ok: true, status: resp.status, dataPoints };
+    }
+    pageToken = json.nextPageToken;
+  }
+  return { ok: true, status: 200, dataPoints };
+}
+
 async function fetchGoogleHealthV4MetricsClient(
   accessToken: string,
   startMs: number,
   endMs: number
 ): Promise<RemoteHealthDayMetric[]> {
-  const startIso = new Date(startMs).toISOString();
+  const sleepQueryStartMs = startMs - 18 * 3600 * 1000;
+  const startIso = new Date(sleepQueryStartMs).toISOString();
   const endIso = new Date(endMs).toISOString();
   const headers = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' };
   const dayMap = new Map<
@@ -489,33 +576,35 @@ async function fetchGoogleHealthV4MetricsClient(
   const authErrors: string[] = [];
   let succeededCount = 0;
 
-  let sleepJson: { dataPoints?: Array<Record<string, any>> } | null = null;
+  let sleepDataPoints: Array<Record<string, any>> = [];
   const sleepReconcileUrl = `https://health.googleapis.com/v4/users/me/dataTypes/sleep/dataPoints:reconcile?filter=${encodeURIComponent(
     `sleep.interval.end_time>="${startIso}" AND sleep.interval.end_time<="${endIso}"`
   )}`;
-  const sleepRes = await fetch(sleepReconcileUrl, { headers });
+  const sleepRes = await fetchGoogleHealthV4PagedClient(sleepReconcileUrl, headers);
   if (sleepRes.ok) {
     succeededCount += 1;
-    sleepJson = (await sleepRes.json()) as { dataPoints?: Array<Record<string, any>> };
+    sleepDataPoints = sleepRes.dataPoints;
   } else {
-    const rawSleepRes = await fetch(
+    const rawSleepRes = await fetchGoogleHealthV4PagedClient(
       'https://health.googleapis.com/v4/users/me/dataTypes/sleep/dataPoints',
-      { headers }
+      headers
     );
     if (rawSleepRes.ok) {
       succeededCount += 1;
-      sleepJson = (await rawSleepRes.json()) as { dataPoints?: Array<Record<string, any>> };
-    } else if (rawSleepRes.status === 401 || rawSleepRes.status === 403) {
-      authErrors.push(await parseClientGoogleApiError(rawSleepRes, 'Google Health API v4'));
+      sleepDataPoints = rawSleepRes.dataPoints;
+    } else if (rawSleepRes.resp && (rawSleepRes.status === 401 || rawSleepRes.status === 403)) {
+      authErrors.push(await parseClientGoogleApiError(rawSleepRes.resp, 'Google Health API v4'));
     }
   }
 
-  const sleepByDay = new Map<string, number>();
-  for (const dp of sleepJson?.dataPoints || []) {
+  // Deduplicate overlapping sleep sessions from multiple apps/devices before summing per wake-up day
+  const sleepSessions: Array<{ start: number; end: number; mins: number; dateKey: string }> = [];
+  for (const dp of sleepDataPoints) {
     const sleep = dp.sleep || dp;
     const endTime = sleep?.interval?.endTime || sleep?.interval?.end_time;
     const startTime = sleep?.interval?.startTime || sleep?.interval?.start_time;
     const endParsed = endTime ? Date.parse(endTime) : NaN;
+    const startParsed = startTime ? Date.parse(startTime) : endParsed;
     if (Number.isNaN(endParsed) || endParsed < startMs || endParsed > endMs) continue;
     const dateKey = toClientDateKey(endParsed);
 
@@ -532,27 +621,42 @@ async function fetchGoogleHealthV4MetricsClient(
       }
       mins = Math.round(asleepMs / 60_000);
     }
-    if (!mins && startTime) {
-      const startParsed = Date.parse(startTime);
-      if (!Number.isNaN(startParsed) && endParsed > startParsed) {
-        mins = Math.round((endParsed - startParsed) / 60_000);
-      }
+    if (!mins && !Number.isNaN(startParsed) && endParsed > startParsed) {
+      mins = Math.round((endParsed - startParsed) / 60_000);
     }
-    if (mins > 0) sleepByDay.set(dateKey, (sleepByDay.get(dateKey) || 0) + mins);
+    if (mins <= 0) continue;
+
+    const sMs = !Number.isNaN(startParsed) ? startParsed : endParsed - mins * 60_000;
+    const overlapIdx = sleepSessions.findIndex((existing) => {
+      const ov = Math.min(existing.end, endParsed) - Math.max(existing.start, sMs);
+      const minLen = Math.min(existing.end - existing.start, endParsed - sMs);
+      return minLen > 0 && ov / minLen >= 0.45;
+    });
+    if (overlapIdx >= 0) {
+      if (mins > sleepSessions[overlapIdx].mins) {
+        sleepSessions[overlapIdx] = { start: sMs, end: endParsed, mins, dateKey };
+      }
+    } else {
+      sleepSessions.push({ start: sMs, end: endParsed, mins, dateKey });
+    }
+  }
+
+  const sleepByDay = new Map<string, number>();
+  for (const sess of sleepSessions) {
+    sleepByDay.set(sess.dateKey, (sleepByDay.get(sess.dateKey) || 0) + sess.mins);
   }
   for (const [dateKey, mins] of sleepByDay.entries()) {
     mergeClientDayMetric(dayMap, dateKey, { sleepMinutes: mins });
   }
 
-  const activeRes = await fetch(
+  const activeRes = await fetchGoogleHealthV4PagedClient(
     'https://health.googleapis.com/v4/users/me/dataTypes/active-minutes/dataPoints',
-    { headers }
+    headers
   );
   if (activeRes.ok) {
     succeededCount += 1;
-    const activeJson = (await activeRes.json()) as { dataPoints?: Array<Record<string, any>> };
     const activeByDay = new Map<string, number>();
-    for (const dp of activeJson.dataPoints || []) {
+    for (const dp of activeRes.dataPoints) {
       const am = dp.activeMinutes || dp.active_minutes || dp;
       const endTime = am?.interval?.endTime || am?.interval?.end_time || dp.endTime;
       const endParsed = endTime ? Date.parse(endTime) : NaN;
@@ -564,19 +668,18 @@ async function fetchGoogleHealthV4MetricsClient(
     for (const [dateKey, mins] of activeByDay.entries()) {
       mergeClientDayMetric(dayMap, dateKey, { activityMinutes: mins });
     }
-  } else if (activeRes.status === 401 || activeRes.status === 403) {
-    authErrors.push(await parseClientGoogleApiError(activeRes, 'Google Health API v4'));
+  } else if (activeRes.resp && (activeRes.status === 401 || activeRes.status === 403)) {
+    authErrors.push(await parseClientGoogleApiError(activeRes.resp, 'Google Health API v4'));
   }
 
-  const exerciseRes = await fetch(
+  const exerciseRes = await fetchGoogleHealthV4PagedClient(
     'https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints',
-    { headers }
+    headers
   );
   if (exerciseRes.ok) {
     succeededCount += 1;
-    const exJson = (await exerciseRes.json()) as { dataPoints?: Array<Record<string, any>> };
     const exByDay = new Map<string, number>();
-    for (const dp of exJson.dataPoints || []) {
+    for (const dp of exerciseRes.dataPoints) {
       const ex = dp.exercise || dp;
       const startTime = ex?.interval?.startTime || ex?.interval?.start_time;
       const endTime = ex?.interval?.endTime || ex?.interval?.end_time;
@@ -589,18 +692,17 @@ async function fetchGoogleHealthV4MetricsClient(
     for (const [dateKey, mins] of exByDay.entries()) {
       mergeClientDayMetric(dayMap, dateKey, { activityMinutes: mins });
     }
-  } else if (exerciseRes.status === 401 || exerciseRes.status === 403) {
-    authErrors.push(await parseClientGoogleApiError(exerciseRes, 'Google Health API v4'));
+  } else if (exerciseRes.resp && (exerciseRes.status === 401 || exerciseRes.status === 403)) {
+    authErrors.push(await parseClientGoogleApiError(exerciseRes.resp, 'Google Health API v4'));
   }
 
-  const hrRes = await fetch(
+  const hrRes = await fetchGoogleHealthV4PagedClient(
     'https://health.googleapis.com/v4/users/me/dataTypes/heart-rate/dataPoints',
-    { headers }
+    headers
   );
   if (hrRes.ok) {
     succeededCount += 1;
-    const hrJson = (await hrRes.json()) as { dataPoints?: Array<Record<string, any>> };
-    for (const dp of hrJson.dataPoints || []) {
+    for (const dp of hrRes.dataPoints) {
       const hr = dp.heartRate || dp.heart_rate || dp;
       const ts = hr?.sampleTime || hr?.interval?.endTime || hr?.time;
       const parsed = ts ? Date.parse(ts) : NaN;
@@ -609,12 +711,17 @@ async function fetchGoogleHealthV4MetricsClient(
         mergeClientDayMetric(dayMap, toClientDateKey(parsed), { avgHeartRate: bpm });
       }
     }
-  } else if (hrRes.status === 401 || hrRes.status === 403) {
-    authErrors.push(await parseClientGoogleApiError(hrRes, 'Google Health API v4'));
+  } else if (hrRes.resp && (hrRes.status === 401 || hrRes.status === 403)) {
+    authErrors.push(await parseClientGoogleApiError(hrRes.resp, 'Google Health API v4'));
   }
 
-  if (succeededCount === 0 && authErrors.length > 0) {
-    throw new Error(authErrors[0]);
+  if (succeededCount === 0) {
+    if (authErrors.length > 0) {
+      throw new Error(authErrors[0]);
+    }
+    throw new Error(
+      'Google Health API v4 ist für dieses Projekt nicht erreichbar. Bitte trenne Google Health und verbinde es erneut im Modus „Google Fit“.'
+    );
   }
   return finalizeClientDayMap(dayMap);
 }
@@ -635,19 +742,30 @@ async function fetchGoogleFitMetricsClient(
   const authErrors: string[] = [];
   let succeededCount = 0;
 
-  const sleepByDay = new Map<string, number>();
-  const sleepResp = await fetch(
-    'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
-    {
+  // Query sleep 18h before local-day startMs so overnight sleep starting previous evening is fully captured
+  const sleepQueryStartMs = startMs - 18 * 3600 * 1000;
+  const [sleepResp, sessResp] = await Promise.all([
+    fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
       method: 'POST',
       headers,
       body: JSON.stringify({
         aggregateBy: [{ dataTypeName: 'com.google.sleep.segment' }],
-        startTimeMillis: startMs,
+        startTimeMillis: sleepQueryStartMs,
         endTimeMillis: endMs,
       }),
-    }
-  );
+    }),
+    fetch(
+      `https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${encodeURIComponent(
+        new Date(sleepQueryStartMs).toISOString()
+      )}&endTime=${encodeURIComponent(new Date(endMs).toISOString())}&activityType=72`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    ),
+  ]);
+
+  const detailedAsleep: ClientTimeInterval[] = [];
+  const genericAsleep: ClientTimeInterval[] = [];
+  const awakeIntervals: ClientTimeInterval[] = [];
+
   if (sleepResp.ok) {
     succeededCount += 1;
     const data = (await sleepResp.json()) as {
@@ -665,12 +783,15 @@ async function fetchGoogleFitMetricsClient(
       for (const ds of b.dataset || []) {
         for (const p of ds.point || []) {
           const stage = p.value?.[0]?.intVal ?? 2;
-          if (stage === 1 || stage === 3) continue;
           const sMs = Number(p.startTimeNanos || 0) / 1_000_000;
           const eMs = Number(p.endTimeNanos || 0) / 1_000_000;
-          if (eMs > sMs) {
-            const dk = toClientDateKey(eMs);
-            sleepByDay.set(dk, (sleepByDay.get(dk) || 0) + (eMs - sMs) / 60_000);
+          if (!Number.isFinite(sMs) || !Number.isFinite(eMs) || eMs <= sMs) continue;
+          if (stage === 1 || stage === 3) {
+            awakeIntervals.push({ start: sMs, end: eMs });
+          } else if (stage === 4 || stage === 5 || stage === 6) {
+            detailedAsleep.push({ start: sMs, end: eMs });
+          } else {
+            genericAsleep.push({ start: sMs, end: eMs });
           }
         }
       }
@@ -679,30 +800,74 @@ async function fetchGoogleFitMetricsClient(
     authErrors.push(await parseClientGoogleApiError(sleepResp, 'Google Fit API'));
   }
 
-  if (sleepByDay.size === 0) {
-    const sessResp = await fetch(
-      `https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${encodeURIComponent(
-        new Date(startMs).toISOString()
-      )}&endTime=${encodeURIComponent(new Date(endMs).toISOString())}&activityType=72`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    if (sessResp.ok) {
-      succeededCount += 1;
-      const sessJson = (await sessResp.json()) as {
-        session?: Array<{ startTimeMillis?: string; endTimeMillis?: string }>;
-      };
-      for (const s of sessJson.session || []) {
-        const sMs = Number(s.startTimeMillis || 0);
-        const eMs = Number(s.endTimeMillis || 0);
-        if (eMs > sMs) {
-          const dk = toClientDateKey(eMs);
-          sleepByDay.set(dk, (sleepByDay.get(dk) || 0) + (eMs - sMs) / 60_000);
-        }
+  const sleepSessions: ClientTimeInterval[] = [];
+  if (sessResp.ok) {
+    succeededCount += 1;
+    const sessJson = (await sessResp.json()) as {
+      session?: Array<{ startTimeMillis?: string; endTimeMillis?: string }>;
+    };
+    for (const s of sessJson.session || []) {
+      const sMs = Number(s.startTimeMillis || 0);
+      const eMs = Number(s.endTimeMillis || 0);
+      if (Number.isFinite(sMs) && Number.isFinite(eMs) && eMs > sMs) {
+        sleepSessions.push({ start: sMs, end: eMs });
       }
-    } else if (sessResp.status === 401 || sessResp.status === 403) {
-      authErrors.push(await parseClientGoogleApiError(sessResp, 'Google Fit API'));
+    }
+  } else if (sessResp.status === 401 || sessResp.status === 403) {
+    authErrors.push(await parseClientGoogleApiError(sessResp, 'Google Fit API'));
+  }
+
+  const mergedDetailed = mergeClientTimeIntervals(detailedAsleep);
+  const mergedGeneric = mergeClientTimeIntervals(genericAsleep);
+  const mergedAwake = mergeClientTimeIntervals(awakeIntervals);
+  const cleanGeneric = subtractClientTimeIntervals(
+    subtractClientTimeIntervals(mergedGeneric, mergedDetailed),
+    mergedAwake
+  );
+  const asleepIntervals = mergeClientTimeIntervals([...mergedDetailed, ...cleanGeneric]);
+
+  const sleepByDay = new Map<string, number>();
+  if (asleepIntervals.length > 0) {
+    const episodes: ClientTimeInterval[][] = [[asleepIntervals[0]]];
+    for (let i = 1; i < asleepIntervals.length; i++) {
+      const cur = asleepIntervals[i];
+      const prevEpisode = episodes[episodes.length - 1];
+      const prevLast = prevEpisode[prevEpisode.length - 1];
+      const sameSession = sleepSessions.some(
+        (sess) =>
+          prevLast.start >= sess.start - 5 * 60_000 && cur.end <= sess.end + 5 * 60_000
+      );
+      if (sameSession || cur.start - prevLast.end <= 90 * 60_000) {
+        prevEpisode.push(cur);
+      } else {
+        episodes.push([cur]);
+      }
+    }
+
+    for (const ep of episodes) {
+      const epEnd = ep[ep.length - 1].end;
+      if (epEnd < startMs || epEnd > endMs) continue;
+      const asleepMs = ep.reduce((sum, iv) => sum + (iv.end - iv.start), 0);
+      const mins = Math.round(asleepMs / 60_000);
+      if (mins > 0) {
+        const dk = toClientDateKey(epEnd);
+        sleepByDay.set(dk, Math.min(1440, (sleepByDay.get(dk) || 0) + mins));
+      }
     }
   }
+
+  // Fallback for days with Fit Sleep Sessions (activityType=72) but no sleep.segment points
+  for (const sess of mergeClientTimeIntervals(sleepSessions)) {
+    if (sess.end < startMs || sess.end > endMs) continue;
+    const dk = toClientDateKey(sess.end);
+    if ((sleepByDay.get(dk) || 0) === 0) {
+      const mins = Math.round((sess.end - sess.start) / 60_000);
+      if (mins > 0) {
+        sleepByDay.set(dk, Math.min(1440, mins));
+      }
+    }
+  }
+
   for (const [dateKey, mins] of sleepByDay.entries()) {
     mergeClientDayMetric(dayMap, dateKey, { sleepMinutes: Math.round(mins) });
   }
@@ -801,7 +966,7 @@ export async function syncHealthProvider(
     }
     const { accessToken, apiMode } = clientGoogleOAuthSession;
     const endMs = Date.now();
-    const startMs = endMs - 7 * 24 * 60 * 60 * 1000;
+    const startMs = getLocalDayAlignedStartMs(endMs, 14);
     const days =
       apiMode === 'google_fit'
         ? await fetchGoogleFitMetricsClient(accessToken, startMs, endMs)
@@ -1532,9 +1697,32 @@ export function buildTodayHealthRecord(params: {
     telemetry.motionActiveMinutes + telemetry.bleWorkoutMinutes
   );
 
+  const hasAuthoritativeSleepSource = Boolean(
+    params.existingRecord?.sources?.some(
+      (s) =>
+        s === 'google_health' ||
+        s === 'garmin_connect' ||
+        s === 'manual' ||
+        s === 'health_export'
+    )
+  );
+  const willHaveAuthoritativeSource =
+    hasAuthoritativeSleepSource ||
+    Boolean(
+      params.extraSources?.some(
+        (s) =>
+          s === 'google_health' ||
+          s === 'garmin_connect' ||
+          s === 'manual' ||
+          s === 'health_export'
+      )
+    );
+
   const sleepDurationMinutes =
     typeof params.overrideSleepMinutes === 'number'
       ? Math.max(0, Math.min(1440, Math.round(params.overrideSleepMinutes)))
+      : hasAuthoritativeSleepSource
+      ? Math.max(0, Math.min(1440, Math.round(params.existingRecord?.sleepDurationMinutes ?? 0)))
       : Math.max(
           params.existingRecord?.sleepDurationMinutes ?? 0,
           telemetry.overnightRestGapMinutes
@@ -1548,8 +1736,12 @@ export function buildTodayHealthRecord(params: {
           auraActivityMinutes + browserMotionAndBle
         );
 
-  const sourcesSet = new Set<HealthDataSource>(params.existingRecord?.sources || []);
-  if (telemetry.overnightRestGapMinutes > 0 || telemetry.todayActiveBrowserMinutes > 0) {
+  const sourcesSet = new Set<HealthDataSource>(
+    (params.existingRecord?.sources || []).filter((s) =>
+      willHaveAuthoritativeSource ? s !== 'browser_idle' : true
+    )
+  );
+  if (!willHaveAuthoritativeSource && telemetry.overnightRestGapMinutes > 0) {
     sourcesSet.add('browser_idle');
   }
   if (telemetry.motionActiveMinutes > 0) {

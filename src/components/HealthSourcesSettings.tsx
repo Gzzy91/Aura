@@ -1,6 +1,8 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
+  Activity,
   Bluetooth,
+  Calendar,
   Copy,
   FileUp,
   HeartPulse,
@@ -12,7 +14,8 @@ import {
   Watch,
   X,
 } from 'lucide-react';
-import { format, isSameDay, startOfDay } from 'date-fns';
+import { format, isSameDay, isToday, isYesterday, startOfDay } from 'date-fns';
+import { de } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
@@ -28,6 +31,7 @@ import {
   detectBrowserHealthCapabilities,
   disconnectHealthProvider,
   fetchHealthProvidersStatus,
+  formatMinutesAsHoursMinutes,
   getHealthSessionToken,
   loadBrowserTelemetry,
   openHealthProviderOAuthPopup,
@@ -149,18 +153,7 @@ export function HealthSourcesSettings() {
       const state = useStore.getState();
       const safeDays = Array.isArray(days) ? days : [];
       const targetDays = safeDays.slice(0, 14);
-
-      if (targetDays.length === 0) {
-        const freshToday = buildTodayHealthRecord({
-          existingRecord: state.healthRecords.find((r) => r.id === todayKey),
-          focusSessions: state.focusSessions,
-          quests: state.quests,
-          diaryEntries: state.diaryEntries,
-          extraSources: [source],
-        });
-        await saveHealthRecord(freshToday);
-        return 0;
-      }
+      let touchedToday = false;
 
       for (const day of targetDays) {
         const [y, m, d] = day.dateKey.split('-').map(Number);
@@ -170,15 +163,29 @@ export function HealthSourcesSettings() {
           state.diaryEntries.find((e) => isSameDay(new Date(e.date), dayDate))?.mood ?? null;
 
         if (day.dateKey === todayKey) {
+          touchedToday = true;
+          const existingHasAuthSleep = Boolean(
+            existing?.sources?.some(
+              (s) =>
+                s === 'google_health' ||
+                s === 'garmin_connect' ||
+                s === 'manual' ||
+                s === 'health_export'
+            )
+          );
+          const resolvedSleepOverride =
+            day.sleepDurationMinutes > 0
+              ? day.sleepDurationMinutes
+              : existingHasAuthSleep
+              ? existing?.sleepDurationMinutes ?? 0
+              : 0;
+
           const baseToday = buildTodayHealthRecord({
             existingRecord: existing,
             focusSessions: state.focusSessions,
             quests: state.quests,
             diaryEntries: state.diaryEntries,
-            overrideSleepMinutes:
-              day.sleepDurationMinutes > 0
-                ? day.sleepDurationMinutes
-                : existing?.sleepDurationMinutes,
+            overrideSleepMinutes: resolvedSleepOverride,
             overrideActivityMinutes:
               day.activityDurationMinutes > 0
                 ? Math.max(day.activityDurationMinutes, existing?.activityDurationMinutes || 0)
@@ -188,9 +195,14 @@ export function HealthSourcesSettings() {
           });
           await saveHealthRecord(baseToday);
         } else {
-          const sleepMin = day.sleepDurationMinutes || existing?.sleepDurationMinutes || 0;
+          const sleepMin =
+            day.sleepDurationMinutes > 0
+              ? day.sleepDurationMinutes
+              : existing?.sleepDurationMinutes || 0;
           const activityMin =
-            day.activityDurationMinutes || existing?.activityDurationMinutes || 0;
+            day.activityDurationMinutes > 0
+              ? day.activityDurationMinutes
+              : existing?.activityDurationMinutes || 0;
           const avgHr = day.avgHeartRate ?? existing?.avgHeartRate ?? null;
           const { recoveryScore, recoveryState } = calculateRecoveryMetrics({
             sleepDurationMinutes: sleepMin,
@@ -206,7 +218,10 @@ export function HealthSourcesSettings() {
             activityDurationMinutes: activityMin,
             avgHeartRate: avgHr,
             sources: Array.from(
-              new Set<HealthDataSource>([...(existing?.sources || []), source])
+              new Set<HealthDataSource>([
+                ...(existing?.sources || []).filter((s) => s !== 'browser_idle'),
+                source,
+              ])
             ).slice(0, 8),
             recoveryScore,
             recoveryState,
@@ -215,6 +230,30 @@ export function HealthSourcesSettings() {
             syncedAt: Date.now(),
           });
         }
+      }
+
+      if (!touchedToday) {
+        const existingToday = useStore.getState().healthRecords.find((r) => r.id === todayKey);
+        const existingHasAuthSleep = Boolean(
+          existingToday?.sources?.some(
+            (s) =>
+              s === 'google_health' ||
+              s === 'garmin_connect' ||
+              s === 'manual' ||
+              s === 'health_export'
+          )
+        );
+        const freshToday = buildTodayHealthRecord({
+          existingRecord: existingToday,
+          focusSessions: state.focusSessions,
+          quests: state.quests,
+          diaryEntries: state.diaryEntries,
+          overrideSleepMinutes: existingHasAuthSleep
+            ? existingToday?.sleepDurationMinutes ?? 0
+            : 0,
+          extraSources: [source],
+        });
+        await saveHealthRecord(freshToday);
       }
 
       return targetDays.length;
@@ -552,7 +591,11 @@ export function HealthSourcesSettings() {
             Direkte Cloud-Konten (Garmin Connect &amp; Google Health)
           </span>
           <span className="text-neutral-400">
-            Aktive Quellen: {todayRecord.sources.map((s) => SOURCE_LABELS[s]).join(' · ')}
+            Aktive Quellen:{' '}
+            {todayRecord.sources
+              .filter((s) => s !== 'browser_idle' || todayRecord.sources.length === 1)
+              .map((s) => SOURCE_LABELS[s])
+              .join(' · ')}
           </span>
         </div>
 
@@ -941,6 +984,78 @@ export function HealthSourcesSettings() {
           Werte übernehmen
         </button>
       </form>
+
+      {/* Synced Health History Preview */}
+      <div className="pt-4 border-t border-neutral-800 space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span className="font-semibold text-neutral-300 flex items-center gap-1.5">
+            <Calendar className="w-3.5 h-3.5 text-amber-400" />
+            Synchronisierte Health-Historie (letzte 14 Tage)
+          </span>
+          <span className="text-neutral-500 tabular-nums">
+            {healthRecords.length} {healthRecords.length === 1 ? 'Tag' : 'Tage'} gespeichert
+          </span>
+        </div>
+
+        {healthRecords.length === 0 ? (
+          <div className="rounded-xl border border-neutral-800/80 bg-neutral-950/60 p-3.5 text-xs text-neutral-400">
+            Noch keine historischen Tagesdaten vorhanden. Verbinde Google Health oder Garmin und
+            klicke auf „Jetzt abrufen“, um die letzten 14 Tage zu importieren.
+          </div>
+        ) : (
+          <div className="max-h-60 overflow-y-auto pr-1 space-y-1.5">
+            {[...healthRecords]
+              .sort((a, b) => b.date - a.date)
+              .slice(0, 14)
+              .map((rec) => {
+                const dateObj = new Date(rec.date);
+                const label = isToday(dateObj)
+                  ? 'Heute'
+                  : isYesterday(dateObj)
+                  ? 'Gestern'
+                  : format(dateObj, 'EEE, dd.MM.', { locale: de });
+                const visibleSources = rec.sources.filter(
+                  (s) => s !== 'browser_idle' || rec.sources.length === 1
+                );
+
+                return (
+                  <div
+                    key={rec.id}
+                    className="rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs"
+                  >
+                    <div className="min-w-0">
+                      <span className="font-semibold text-white">{label}</span>
+                      <span className="text-neutral-500 text-[11px] ml-2">
+                        {visibleSources.map((s) => SOURCE_LABELS[s]).join(' · ')}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 tabular-nums">
+                      <span className="inline-flex items-center gap-1 text-indigo-300">
+                        <Moon className="w-3.5 h-3.5 text-indigo-400" />
+                        {rec.sleepDurationMinutes > 0
+                          ? formatMinutesAsHoursMinutes(rec.sleepDurationMinutes)
+                          : '–'}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-emerald-300">
+                        <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                        {rec.activityDurationMinutes} Min
+                      </span>
+                      {typeof rec.avgHeartRate === 'number' && (
+                        <span className="inline-flex items-center gap-1 text-rose-300">
+                          <HeartPulse className="w-3.5 h-3.5 text-rose-400" />
+                          {rec.avgHeartRate} BPM
+                        </span>
+                      )}
+                      <span className="font-mono font-bold text-amber-400">
+                        {rec.recoveryScore}/100
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
