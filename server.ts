@@ -314,6 +314,7 @@ interface WeeklySummaryRequestBody {
 
 async function startServer() {
   const app = express();
+  app.set('trust proxy', 1);
   app.use(express.json({ limit: '1mb' }));
 
   // Weekly Mood & Progress AI-Coach Summary
@@ -795,7 +796,15 @@ Write in GERMAN. Address the user as "Du".`;
     });
   }
 
-  const port = Number(process.env.PORT) || 3000;
+  const portArgIdx = process.argv.indexOf('--port');
+  const cliPort = portArgIdx >= 0 ? Number(process.argv[portArgIdx + 1]) : NaN;
+  const port =
+    (Number.isFinite(cliPort) && cliPort > 0 ? cliPort : 0) ||
+    (process.env.NGINX_PORT &&
+    process.env.PORT === process.env.NGINX_PORT &&
+    process.env.DEFAULT_APP_PORT
+      ? Number(process.env.DEFAULT_APP_PORT)
+      : Number(process.env.PORT) || 3000);
   app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${port}`);
   });

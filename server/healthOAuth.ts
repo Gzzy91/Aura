@@ -68,18 +68,35 @@ function pruneExpiredStates() {
   }
 }
 
-function getAppBaseUrl(): string {
+function getAppBaseUrl(req?: Request): string {
   const envUrl = process.env.APP_URL;
   if (envUrl && envUrl !== 'MY_APP_URL' && /^https?:\/\//i.test(envUrl)) {
     return envUrl.replace(/\/+$/, '');
   }
+  if (req) {
+    const forwardedHost = (req.get('x-forwarded-host') || req.get('host') || '')
+      .split(',')[0]
+      .trim();
+    if (
+      forwardedHost &&
+      !forwardedHost.startsWith('localhost') &&
+      !forwardedHost.startsWith('127.0.0.1') &&
+      !forwardedHost.startsWith('0.0.0.0')
+    ) {
+      const forwardedProto = (req.get('x-forwarded-proto') || req.protocol || 'https')
+        .split(',')[0]
+        .trim();
+      const proto = forwardedProto === 'http' ? 'http' : 'https';
+      return `${proto}://${forwardedHost}`.replace(/\/+$/, '');
+    }
+  }
   return 'http://localhost:3000';
 }
 
-function getGarminConfig() {
+function getGarminConfig(req?: Request) {
   const clientId = process.env.GARMIN_CLIENT_ID?.trim() || '';
   const clientSecret = process.env.GARMIN_CLIENT_SECRET?.trim() || '';
-  const callbackUrl = `${getAppBaseUrl()}/api/health/garmin/callback`;
+  const callbackUrl = `${getAppBaseUrl(req)}/api/health/garmin/callback`;
   return {
     clientId,
     clientSecret,
@@ -88,7 +105,7 @@ function getGarminConfig() {
   };
 }
 
-function getGoogleHealthConfig() {
+function getGoogleHealthConfig(req?: Request) {
   const clientId = (
     process.env.GOOGLE_HEALTH_CLIENT_ID ||
     process.env.GOOGLE_FIT_CLIENT_ID ||
@@ -99,7 +116,7 @@ function getGoogleHealthConfig() {
     process.env.GOOGLE_FIT_CLIENT_SECRET ||
     ''
   ).trim();
-  const callbackUrl = `${getAppBaseUrl()}/api/health/google/callback`;
+  const callbackUrl = `${getAppBaseUrl(req)}/api/health/google/callback`;
   return {
     clientId,
     clientSecret,
@@ -883,8 +900,8 @@ export function registerHealthOAuthRoutes(app: Express) {
   // Provider configuration & live session status
   app.get('/api/health/providers/status', (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
-    const garminCfg = getGarminConfig();
-    const googleCfg = getGoogleHealthConfig();
+    const garminCfg = getGarminConfig(req);
+    const googleCfg = getGoogleHealthConfig(req);
     const garminSession = getSessionForProvider(req, 'garmin');
     const googleSession = getSessionForProvider(req, 'google');
 
@@ -906,10 +923,10 @@ export function registerHealthOAuthRoutes(app: Express) {
   });
 
   // Garmin Connect: Build OAuth 2.0 PKCE Authorization URL
-  app.get('/api/health/garmin/auth-url', (_req: Request, res: Response) => {
+  app.get('/api/health/garmin/auth-url', (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     pruneExpiredStates();
-    const cfg = getGarminConfig();
+    const cfg = getGarminConfig(req);
     if (!cfg.configured) {
       res.status(200).json({
         configured: false,
@@ -988,7 +1005,7 @@ export function registerHealthOAuthRoutes(app: Express) {
     }
 
     try {
-      const cfg = getGarminConfig();
+      const cfg = getGarminConfig(req);
       const body = new URLSearchParams({
         grant_type: 'authorization_code',
         client_id: cfg.clientId,
@@ -1118,7 +1135,7 @@ export function registerHealthOAuthRoutes(app: Express) {
   app.get('/api/health/google/auth-url', (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     pruneExpiredStates();
-    const cfg = getGoogleHealthConfig();
+    const cfg = getGoogleHealthConfig(req);
     if (!cfg.configured) {
       res.status(200).json({
         configured: false,
@@ -1208,7 +1225,7 @@ export function registerHealthOAuthRoutes(app: Express) {
     }
 
     try {
-      const cfg = getGoogleHealthConfig();
+      const cfg = getGoogleHealthConfig(req);
       const body = new URLSearchParams({
         grant_type: 'authorization_code',
         client_id: cfg.clientId,

@@ -59,6 +59,7 @@ export function HealthSourcesSettings() {
   } = useStore();
 
   const [providerStatus, setProviderStatus] = useState<HealthProvidersStatus | null>(null);
+  const [providerBackendError, setProviderBackendError] = useState<string | null>(null);
   const [googleApiMode, setGoogleApiMode] = useState<GoogleHealthApiMode>('google_health');
   const [syncingProvider, setSyncingProvider] = useState<'garmin' | 'google' | null>(null);
   const [setupGuideProvider, setSetupGuideProvider] = useState<'garmin' | 'google' | null>(null);
@@ -110,6 +111,7 @@ export function HealthSourcesSettings() {
   const refreshProviderStatus = useCallback(async () => {
     try {
       const status = await fetchHealthProvidersStatus();
+      setProviderBackendError(null);
       setProviderStatus({
         garmin: {
           ...status.garmin,
@@ -123,8 +125,12 @@ export function HealthSourcesSettings() {
       if (status.google.apiMode) {
         setGoogleApiMode(status.google.apiMode);
       }
-    } catch {
-      // Ignore transient status fetch failure on mount
+    } catch (error: unknown) {
+      setProviderBackendError(
+        error instanceof Error
+          ? error.message
+          : 'Health-Backend ist unter dieser Live-URL aktuell nicht erreichbar.'
+      );
     }
   }, []);
 
@@ -695,6 +701,12 @@ export function HealthSourcesSettings() {
             </div>
           </div>
         </div>
+
+        {providerBackendError && (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-200 leading-relaxed">
+            {providerBackendError}
+          </div>
+        )}
 
         {/* Setup instructions if OAuth credentials are not yet configured in Settings > Secrets */}
         {setupGuideProvider && (

@@ -90,7 +90,12 @@ export async function fetchHealthProvidersStatus(): Promise<HealthProvidersStatu
     cache: 'no-store',
   });
   if (!res.ok) {
-    throw new Error('Status der Health-Provider konnte nicht geladen werden.');
+    if (res.status === 404) {
+      throw new Error(
+        'Health-Backend nicht erreichbar (HTTP 404). Die Live-App muss mit dem Node-Server neu veröffentlicht werden.'
+      );
+    }
+    throw new Error(`Status der Health-Provider konnte nicht geladen werden (HTTP ${res.status}).`);
   }
   const contentType = res.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
@@ -153,6 +158,11 @@ export async function openHealthProviderOAuthPopup(
   }
 
   if (!res.ok || !data.url) {
+    if (res.status === 404 && !data.error) {
+      throw new Error(
+        'OAuth-Autorisierungs-URL konnte nicht erzeugt werden (HTTP 404): Der Backend-Server antwortet in dieser Live-Umgebung nicht auf /api/health/*. Bitte stelle sicher, dass kein rein statisches Hosting genutzt wird und die App neu geteilt/deployed wurde.'
+      );
+    }
     throw new Error(
       data.error ||
         `OAuth-Autorisierungs-URL konnte nicht erzeugt werden (HTTP ${res.status}).`
