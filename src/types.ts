@@ -146,10 +146,37 @@ export interface WeeklyRetrospective {
   triggerType: 'sunday_auto' | 'manual';
 }
 
+export type HealthMetricKey =
+  | 'recoveryScore'
+  | 'sleepDurationMinutes'
+  | 'sleepDeepMinutes'
+  | 'sleepLightMinutes'
+  | 'sleepRemMinutes'
+  | 'sleepAwakeMinutes'
+  | 'activityDurationMinutes'
+  | 'steps'
+  | 'distanceMeters'
+  | 'caloriesActive'
+  | 'floorsClimbed'
+  | 'heartPoints'
+  | 'workoutsCount'
+  | 'avgHeartRate'
+  | 'restingHeartRate'
+  | 'hrvMs'
+  | 'stressLevel'
+  | 'bodyBattery'
+  | 'spo2Percent'
+  | 'respirationRate'
+  | 'vo2Max'
+  | 'weightKg'
+  | 'bodyFatPercent'
+  | 'hydrationMl';
+
 export interface AppSettings {
   isPinEnabled: boolean;
   pin: string | null;
   lastLockTime?: number;
+  visibleHealthMetrics?: HealthMetricKey[];
 }
 
 export interface Quest {
@@ -193,6 +220,26 @@ export interface HealthDailyRecord {
   sleepDurationMinutes: number;
   activityDurationMinutes: number;
   avgHeartRate?: number | null;
+  sleepDeepMinutes?: number | null;
+  sleepLightMinutes?: number | null;
+  sleepRemMinutes?: number | null;
+  sleepAwakeMinutes?: number | null;
+  steps?: number | null;
+  distanceMeters?: number | null;
+  caloriesActive?: number | null;
+  floorsClimbed?: number | null;
+  heartPoints?: number | null;
+  workoutsCount?: number | null;
+  restingHeartRate?: number | null;
+  hrvMs?: number | null;
+  stressLevel?: number | null;
+  bodyBattery?: number | null;
+  spo2Percent?: number | null;
+  respirationRate?: number | null;
+  vo2Max?: number | null;
+  weightKg?: number | null;
+  bodyFatPercent?: number | null;
+  hydrationMl?: number | null;
   sources: HealthDataSource[];
   recoveryScore: number;
   recoveryState: RecoveryState;

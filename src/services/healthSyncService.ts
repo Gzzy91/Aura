@@ -4,6 +4,7 @@ import {
   FocusSession,
   HealthDailyRecord,
   HealthDataSource,
+  HealthMetricKey,
   Quest,
   RecoveryState,
 } from '@/types';
@@ -63,11 +64,441 @@ export interface HealthProvidersStatus {
   };
 }
 
+export type HealthMetricCategory = 'recovery_heart' | 'sleep' | 'activity' | 'body';
+
+export interface HealthMetricMeta {
+  key: HealthMetricKey;
+  label: string;
+  shortLabel: string;
+  category: HealthMetricCategory;
+  unit: string;
+  providers: string;
+  description: string;
+  isPrimary?: boolean;
+  defaultVisible: boolean;
+}
+
+export const HEALTH_METRICS_CATALOG: HealthMetricMeta[] = [
+  {
+    key: 'recoveryScore',
+    label: 'Recovery-Score',
+    shortLabel: 'Recovery',
+    category: 'recovery_heart',
+    unit: '/100',
+    providers: 'Aura (aus Schlaf, Aktivität, HRV, Puls)',
+    description: 'Berechnete Tagesbereitschaft aus Schlaf, Belastung und Vitalwerten',
+    isPrimary: true,
+    defaultVisible: true,
+  },
+  {
+    key: 'sleepDurationMinutes',
+    label: 'Schlafdauer',
+    shortLabel: 'Schlaf',
+    category: 'sleep',
+    unit: 'Std/Min',
+    providers: 'Google Health · Garmin',
+    description: 'Gesamte effektive Schlafzeit der letzten Nacht',
+    isPrimary: true,
+    defaultVisible: true,
+  },
+  {
+    key: 'activityDurationMinutes',
+    label: 'Aktivitätsdauer',
+    shortLabel: 'Aktivität',
+    category: 'activity',
+    unit: 'Min',
+    providers: 'Google Health · Garmin · Aura',
+    description: 'Aktive Bewegungs- und Trainingsminuten pro Tag',
+    isPrimary: true,
+    defaultVisible: true,
+  },
+  {
+    key: 'steps',
+    label: 'Schritte',
+    shortLabel: 'Schritte',
+    category: 'activity',
+    unit: 'Schritte',
+    providers: 'Google Health · Garmin',
+    description: 'Gezählte Tagesschritte',
+    defaultVisible: true,
+  },
+  {
+    key: 'distanceMeters',
+    label: 'Distanz',
+    shortLabel: 'Distanz',
+    category: 'activity',
+    unit: 'km',
+    providers: 'Google Health · Garmin',
+    description: 'Zurückgelegte Lauf-, Geh- oder Trainingsstrecke',
+    defaultVisible: true,
+  },
+  {
+    key: 'caloriesActive',
+    label: 'Aktivkalorien',
+    shortLabel: 'Kalorien',
+    category: 'activity',
+    unit: 'kcal',
+    providers: 'Google Health · Garmin',
+    description: 'Durch Bewegung und Training verbrannte Energie',
+    defaultVisible: true,
+  },
+  {
+    key: 'floorsClimbed',
+    label: 'Etagen',
+    shortLabel: 'Etagen',
+    category: 'activity',
+    unit: 'Etagen',
+    providers: 'Google Health v4 · Garmin',
+    description: 'Gestiegene Stockwerke bzw. Höhenmeter-Äquivalent',
+    defaultVisible: true,
+  },
+  {
+    key: 'heartPoints',
+    label: 'Kardiopunkte',
+    shortLabel: 'Kardio-Pkt',
+    category: 'activity',
+    unit: 'Pkt',
+    providers: 'Google Fit · Garmin Intensität',
+    description: 'Google Fit Kardiopunkte bzw. Garmin Intensitätsminuten',
+    defaultVisible: true,
+  },
+  {
+    key: 'workoutsCount',
+    label: 'Workouts',
+    shortLabel: 'Workouts',
+    category: 'activity',
+    unit: 'Einheiten',
+    providers: 'Google Health · Garmin',
+    description: 'Anzahl erfasster Trainingseinheiten am Tag',
+    defaultVisible: true,
+  },
+  {
+    key: 'restingHeartRate',
+    label: 'Ruhepuls',
+    shortLabel: 'Ruhepuls',
+    category: 'recovery_heart',
+    unit: 'BPM',
+    providers: 'Google Health · Garmin',
+    description: 'Ruheherzfrequenz als wichtiger Erholungsindikator',
+    defaultVisible: true,
+  },
+  {
+    key: 'avgHeartRate',
+    label: 'Durchschnittspuls',
+    shortLabel: 'Ø Puls',
+    category: 'recovery_heart',
+    unit: 'BPM',
+    providers: 'Google Health · Garmin · Bluetooth',
+    description: 'Mittlere Herzfrequenz über Tag oder Training',
+    defaultVisible: true,
+  },
+  {
+    key: 'hrvMs',
+    label: 'HRV (rMSSD)',
+    shortLabel: 'HRV',
+    category: 'recovery_heart',
+    unit: 'ms',
+    providers: 'Google Health v4 · Garmin',
+    description: 'Herzfrequenzvariabilität für Stress- & Regenerationsanalyse',
+    defaultVisible: true,
+  },
+  {
+    key: 'bodyBattery',
+    label: 'Body Battery',
+    shortLabel: 'Body Battery',
+    category: 'recovery_heart',
+    unit: '/100',
+    providers: 'Garmin Connect',
+    description: 'Körperliche Energiereserve laut Garmin-Modell',
+    defaultVisible: true,
+  },
+  {
+    key: 'stressLevel',
+    label: 'Stresslevel',
+    shortLabel: 'Stress',
+    category: 'recovery_heart',
+    unit: '/100',
+    providers: 'Garmin Connect',
+    description: 'Durchschnittliche tägliche Stressbelastung',
+    defaultVisible: true,
+  },
+  {
+    key: 'sleepDeepMinutes',
+    label: 'Tiefschlaf',
+    shortLabel: 'Tief',
+    category: 'sleep',
+    unit: 'Std/Min',
+    providers: 'Google Health · Garmin',
+    description: 'Körperlich regenerierende Tiefschlafphase',
+    defaultVisible: true,
+  },
+  {
+    key: 'sleepRemMinutes',
+    label: 'REM-Schlaf',
+    shortLabel: 'REM',
+    category: 'sleep',
+    unit: 'Std/Min',
+    providers: 'Google Health · Garmin',
+    description: 'Kognitiv & emotional verarbeitender REM-Schlaf',
+    defaultVisible: true,
+  },
+  {
+    key: 'sleepLightMinutes',
+    label: 'Leichtschlaf',
+    shortLabel: 'Leicht',
+    category: 'sleep',
+    unit: 'Std/Min',
+    providers: 'Google Health · Garmin',
+    description: 'Basis-Schlafphase zwischen Wachzustand und Tief-/REM-Schlaf',
+    defaultVisible: true,
+  },
+  {
+    key: 'sleepAwakeMinutes',
+    label: 'Wachzeit im Schlaf',
+    shortLabel: 'Wach',
+    category: 'sleep',
+    unit: 'Min',
+    providers: 'Google Health · Garmin',
+    description: 'Unterbrechungen bzw. Wachphasen während der Nacht',
+    defaultVisible: true,
+  },
+  {
+    key: 'spo2Percent',
+    label: 'Blutsauerstoff (SpO₂)',
+    shortLabel: 'SpO₂',
+    category: 'body',
+    unit: '%',
+    providers: 'Google Health · Garmin',
+    description: 'Sauerstoffsättigung des Blutes',
+    defaultVisible: true,
+  },
+  {
+    key: 'respirationRate',
+    label: 'Atemfrequenz',
+    shortLabel: 'Atmung',
+    category: 'body',
+    unit: '/Min',
+    providers: 'Google Health v4 · Garmin',
+    description: 'Atemzüge pro Minute im Ruhezustand / Schlaf',
+    defaultVisible: true,
+  },
+  {
+    key: 'vo2Max',
+    label: 'VO₂ max',
+    shortLabel: 'VO₂ max',
+    category: 'body',
+    unit: 'ml/kg/min',
+    providers: 'Google Health v4 · Garmin',
+    description: 'Maximale Sauerstoffaufnahme (Ausdauerfitness-Index)',
+    defaultVisible: true,
+  },
+  {
+    key: 'weightKg',
+    label: 'Körpergewicht',
+    shortLabel: 'Gewicht',
+    category: 'body',
+    unit: 'kg',
+    providers: 'Google Health · Garmin',
+    description: 'Erfasstes Körpergewicht',
+    defaultVisible: true,
+  },
+  {
+    key: 'bodyFatPercent',
+    label: 'Körperfett',
+    shortLabel: 'Körperfett',
+    category: 'body',
+    unit: '%',
+    providers: 'Google Health · Garmin',
+    description: 'Körperfettanteil in Prozent',
+    defaultVisible: true,
+  },
+  {
+    key: 'hydrationMl',
+    label: 'Hydration / Wasser',
+    shortLabel: 'Wasser',
+    category: 'body',
+    unit: 'L',
+    providers: 'Google Health',
+    description: 'Erfasste Flüssigkeitsaufnahme pro Tag',
+    defaultVisible: true,
+  },
+];
+
+export const ALL_HEALTH_METRIC_KEYS: HealthMetricKey[] = HEALTH_METRICS_CATALOG.map((m) => m.key);
+
+export const DEFAULT_VISIBLE_HEALTH_METRICS: HealthMetricKey[] = HEALTH_METRICS_CATALOG.filter(
+  (m) => m.defaultVisible
+).map((m) => m.key);
+
+export const HEALTH_METRIC_CATEGORY_LABELS: Record<HealthMetricCategory, string> = {
+  recovery_heart: 'Erholung & Herz',
+  sleep: 'Schlaf & Phasen',
+  activity: 'Aktivität & Training',
+  body: 'Körper & Atmung',
+};
+
+export function getVisibleHealthMetricsSet(configured?: HealthMetricKey[]): Set<HealthMetricKey> {
+  if (Array.isArray(configured)) {
+    return new Set<HealthMetricKey>(configured);
+  }
+  return new Set<HealthMetricKey>(DEFAULT_VISIBLE_HEALTH_METRICS);
+}
+
+export function hasHealthMetricValue(
+  key: HealthMetricKey,
+  record: Partial<HealthDailyRecord> | null | undefined
+): boolean {
+  if (!record) return false;
+  switch (key) {
+    case 'recoveryScore':
+      return typeof record.recoveryScore === 'number';
+    case 'sleepDurationMinutes':
+      return typeof record.sleepDurationMinutes === 'number' && record.sleepDurationMinutes > 0;
+    case 'activityDurationMinutes':
+      return typeof record.activityDurationMinutes === 'number' && record.activityDurationMinutes > 0;
+    case 'stressLevel':
+      return typeof record.stressLevel === 'number' && record.stressLevel >= 0;
+    case 'bodyBattery':
+      return typeof record.bodyBattery === 'number' && record.bodyBattery >= 0;
+    default: {
+      const val = record[key as keyof HealthDailyRecord];
+      return typeof val === 'number' && Number.isFinite(val) && val > 0;
+    }
+  }
+}
+
+export function formatHealthMetricValue(
+  key: HealthMetricKey,
+  record: Partial<HealthDailyRecord> | null | undefined
+): string | null {
+  if (!record) return null;
+  switch (key) {
+    case 'recoveryScore':
+      return typeof record.recoveryScore === 'number' ? `${record.recoveryScore}/100` : null;
+    case 'sleepDurationMinutes':
+      return typeof record.sleepDurationMinutes === 'number' && record.sleepDurationMinutes > 0
+        ? formatMinutesAsHoursMinutes(record.sleepDurationMinutes)
+        : null;
+    case 'sleepDeepMinutes':
+      return typeof record.sleepDeepMinutes === 'number' && record.sleepDeepMinutes > 0
+        ? formatMinutesAsHoursMinutes(record.sleepDeepMinutes)
+        : null;
+    case 'sleepLightMinutes':
+      return typeof record.sleepLightMinutes === 'number' && record.sleepLightMinutes > 0
+        ? formatMinutesAsHoursMinutes(record.sleepLightMinutes)
+        : null;
+    case 'sleepRemMinutes':
+      return typeof record.sleepRemMinutes === 'number' && record.sleepRemMinutes > 0
+        ? formatMinutesAsHoursMinutes(record.sleepRemMinutes)
+        : null;
+    case 'sleepAwakeMinutes':
+      return typeof record.sleepAwakeMinutes === 'number' && record.sleepAwakeMinutes > 0
+        ? `${record.sleepAwakeMinutes} Min`
+        : null;
+    case 'activityDurationMinutes':
+      return typeof record.activityDurationMinutes === 'number' && record.activityDurationMinutes > 0
+        ? `${record.activityDurationMinutes} Min`
+        : null;
+    case 'steps':
+      return typeof record.steps === 'number' && record.steps > 0
+        ? record.steps.toLocaleString('de-DE')
+        : null;
+    case 'distanceMeters':
+      return typeof record.distanceMeters === 'number' && record.distanceMeters > 0
+        ? record.distanceMeters >= 1000
+          ? `${(record.distanceMeters / 1000).toFixed(2).replace('.', ',')} km`
+          : `${record.distanceMeters} m`
+        : null;
+    case 'caloriesActive':
+      return typeof record.caloriesActive === 'number' && record.caloriesActive > 0
+        ? `${record.caloriesActive.toLocaleString('de-DE')} kcal`
+        : null;
+    case 'floorsClimbed':
+      return typeof record.floorsClimbed === 'number' && record.floorsClimbed > 0
+        ? `${record.floorsClimbed}`
+        : null;
+    case 'heartPoints':
+      return typeof record.heartPoints === 'number' && record.heartPoints > 0
+        ? `${record.heartPoints} Pkt`
+        : null;
+    case 'workoutsCount':
+      return typeof record.workoutsCount === 'number' && record.workoutsCount > 0
+        ? `${record.workoutsCount}`
+        : null;
+    case 'avgHeartRate':
+      return typeof record.avgHeartRate === 'number' && record.avgHeartRate > 0
+        ? `${record.avgHeartRate} BPM`
+        : null;
+    case 'restingHeartRate':
+      return typeof record.restingHeartRate === 'number' && record.restingHeartRate > 0
+        ? `${record.restingHeartRate} BPM`
+        : null;
+    case 'hrvMs':
+      return typeof record.hrvMs === 'number' && record.hrvMs > 0
+        ? `${Number(record.hrvMs.toFixed(1))} ms`
+        : null;
+    case 'stressLevel':
+      return typeof record.stressLevel === 'number' && record.stressLevel >= 0
+        ? `${record.stressLevel}/100`
+        : null;
+    case 'bodyBattery':
+      return typeof record.bodyBattery === 'number' && record.bodyBattery >= 0
+        ? `${record.bodyBattery}/100`
+        : null;
+    case 'spo2Percent':
+      return typeof record.spo2Percent === 'number' && record.spo2Percent > 0
+        ? `${Number(record.spo2Percent.toFixed(1))}%`
+        : null;
+    case 'respirationRate':
+      return typeof record.respirationRate === 'number' && record.respirationRate > 0
+        ? `${Number(record.respirationRate.toFixed(1))}/Min`
+        : null;
+    case 'vo2Max':
+      return typeof record.vo2Max === 'number' && record.vo2Max > 0
+        ? `${Number(record.vo2Max.toFixed(1))}`
+        : null;
+    case 'weightKg':
+      return typeof record.weightKg === 'number' && record.weightKg > 0
+        ? `${record.weightKg.toFixed(1).replace('.', ',')} kg`
+        : null;
+    case 'bodyFatPercent':
+      return typeof record.bodyFatPercent === 'number' && record.bodyFatPercent > 0
+        ? `${record.bodyFatPercent.toFixed(1).replace('.', ',')}%`
+        : null;
+    case 'hydrationMl':
+      return typeof record.hydrationMl === 'number' && record.hydrationMl > 0
+        ? record.hydrationMl >= 1000
+          ? `${(record.hydrationMl / 1000).toFixed(2).replace('.', ',')} L`
+          : `${record.hydrationMl} ml`
+        : null;
+  }
+}
+
 export interface RemoteHealthDayMetric {
   dateKey: string;
   sleepDurationMinutes: number;
   activityDurationMinutes: number;
   avgHeartRate: number | null;
+  sleepDeepMinutes?: number | null;
+  sleepLightMinutes?: number | null;
+  sleepRemMinutes?: number | null;
+  sleepAwakeMinutes?: number | null;
+  steps?: number | null;
+  distanceMeters?: number | null;
+  caloriesActive?: number | null;
+  floorsClimbed?: number | null;
+  heartPoints?: number | null;
+  workoutsCount?: number | null;
+  restingHeartRate?: number | null;
+  hrvMs?: number | null;
+  stressLevel?: number | null;
+  bodyBattery?: number | null;
+  spo2Percent?: number | null;
+  respirationRate?: number | null;
+  vo2Max?: number | null;
+  weightKg?: number | null;
+  bodyFatPercent?: number | null;
+  hydrationMl?: number | null;
 }
 
 export interface RemoteHealthSyncResult {
@@ -183,6 +614,9 @@ async function connectGoogleHealthViaFirebasePopup(
           'https://www.googleapis.com/auth/fitness.activity.read',
           'https://www.googleapis.com/auth/fitness.sleep.read',
           'https://www.googleapis.com/auth/fitness.heart_rate.read',
+          'https://www.googleapis.com/auth/fitness.body.read',
+          'https://www.googleapis.com/auth/fitness.oxygen_saturation.read',
+          'https://www.googleapis.com/auth/fitness.nutrition.read',
         ]
       : [
           'https://www.googleapis.com/auth/googlehealth.sleep.readonly',
@@ -425,13 +859,104 @@ function toClientDateKey(tsMs: number): string {
   return `${y}-${m}-${day}`;
 }
 
+interface ClientDayAccumulator {
+  sleepMinutes: number;
+  activityMinutes: number;
+  hrValues: number[];
+  sleepDeepMinutes: number | null;
+  sleepLightMinutes: number | null;
+  sleepRemMinutes: number | null;
+  sleepAwakeMinutes: number | null;
+  steps: number | null;
+  distanceMeters: number | null;
+  caloriesActive: number | null;
+  floorsClimbed: number | null;
+  heartPoints: number | null;
+  workoutsCount: number | null;
+  restingHrValues: number[];
+  hrvValues: number[];
+  stressValues: number[];
+  bodyBatteryValues: number[];
+  spo2Values: number[];
+  respirationValues: number[];
+  vo2MaxValues: number[];
+  weightKg: number | null;
+  bodyFatPercent: number | null;
+  hydrationMl: number | null;
+}
+
+interface ClientDayMetricPartial {
+  sleepMinutes?: number;
+  activityMinutes?: number;
+  avgHeartRate?: number | null;
+  sleepDeepMinutes?: number | null;
+  sleepLightMinutes?: number | null;
+  sleepRemMinutes?: number | null;
+  sleepAwakeMinutes?: number | null;
+  steps?: number | null;
+  distanceMeters?: number | null;
+  caloriesActive?: number | null;
+  floorsClimbed?: number | null;
+  heartPoints?: number | null;
+  workoutsCount?: number | null;
+  restingHeartRate?: number | null;
+  hrvMs?: number | null;
+  stressLevel?: number | null;
+  bodyBattery?: number | null;
+  spo2Percent?: number | null;
+  respirationRate?: number | null;
+  vo2Max?: number | null;
+  weightKg?: number | null;
+  bodyFatPercent?: number | null;
+  hydrationMl?: number | null;
+}
+
+function createClientAccumulator(): ClientDayAccumulator {
+  return {
+    sleepMinutes: 0,
+    activityMinutes: 0,
+    hrValues: [],
+    sleepDeepMinutes: null,
+    sleepLightMinutes: null,
+    sleepRemMinutes: null,
+    sleepAwakeMinutes: null,
+    steps: null,
+    distanceMeters: null,
+    caloriesActive: null,
+    floorsClimbed: null,
+    heartPoints: null,
+    workoutsCount: null,
+    restingHrValues: [],
+    hrvValues: [],
+    stressValues: [],
+    bodyBatteryValues: [],
+    spo2Values: [],
+    respirationValues: [],
+    vo2MaxValues: [],
+    weightKg: null,
+    bodyFatPercent: null,
+    hydrationMl: null,
+  };
+}
+
 function mergeClientDayMetric(
-  map: Map<string, { sleepMinutes: number; activityMinutes: number; hrValues: number[] }>,
+  map: Map<string, ClientDayAccumulator>,
   dateKey: string,
-  partial: { sleepMinutes?: number; activityMinutes?: number; avgHeartRate?: number | null }
+  partial: ClientDayMetricPartial
 ) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
-  const entry = map.get(dateKey) || { sleepMinutes: 0, activityMinutes: 0, hrValues: [] };
+  const entry = map.get(dateKey) || createClientAccumulator();
+  const maxInt = (
+    cur: number | null,
+    next: number | null | undefined,
+    min: number,
+    max: number
+  ): number | null => {
+    if (typeof next !== 'number' || !Number.isFinite(next)) return cur;
+    const clamped = Math.max(min, Math.min(max, Math.round(next)));
+    return cur === null ? clamped : Math.max(cur, clamped);
+  };
+
   if (typeof partial.sleepMinutes === 'number' && Number.isFinite(partial.sleepMinutes)) {
     entry.sleepMinutes = Math.min(
       1440,
@@ -452,21 +977,128 @@ function mergeClientDayMetric(
   ) {
     entry.hrValues.push(partial.avgHeartRate);
   }
+
+  entry.sleepDeepMinutes = maxInt(entry.sleepDeepMinutes, partial.sleepDeepMinutes, 0, 1440);
+  entry.sleepLightMinutes = maxInt(entry.sleepLightMinutes, partial.sleepLightMinutes, 0, 1440);
+  entry.sleepRemMinutes = maxInt(entry.sleepRemMinutes, partial.sleepRemMinutes, 0, 1440);
+  entry.sleepAwakeMinutes = maxInt(entry.sleepAwakeMinutes, partial.sleepAwakeMinutes, 0, 1440);
+  entry.steps = maxInt(entry.steps, partial.steps, 0, 500000);
+  entry.distanceMeters = maxInt(entry.distanceMeters, partial.distanceMeters, 0, 1000000);
+  entry.caloriesActive = maxInt(entry.caloriesActive, partial.caloriesActive, 0, 50000);
+  entry.floorsClimbed = maxInt(entry.floorsClimbed, partial.floorsClimbed, 0, 10000);
+  entry.heartPoints = maxInt(entry.heartPoints, partial.heartPoints, 0, 5000);
+  entry.workoutsCount = maxInt(entry.workoutsCount, partial.workoutsCount, 0, 100);
+  entry.hydrationMl = maxInt(entry.hydrationMl, partial.hydrationMl, 0, 30000);
+
+  if (
+    typeof partial.restingHeartRate === 'number' &&
+    Number.isFinite(partial.restingHeartRate) &&
+    partial.restingHeartRate >= 25 &&
+    partial.restingHeartRate <= 220
+  ) {
+    entry.restingHrValues.push(partial.restingHeartRate);
+  }
+  if (
+    typeof partial.hrvMs === 'number' &&
+    Number.isFinite(partial.hrvMs) &&
+    partial.hrvMs > 0 &&
+    partial.hrvMs <= 500
+  ) {
+    entry.hrvValues.push(partial.hrvMs);
+  }
+  if (
+    typeof partial.stressLevel === 'number' &&
+    Number.isFinite(partial.stressLevel) &&
+    partial.stressLevel >= 0 &&
+    partial.stressLevel <= 100
+  ) {
+    entry.stressValues.push(partial.stressLevel);
+  }
+  if (
+    typeof partial.bodyBattery === 'number' &&
+    Number.isFinite(partial.bodyBattery) &&
+    partial.bodyBattery >= 0 &&
+    partial.bodyBattery <= 100
+  ) {
+    entry.bodyBatteryValues.push(partial.bodyBattery);
+  }
+  if (
+    typeof partial.spo2Percent === 'number' &&
+    Number.isFinite(partial.spo2Percent) &&
+    partial.spo2Percent >= 50 &&
+    partial.spo2Percent <= 100
+  ) {
+    entry.spo2Values.push(partial.spo2Percent);
+  }
+  if (
+    typeof partial.respirationRate === 'number' &&
+    Number.isFinite(partial.respirationRate) &&
+    partial.respirationRate >= 4 &&
+    partial.respirationRate <= 80
+  ) {
+    entry.respirationValues.push(partial.respirationRate);
+  }
+  if (
+    typeof partial.vo2Max === 'number' &&
+    Number.isFinite(partial.vo2Max) &&
+    partial.vo2Max >= 10 &&
+    partial.vo2Max <= 110
+  ) {
+    entry.vo2MaxValues.push(partial.vo2Max);
+  }
+  if (
+    typeof partial.weightKg === 'number' &&
+    Number.isFinite(partial.weightKg) &&
+    partial.weightKg >= 20 &&
+    partial.weightKg <= 400
+  ) {
+    entry.weightKg = Math.round(partial.weightKg * 10) / 10;
+  }
+  if (
+    typeof partial.bodyFatPercent === 'number' &&
+    Number.isFinite(partial.bodyFatPercent) &&
+    partial.bodyFatPercent >= 1 &&
+    partial.bodyFatPercent <= 75
+  ) {
+    entry.bodyFatPercent = Math.round(partial.bodyFatPercent * 10) / 10;
+  }
+
   map.set(dateKey, entry);
 }
 
-function finalizeClientDayMap(
-  map: Map<string, { sleepMinutes: number; activityMinutes: number; hrValues: number[] }>
-): RemoteHealthDayMetric[] {
+function finalizeClientDayMap(map: Map<string, ClientDayAccumulator>): RemoteHealthDayMetric[] {
+  const avgRound = (arr: number[], decimals = 0): number | null => {
+    if (arr.length === 0) return null;
+    const mean = arr.reduce((s, n) => s + n, 0) / arr.length;
+    const factor = 10 ** decimals;
+    return Math.round(mean * factor) / factor;
+  };
   return Array.from(map.entries())
     .map(([dateKey, v]) => ({
       dateKey,
       sleepDurationMinutes: Math.max(0, Math.min(1440, Math.round(v.sleepMinutes))),
       activityDurationMinutes: Math.max(0, Math.min(1440, Math.round(v.activityMinutes))),
-      avgHeartRate:
-        v.hrValues.length > 0
-          ? Math.round(v.hrValues.reduce((s, n) => s + n, 0) / v.hrValues.length)
-          : null,
+      avgHeartRate: avgRound(v.hrValues, 0),
+      sleepDeepMinutes: v.sleepDeepMinutes,
+      sleepLightMinutes: v.sleepLightMinutes,
+      sleepRemMinutes: v.sleepRemMinutes,
+      sleepAwakeMinutes: v.sleepAwakeMinutes,
+      steps: v.steps,
+      distanceMeters: v.distanceMeters,
+      caloriesActive: v.caloriesActive,
+      floorsClimbed: v.floorsClimbed,
+      heartPoints: v.heartPoints,
+      workoutsCount: v.workoutsCount,
+      restingHeartRate: avgRound(v.restingHrValues, 0),
+      hrvMs: avgRound(v.hrvValues, 1),
+      stressLevel: avgRound(v.stressValues, 0),
+      bodyBattery: avgRound(v.bodyBatteryValues, 0),
+      spo2Percent: avgRound(v.spo2Values, 1),
+      respirationRate: avgRound(v.respirationValues, 1),
+      vo2Max: avgRound(v.vo2MaxValues, 1),
+      weightKg: v.weightKg,
+      bodyFatPercent: v.bodyFatPercent,
+      hydrationMl: v.hydrationMl,
     }))
     .sort((a, b) => b.dateKey.localeCompare(a.dateKey));
 }
@@ -569,10 +1201,7 @@ async function fetchGoogleHealthV4MetricsClient(
   const startIso = new Date(sleepQueryStartMs).toISOString();
   const endIso = new Date(endMs).toISOString();
   const headers = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' };
-  const dayMap = new Map<
-    string,
-    { sleepMinutes: number; activityMinutes: number; hrValues: number[] }
-  >();
+  const dayMap = new Map<string, ClientDayAccumulator>();
   const authErrors: string[] = [];
   let succeededCount = 0;
 
@@ -597,8 +1226,16 @@ async function fetchGoogleHealthV4MetricsClient(
     }
   }
 
-  // Deduplicate overlapping sleep sessions from multiple apps/devices before summing per wake-up day
-  const sleepSessions: Array<{ start: number; end: number; mins: number; dateKey: string }> = [];
+  const sleepSessions: Array<{
+    start: number;
+    end: number;
+    mins: number;
+    deep: number;
+    light: number;
+    rem: number;
+    awake: number;
+    dateKey: string;
+  }> = [];
   for (const dp of sleepDataPoints) {
     const sleep = dp.sleep || dp;
     const endTime = sleep?.interval?.endTime || sleep?.interval?.end_time;
@@ -608,23 +1245,43 @@ async function fetchGoogleHealthV4MetricsClient(
     if (Number.isNaN(endParsed) || endParsed < startMs || endParsed > endMs) continue;
     const dateKey = toClientDateKey(endParsed);
 
-    let mins = Number(sleep?.summary?.minutesAsleep ?? sleep?.summary?.minutes_asleep ?? 0);
-    if (!mins && Array.isArray(sleep?.stages)) {
-      let asleepMs = 0;
+    let deepMs = 0;
+    let lightMs = 0;
+    let remMs = 0;
+    let awakeMs = 0;
+    let asleepStageMs = 0;
+
+    if (Array.isArray(sleep?.stages)) {
       for (const stage of sleep.stages) {
         const type = String(stage.type || stage.stageType || '').toLowerCase();
-        if (type && !type.includes('awake') && !type.includes('out_of_bed')) {
-          const s = Date.parse(stage.interval?.startTime || stage.startTime || '');
-          const e = Date.parse(stage.interval?.endTime || stage.endTime || '');
-          if (!Number.isNaN(s) && !Number.isNaN(e) && e > s) asleepMs += e - s;
+        const s = Date.parse(stage.interval?.startTime || stage.startTime || '');
+        const e = Date.parse(stage.interval?.endTime || stage.endTime || '');
+        if (Number.isNaN(s) || Number.isNaN(e) || e <= s) continue;
+        const dur = e - s;
+        if (type.includes('awake') || type.includes('out_of_bed')) {
+          awakeMs += dur;
+        } else {
+          asleepStageMs += dur;
+          if (type.includes('deep')) deepMs += dur;
+          else if (type.includes('rem')) remMs += dur;
+          else if (type.includes('light')) lightMs += dur;
         }
       }
-      mins = Math.round(asleepMs / 60_000);
+    }
+
+    let mins = Number(sleep?.summary?.minutesAsleep ?? sleep?.summary?.minutes_asleep ?? 0);
+    if (!mins && asleepStageMs > 0) {
+      mins = Math.round(asleepStageMs / 60_000);
     }
     if (!mins && !Number.isNaN(startParsed) && endParsed > startParsed) {
       mins = Math.round((endParsed - startParsed) / 60_000);
     }
     if (mins <= 0) continue;
+
+    const deep = Math.round(deepMs / 60_000);
+    const light = Math.round(lightMs / 60_000);
+    const rem = Math.round(remMs / 60_000);
+    const awake = Math.round(awakeMs / 60_000);
 
     const sMs = !Number.isNaN(startParsed) ? startParsed : endParsed - mins * 60_000;
     const overlapIdx = sleepSessions.findIndex((existing) => {
@@ -633,79 +1290,147 @@ async function fetchGoogleHealthV4MetricsClient(
       return minLen > 0 && ov / minLen >= 0.45;
     });
     if (overlapIdx >= 0) {
-      if (mins > sleepSessions[overlapIdx].mins) {
-        sleepSessions[overlapIdx] = { start: sMs, end: endParsed, mins, dateKey };
+      const prev = sleepSessions[overlapIdx];
+      const hasStages = deep + light + rem > 0;
+      const prevHasStages = prev.deep + prev.light + prev.rem > 0;
+      if ((hasStages && !prevHasStages) || mins > prev.mins) {
+        sleepSessions[overlapIdx] = {
+          start: sMs,
+          end: endParsed,
+          mins,
+          deep,
+          light,
+          rem,
+          awake,
+          dateKey,
+        };
       }
     } else {
-      sleepSessions.push({ start: sMs, end: endParsed, mins, dateKey });
+      sleepSessions.push({ start: sMs, end: endParsed, mins, deep, light, rem, awake, dateKey });
     }
   }
 
-  const sleepByDay = new Map<string, number>();
+  const sleepByDay = new Map<
+    string,
+    { mins: number; deep: number; light: number; rem: number; awake: number }
+  >();
   for (const sess of sleepSessions) {
-    sleepByDay.set(sess.dateKey, (sleepByDay.get(sess.dateKey) || 0) + sess.mins);
+    const prev = sleepByDay.get(sess.dateKey) || { mins: 0, deep: 0, light: 0, rem: 0, awake: 0 };
+    sleepByDay.set(sess.dateKey, {
+      mins: prev.mins + sess.mins,
+      deep: prev.deep + sess.deep,
+      light: prev.light + sess.light,
+      rem: prev.rem + sess.rem,
+      awake: prev.awake + sess.awake,
+    });
   }
-  for (const [dateKey, mins] of sleepByDay.entries()) {
-    mergeClientDayMetric(dayMap, dateKey, { sleepMinutes: mins });
+  for (const [dateKey, v] of sleepByDay.entries()) {
+    mergeClientDayMetric(dayMap, dateKey, {
+      sleepMinutes: v.mins,
+      sleepDeepMinutes: v.deep > 0 ? v.deep : null,
+      sleepLightMinutes: v.light > 0 ? v.light : null,
+      sleepRemMinutes: v.rem > 0 ? v.rem : null,
+      sleepAwakeMinutes: v.awake > 0 ? v.awake : null,
+    });
   }
 
-  const activeRes = await fetchGoogleHealthV4PagedClient(
-    'https://health.googleapis.com/v4/users/me/dataTypes/active-minutes/dataPoints',
-    headers
-  );
-  if (activeRes.ok) {
+  const [
+    activeRes,
+    exerciseRes,
+    hrRes,
+    stepsRes,
+    distRes,
+    calRes,
+    floorsRes,
+    rhrRes,
+    hrvRes,
+    spo2Res,
+    respRes,
+    vo2Res,
+    weightRes,
+    bodyFatRes,
+    hydrationRes,
+  ] = await Promise.all([
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/active-minutes/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/heart-rate/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/distance/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/active-calories-burned/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/floors-climbed/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/resting-heart-rate/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/heart-rate-variability/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/oxygen-saturation/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/respiratory-rate/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/vo2-max/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/weight/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/body-fat/dataPoints', headers),
+    fetchGoogleHealthV4PagedClient('https://health.googleapis.com/v4/users/me/dataTypes/hydration/dataPoints', headers),
+  ]);
+
+  const sumByDay = async (
+    res: { ok: boolean; status: number; resp?: globalThis.Response; dataPoints: Array<Record<string, any>> },
+    extractor: (dp: Record<string, any>) => { ts: number; val: number } | null,
+    assign: (dk: string, sum: number) => void,
+    isCritical = false
+  ) => {
+    if (!res.ok) {
+      if (isCritical && res.resp && (res.status === 401 || res.status === 403)) {
+        authErrors.push(await parseClientGoogleApiError(res.resp, 'Google Health API v4'));
+      }
+      return;
+    }
     succeededCount += 1;
-    const activeByDay = new Map<string, number>();
-    for (const dp of activeRes.dataPoints) {
-      const am = dp.activeMinutes || dp.active_minutes || dp;
-      const endTime = am?.interval?.endTime || am?.interval?.end_time || dp.endTime;
-      const endParsed = endTime ? Date.parse(endTime) : NaN;
-      if (Number.isNaN(endParsed) || endParsed < startMs || endParsed > endMs) continue;
-      const dateKey = toClientDateKey(endParsed);
-      const mins = Number(am?.minutes ?? am?.activeMinutes ?? am?.value ?? 0);
-      if (mins > 0) activeByDay.set(dateKey, (activeByDay.get(dateKey) || 0) + mins);
+    const totals = new Map<string, number>();
+    for (const dp of res.dataPoints) {
+      const parsed = extractor(dp);
+      if (!parsed || Number.isNaN(parsed.ts) || parsed.ts < startMs || parsed.ts > endMs || parsed.val <= 0) {
+        continue;
+      }
+      const dk = toClientDateKey(parsed.ts);
+      totals.set(dk, (totals.get(dk) || 0) + parsed.val);
     }
-    for (const [dateKey, mins] of activeByDay.entries()) {
-      mergeClientDayMetric(dayMap, dateKey, { activityMinutes: mins });
+    for (const [dk, sum] of totals.entries()) {
+      assign(dk, sum);
     }
-  } else if (activeRes.resp && (activeRes.status === 401 || activeRes.status === 403)) {
-    authErrors.push(await parseClientGoogleApiError(activeRes.resp, 'Google Health API v4'));
-  }
+  };
 
-  const exerciseRes = await fetchGoogleHealthV4PagedClient(
-    'https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints',
-    headers
+  await sumByDay(
+    activeRes,
+    (dp) => {
+      const am = dp.activeMinutes || dp.active_minutes || dp;
+      const ts = Date.parse(am?.interval?.endTime || am?.interval?.end_time || dp.endTime || '');
+      const val = Number(am?.minutes ?? am?.activeMinutes ?? am?.value ?? 0);
+      return { ts, val };
+    },
+    (dk, sum) => mergeClientDayMetric(dayMap, dk, { activityMinutes: sum }),
+    true
   );
+
   if (exerciseRes.ok) {
     succeededCount += 1;
-    const exByDay = new Map<string, number>();
+    const exByDay = new Map<string, { mins: number; count: number }>();
     for (const dp of exerciseRes.dataPoints) {
       const ex = dp.exercise || dp;
-      const startTime = ex?.interval?.startTime || ex?.interval?.start_time;
-      const endTime = ex?.interval?.endTime || ex?.interval?.end_time;
-      const s = startTime ? Date.parse(startTime) : NaN;
-      const e = endTime ? Date.parse(endTime) : NaN;
+      const s = Date.parse(ex?.interval?.startTime || ex?.interval?.start_time || '');
+      const e = Date.parse(ex?.interval?.endTime || ex?.interval?.end_time || '');
       if (Number.isNaN(s) || Number.isNaN(e) || e < startMs || e > endMs || e <= s) continue;
-      const dateKey = toClientDateKey(e);
-      exByDay.set(dateKey, (exByDay.get(dateKey) || 0) + Math.round((e - s) / 60_000));
+      const dk = toClientDateKey(e);
+      const prev = exByDay.get(dk) || { mins: 0, count: 0 };
+      exByDay.set(dk, { mins: prev.mins + Math.round((e - s) / 60_000), count: prev.count + 1 });
     }
-    for (const [dateKey, mins] of exByDay.entries()) {
-      mergeClientDayMetric(dayMap, dateKey, { activityMinutes: mins });
+    for (const [dk, v] of exByDay.entries()) {
+      mergeClientDayMetric(dayMap, dk, { activityMinutes: v.mins, workoutsCount: v.count });
     }
   } else if (exerciseRes.resp && (exerciseRes.status === 401 || exerciseRes.status === 403)) {
     authErrors.push(await parseClientGoogleApiError(exerciseRes.resp, 'Google Health API v4'));
   }
 
-  const hrRes = await fetchGoogleHealthV4PagedClient(
-    'https://health.googleapis.com/v4/users/me/dataTypes/heart-rate/dataPoints',
-    headers
-  );
   if (hrRes.ok) {
     succeededCount += 1;
     for (const dp of hrRes.dataPoints) {
       const hr = dp.heartRate || dp.heart_rate || dp;
-      const ts = hr?.sampleTime || hr?.interval?.endTime || hr?.time;
-      const parsed = ts ? Date.parse(ts) : NaN;
+      const parsed = Date.parse(hr?.sampleTime || hr?.interval?.endTime || hr?.time || '');
       const bpm = Number(hr?.beatsPerMinute ?? hr?.bpm ?? 0);
       if (!Number.isNaN(parsed) && parsed >= startMs && parsed <= endMs && bpm > 0) {
         mergeClientDayMetric(dayMap, toClientDateKey(parsed), { avgHeartRate: bpm });
@@ -714,6 +1439,127 @@ async function fetchGoogleHealthV4MetricsClient(
   } else if (hrRes.resp && (hrRes.status === 401 || hrRes.status === 403)) {
     authErrors.push(await parseClientGoogleApiError(hrRes.resp, 'Google Health API v4'));
   }
+
+  await sumByDay(
+    stepsRes,
+    (dp) => {
+      const obj = dp.steps || dp;
+      const ts = Date.parse(obj?.interval?.endTime || obj?.interval?.end_time || '');
+      const val = Number(obj?.count ?? obj?.steps ?? 0);
+      return { ts, val };
+    },
+    (dk, sum) => mergeClientDayMetric(dayMap, dk, { steps: Math.round(sum) })
+  );
+
+  await sumByDay(
+    distRes,
+    (dp) => {
+      const obj = dp.distance || dp;
+      const ts = Date.parse(obj?.interval?.endTime || obj?.interval?.end_time || '');
+      const val = Number(obj?.meters ?? obj?.inMeters ?? obj?.distanceMeters ?? 0);
+      return { ts, val };
+    },
+    (dk, sum) => mergeClientDayMetric(dayMap, dk, { distanceMeters: Math.round(sum) })
+  );
+
+  await sumByDay(
+    calRes,
+    (dp) => {
+      const obj = dp.activeCaloriesBurned || dp.active_calories_burned || dp;
+      const ts = Date.parse(obj?.interval?.endTime || obj?.interval?.end_time || '');
+      const val = Number(obj?.kcal ?? obj?.kilocalories ?? obj?.calories ?? 0);
+      return { ts, val };
+    },
+    (dk, sum) => mergeClientDayMetric(dayMap, dk, { caloriesActive: Math.round(sum) })
+  );
+
+  await sumByDay(
+    floorsRes,
+    (dp) => {
+      const obj = dp.floorsClimbed || dp.floors_climbed || dp;
+      const ts = Date.parse(obj?.interval?.endTime || obj?.interval?.end_time || '');
+      const val = Number(obj?.floors ?? obj?.count ?? 0);
+      return { ts, val };
+    },
+    (dk, sum) => mergeClientDayMetric(dayMap, dk, { floorsClimbed: Math.round(sum) })
+  );
+
+  await sumByDay(
+    hydrationRes,
+    (dp) => {
+      const obj = dp.hydration || dp;
+      const ts = Date.parse(obj?.interval?.endTime || obj?.interval?.end_time || '');
+      const ml =
+        Number(obj?.milliliters ?? obj?.volumeMl ?? 0) ||
+        Number(obj?.liters ?? obj?.volumeLiters ?? 0) * 1000;
+      return { ts, val: ml };
+    },
+    (dk, sum) => mergeClientDayMetric(dayMap, dk, { hydrationMl: Math.round(sum) })
+  );
+
+  const samplePoints = (
+    res: { ok: boolean; dataPoints: Array<Record<string, any>> },
+    extractor: (dp: Record<string, any>) => { ts: number; partial: ClientDayMetricPartial } | null
+  ) => {
+    if (!res.ok) return;
+    succeededCount += 1;
+    for (const dp of res.dataPoints) {
+      const item = extractor(dp);
+      if (!item || Number.isNaN(item.ts) || item.ts < startMs || item.ts > endMs) continue;
+      mergeClientDayMetric(dayMap, toClientDateKey(item.ts), item.partial);
+    }
+  };
+
+  samplePoints(rhrRes, (dp) => {
+    const obj = dp.restingHeartRate || dp.resting_heart_rate || dp;
+    const ts = Date.parse(obj?.sampleTime || obj?.interval?.endTime || '');
+    const bpm = Number(obj?.beatsPerMinute ?? obj?.bpm ?? 0);
+    return bpm > 0 ? { ts, partial: { restingHeartRate: bpm } } : null;
+  });
+
+  samplePoints(hrvRes, (dp) => {
+    const obj = dp.heartRateVariability || dp.heart_rate_variability || dp;
+    const ts = Date.parse(obj?.sampleTime || obj?.interval?.endTime || '');
+    const rmssd = Number(obj?.heartRateVariabilityMillis ?? obj?.rmssdMillis ?? obj?.rmssd ?? 0);
+    return rmssd > 0 ? { ts, partial: { hrvMs: rmssd } } : null;
+  });
+
+  samplePoints(spo2Res, (dp) => {
+    const obj = dp.oxygenSaturation || dp.oxygen_saturation || dp;
+    const ts = Date.parse(obj?.sampleTime || obj?.interval?.endTime || '');
+    const pct = Number(obj?.percentage ?? obj?.spo2Percentage ?? 0);
+    return pct > 0 ? { ts, partial: { spo2Percent: pct } } : null;
+  });
+
+  samplePoints(respRes, (dp) => {
+    const obj = dp.respiratoryRate || dp.respiratory_rate || dp;
+    const ts = Date.parse(obj?.sampleTime || obj?.interval?.endTime || '');
+    const rate = Number(obj?.rate ?? obj?.breathsPerMinute ?? 0);
+    return rate > 0 ? { ts, partial: { respirationRate: rate } } : null;
+  });
+
+  samplePoints(vo2Res, (dp) => {
+    const obj = dp.vo2Max || dp.vo2_max || dp;
+    const ts = Date.parse(obj?.sampleTime || obj?.interval?.endTime || '');
+    const val = Number(obj?.vo2MaxMillilitersPerMinutePerKilogram ?? obj?.vo2Max ?? 0);
+    return val > 0 ? { ts, partial: { vo2Max: val } } : null;
+  });
+
+  samplePoints(weightRes, (dp) => {
+    const obj = dp.weight || dp;
+    const ts = Date.parse(obj?.sampleTime || obj?.interval?.endTime || '');
+    const kg =
+      Number(obj?.kilograms ?? obj?.weightKg ?? 0) ||
+      Number(obj?.grams ?? 0) / 1000;
+    return kg > 0 ? { ts, partial: { weightKg: kg } } : null;
+  });
+
+  samplePoints(bodyFatRes, (dp) => {
+    const obj = dp.bodyFat || dp.body_fat || dp;
+    const ts = Date.parse(obj?.sampleTime || obj?.interval?.endTime || '');
+    const pct = Number(obj?.percentage ?? obj?.bodyFatPercentage ?? 0);
+    return pct > 0 ? { ts, partial: { bodyFatPercent: pct } } : null;
+  });
 
   if (succeededCount === 0) {
     if (authErrors.length > 0) {
@@ -735,10 +1581,7 @@ async function fetchGoogleFitMetricsClient(
     Authorization: `Bearer ${accessToken}`,
     'Content-Type': 'application/json',
   };
-  const dayMap = new Map<
-    string,
-    { sleepMinutes: number; activityMinutes: number; hrValues: number[] }
-  >();
+  const dayMap = new Map<string, ClientDayAccumulator>();
   const authErrors: string[] = [];
   let succeededCount = 0;
 
@@ -762,7 +1605,9 @@ async function fetchGoogleFitMetricsClient(
     ),
   ]);
 
-  const detailedAsleep: ClientTimeInterval[] = [];
+  const lightIntervals: ClientTimeInterval[] = [];
+  const deepIntervals: ClientTimeInterval[] = [];
+  const remIntervals: ClientTimeInterval[] = [];
   const genericAsleep: ClientTimeInterval[] = [];
   const awakeIntervals: ClientTimeInterval[] = [];
 
@@ -788,8 +1633,12 @@ async function fetchGoogleFitMetricsClient(
           if (!Number.isFinite(sMs) || !Number.isFinite(eMs) || eMs <= sMs) continue;
           if (stage === 1 || stage === 3) {
             awakeIntervals.push({ start: sMs, end: eMs });
-          } else if (stage === 4 || stage === 5 || stage === 6) {
-            detailedAsleep.push({ start: sMs, end: eMs });
+          } else if (stage === 4) {
+            lightIntervals.push({ start: sMs, end: eMs });
+          } else if (stage === 5) {
+            deepIntervals.push({ start: sMs, end: eMs });
+          } else if (stage === 6) {
+            remIntervals.push({ start: sMs, end: eMs });
           } else {
             genericAsleep.push({ start: sMs, end: eMs });
           }
@@ -817,16 +1666,24 @@ async function fetchGoogleFitMetricsClient(
     authErrors.push(await parseClientGoogleApiError(sessResp, 'Google Fit API'));
   }
 
-  const mergedDetailed = mergeClientTimeIntervals(detailedAsleep);
-  const mergedGeneric = mergeClientTimeIntervals(genericAsleep);
+  const mergedDeep = mergeClientTimeIntervals(deepIntervals);
+  const mergedRem = mergeClientTimeIntervals(remIntervals);
+  const mergedLight = subtractClientTimeIntervals(mergeClientTimeIntervals(lightIntervals), [
+    ...mergedDeep,
+    ...mergedRem,
+  ]);
+  const mergedDetailed = mergeClientTimeIntervals([...mergedDeep, ...mergedRem, ...mergedLight]);
   const mergedAwake = mergeClientTimeIntervals(awakeIntervals);
   const cleanGeneric = subtractClientTimeIntervals(
-    subtractClientTimeIntervals(mergedGeneric, mergedDetailed),
+    subtractClientTimeIntervals(mergeClientTimeIntervals(genericAsleep), mergedDetailed),
     mergedAwake
   );
   const asleepIntervals = mergeClientTimeIntervals([...mergedDetailed, ...cleanGeneric]);
 
-  const sleepByDay = new Map<string, number>();
+  const sleepStatsByDay = new Map<
+    string,
+    { mins: number; deep: number; light: number; rem: number; awake: number }
+  >();
   if (asleepIntervals.length > 0) {
     const episodes: ClientTimeInterval[][] = [[asleepIntervals[0]]];
     for (let i = 1; i < asleepIntervals.length; i++) {
@@ -844,50 +1701,88 @@ async function fetchGoogleFitMetricsClient(
       }
     }
 
+    const sumOverlapMinutes = (ivs: ClientTimeInterval[], wStart: number, wEnd: number): number => {
+      let ms = 0;
+      for (const iv of ivs) {
+        const ov = Math.min(iv.end, wEnd) - Math.max(iv.start, wStart);
+        if (ov > 0) ms += ov;
+      }
+      return Math.round(ms / 60_000);
+    };
+
     for (const ep of episodes) {
+      const epStart = ep[0].start;
       const epEnd = ep[ep.length - 1].end;
       if (epEnd < startMs || epEnd > endMs) continue;
       const asleepMs = ep.reduce((sum, iv) => sum + (iv.end - iv.start), 0);
       const mins = Math.round(asleepMs / 60_000);
       if (mins > 0) {
         const dk = toClientDateKey(epEnd);
-        sleepByDay.set(dk, Math.min(1440, (sleepByDay.get(dk) || 0) + mins));
+        const deep = sumOverlapMinutes(mergedDeep, epStart, epEnd);
+        const light = sumOverlapMinutes(mergedLight, epStart, epEnd);
+        const rem = sumOverlapMinutes(mergedRem, epStart, epEnd);
+        const awake = sumOverlapMinutes(mergedAwake, epStart, epEnd);
+
+        const prev = sleepStatsByDay.get(dk) || { mins: 0, deep: 0, light: 0, rem: 0, awake: 0 };
+        sleepStatsByDay.set(dk, {
+          mins: Math.min(1440, prev.mins + mins),
+          deep: prev.deep + deep,
+          light: prev.light + light,
+          rem: prev.rem + rem,
+          awake: prev.awake + awake,
+        });
       }
     }
   }
 
-  // Fallback for days with Fit Sleep Sessions (activityType=72) but no sleep.segment points
   for (const sess of mergeClientTimeIntervals(sleepSessions)) {
     if (sess.end < startMs || sess.end > endMs) continue;
     const dk = toClientDateKey(sess.end);
-    if ((sleepByDay.get(dk) || 0) === 0) {
+    if ((sleepStatsByDay.get(dk)?.mins || 0) === 0) {
       const mins = Math.round((sess.end - sess.start) / 60_000);
       if (mins > 0) {
-        sleepByDay.set(dk, Math.min(1440, mins));
+        sleepStatsByDay.set(dk, { mins: Math.min(1440, mins), deep: 0, light: 0, rem: 0, awake: 0 });
       }
     }
   }
 
-  for (const [dateKey, mins] of sleepByDay.entries()) {
-    mergeClientDayMetric(dayMap, dateKey, { sleepMinutes: Math.round(mins) });
+  for (const [dateKey, st] of sleepStatsByDay.entries()) {
+    mergeClientDayMetric(dayMap, dateKey, {
+      sleepMinutes: st.mins,
+      sleepDeepMinutes: st.deep > 0 ? st.deep : null,
+      sleepLightMinutes: st.light > 0 ? st.light : null,
+      sleepRemMinutes: st.rem > 0 ? st.rem : null,
+      sleepAwakeMinutes: st.awake > 0 ? st.awake : null,
+    });
   }
 
-  const actResp = await fetch(
-    'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
-    {
+  const queryFitBucket = async (
+    dataTypeName: string,
+    isCritical = false
+  ): Promise<
+    Array<{
+      dateKey: string;
+      points: Array<{ value?: Array<{ intVal?: number; fpVal?: number }> }>;
+    }>
+  > => {
+    const resp = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        aggregateBy: [{ dataTypeName: 'com.google.active_minutes' }],
+        aggregateBy: [{ dataTypeName }],
         bucketByTime: { durationMillis: 86400000 },
         startTimeMillis: startMs,
         endTimeMillis: endMs,
       }),
+    });
+    if (!resp.ok) {
+      if (isCritical && (resp.status === 401 || resp.status === 403)) {
+        authErrors.push(await parseClientGoogleApiError(resp, 'Google Fit API'));
+      }
+      return [];
     }
-  );
-  if (actResp.ok) {
     succeededCount += 1;
-    const actJson = (await actResp.json()) as {
+    const json = (await resp.json()) as {
       bucket?: Array<{
         startTimeMillis?: string;
         endTimeMillis?: string;
@@ -896,58 +1791,140 @@ async function fetchGoogleFitMetricsClient(
         }>;
       }>;
     };
-    for (const b of actJson.bucket || []) {
-      const midMs =
-        (Number(b.startTimeMillis || 0) + Number(b.endTimeMillis || 0)) / 2 || Date.now();
+    const out: Array<{
+      dateKey: string;
+      points: Array<{ value?: Array<{ intVal?: number; fpVal?: number }> }>;
+    }> = [];
+    for (const b of json.bucket || []) {
+      const midMs = (Number(b.startTimeMillis || 0) + Number(b.endTimeMillis || 0)) / 2 || Date.now();
       const dateKey = toClientDateKey(midMs);
+      const pts: Array<{ value?: Array<{ intVal?: number; fpVal?: number }> }> = [];
       for (const ds of b.dataset || []) {
-        for (const p of ds.point || []) {
-          const mins = p.value?.[0]?.intVal ?? Math.round(p.value?.[0]?.fpVal || 0);
-          if (mins > 0) mergeClientDayMetric(dayMap, dateKey, { activityMinutes: mins });
-        }
+        for (const p of ds.point || []) pts.push(p);
       }
+      out.push({ dateKey, points: pts });
     }
-  } else if (actResp.status === 401 || actResp.status === 403) {
-    authErrors.push(await parseClientGoogleApiError(actResp, 'Google Fit API'));
+    return out;
+  };
+
+  const [
+    actBuckets,
+    stepsBuckets,
+    distBuckets,
+    calBuckets,
+    heartMinBuckets,
+    hrBuckets,
+    weightBuckets,
+    fatBuckets,
+    spo2Buckets,
+    hydrationBuckets,
+    allSessionsRes,
+  ] = await Promise.all([
+    queryFitBucket('com.google.active_minutes', true),
+    queryFitBucket('com.google.step_count.delta'),
+    queryFitBucket('com.google.distance.delta'),
+    queryFitBucket('com.google.calories.expended'),
+    queryFitBucket('com.google.heart_minutes'),
+    queryFitBucket('com.google.heart_rate.bpm', true),
+    queryFitBucket('com.google.weight'),
+    queryFitBucket('com.google.body.fat.percentage'),
+    queryFitBucket('com.google.oxygen_saturation'),
+    queryFitBucket('com.google.hydration'),
+    fetch(
+      `https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${encodeURIComponent(
+        new Date(startMs).toISOString()
+      )}&endTime=${encodeURIComponent(new Date(endMs).toISOString())}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    ).catch(() => null),
+  ]);
+
+  for (const b of actBuckets) {
+    for (const p of b.points) {
+      const mins = p.value?.[0]?.intVal ?? Math.round(p.value?.[0]?.fpVal || 0);
+      if (mins > 0) mergeClientDayMetric(dayMap, b.dateKey, { activityMinutes: mins });
+    }
+  }
+  for (const b of stepsBuckets) {
+    for (const p of b.points) {
+      const steps = p.value?.[0]?.intVal ?? Math.round(p.value?.[0]?.fpVal || 0);
+      if (steps > 0) mergeClientDayMetric(dayMap, b.dateKey, { steps });
+    }
+  }
+  for (const b of distBuckets) {
+    for (const p of b.points) {
+      const m = Math.round(p.value?.[0]?.fpVal ?? p.value?.[0]?.intVal ?? 0);
+      if (m > 0) mergeClientDayMetric(dayMap, b.dateKey, { distanceMeters: m });
+    }
+  }
+  for (const b of calBuckets) {
+    for (const p of b.points) {
+      const kcal = Math.round(p.value?.[0]?.fpVal ?? p.value?.[0]?.intVal ?? 0);
+      if (kcal > 0) mergeClientDayMetric(dayMap, b.dateKey, { caloriesActive: kcal });
+    }
+  }
+  for (const b of heartMinBuckets) {
+    for (const p of b.points) {
+      const pts = Math.round(p.value?.[0]?.fpVal ?? p.value?.[0]?.intVal ?? 0);
+      if (pts > 0) mergeClientDayMetric(dayMap, b.dateKey, { heartPoints: pts });
+    }
+  }
+  for (const b of hrBuckets) {
+    for (const p of b.points) {
+      const avg = p.value?.[0]?.fpVal ?? p.value?.[0]?.intVal ?? 0;
+      const minHr = p.value?.[2]?.fpVal ?? p.value?.[2]?.intVal ?? 0;
+      if (avg > 0) mergeClientDayMetric(dayMap, b.dateKey, { avgHeartRate: avg });
+      if (minHr >= 30 && minHr <= 120) mergeClientDayMetric(dayMap, b.dateKey, { restingHeartRate: minHr });
+    }
+  }
+  for (const b of weightBuckets) {
+    for (const p of b.points) {
+      const kg = p.value?.[0]?.fpVal ?? p.value?.[0]?.intVal ?? 0;
+      if (kg >= 20 && kg <= 400) mergeClientDayMetric(dayMap, b.dateKey, { weightKg: kg });
+    }
+  }
+  for (const b of fatBuckets) {
+    for (const p of b.points) {
+      const pct = p.value?.[0]?.fpVal ?? p.value?.[0]?.intVal ?? 0;
+      if (pct >= 1 && pct <= 75) mergeClientDayMetric(dayMap, b.dateKey, { bodyFatPercent: pct });
+    }
+  }
+  for (const b of spo2Buckets) {
+    for (const p of b.points) {
+      const pct = p.value?.[0]?.fpVal ?? p.value?.[0]?.intVal ?? 0;
+      if (pct >= 50 && pct <= 100) mergeClientDayMetric(dayMap, b.dateKey, { spo2Percent: pct });
+    }
+  }
+  for (const b of hydrationBuckets) {
+    let litersSum = 0;
+    for (const p of b.points) {
+      const l = p.value?.[0]?.fpVal ?? p.value?.[0]?.intVal ?? 0;
+      if (l > 0) litersSum += l;
+    }
+    if (litersSum > 0) {
+      mergeClientDayMetric(dayMap, b.dateKey, { hydrationMl: Math.round(litersSum * 1000) });
+    }
   }
 
-  const hrResp = await fetch(
-    'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        aggregateBy: [{ dataTypeName: 'com.google.heart_rate.bpm' }],
-        bucketByTime: { durationMillis: 86400000 },
-        startTimeMillis: startMs,
-        endTimeMillis: endMs,
-      }),
-    }
-  );
-  if (hrResp.ok) {
-    succeededCount += 1;
-    const hrJson = (await hrResp.json()) as {
-      bucket?: Array<{
+  if (allSessionsRes && allSessionsRes.ok) {
+    const sessJson = (await allSessionsRes.json()) as {
+      session?: Array<{
+        activityType?: number;
         startTimeMillis?: string;
         endTimeMillis?: string;
-        dataset?: Array<{
-          point?: Array<{ value?: Array<{ fpVal?: number; intVal?: number }> }>;
-        }>;
       }>;
     };
-    for (const b of hrJson.bucket || []) {
-      const midMs =
-        (Number(b.startTimeMillis || 0) + Number(b.endTimeMillis || 0)) / 2 || Date.now();
-      const dateKey = toClientDateKey(midMs);
-      for (const ds of b.dataset || []) {
-        for (const p of ds.point || []) {
-          const bpm = p.value?.[0]?.fpVal ?? p.value?.[0]?.intVal ?? 0;
-          if (bpm > 0) mergeClientDayMetric(dayMap, dateKey, { avgHeartRate: bpm });
-        }
-      }
+    const workoutByDay = new Map<string, number>();
+    for (const s of sessJson.session || []) {
+      if (s.activityType === 72 || s.activityType === 3) continue;
+      const eMs = Number(s.endTimeMillis || 0);
+      const sMs = Number(s.startTimeMillis || 0);
+      if (!Number.isFinite(eMs) || eMs <= sMs || eMs < startMs || eMs > endMs) continue;
+      const dk = toClientDateKey(eMs);
+      workoutByDay.set(dk, (workoutByDay.get(dk) || 0) + 1);
     }
-  } else if (hrResp.status === 401 || hrResp.status === 403) {
-    authErrors.push(await parseClientGoogleApiError(hrResp, 'Google Fit API'));
+    for (const [dk, count] of workoutByDay.entries()) {
+      mergeClientDayMetric(dayMap, dk, { workoutsCount: count });
+    }
   }
 
   if (succeededCount === 0 && authErrors.length > 0) {
@@ -1596,6 +2573,10 @@ export function calculateRecoveryMetrics(params: {
   sleepDurationMinutes: number;
   activityDurationMinutes: number;
   avgHeartRate?: number | null;
+  restingHeartRate?: number | null;
+  hrvMs?: number | null;
+  stressLevel?: number | null;
+  bodyBattery?: number | null;
   todayMood?: number | null;
 }): { recoveryScore: number; recoveryState: RecoveryState } {
   const sleep = Math.max(0, Math.min(1440, params.sleepDurationMinutes));
@@ -1618,19 +2599,33 @@ export function calculateRecoveryMetrics(params: {
   if (activity >= 25 && activity <= 75) {
     activityPoints = 33;
   } else if (activity < 25) {
-    // Low activity indicates unused activation potential
     activityPoints = 18 + Math.round((activity / 25) * 12);
   } else {
-    // High load: check if sleep supports recovery
     const overLoad = activity - 75;
     const sleepBuffer = sleep >= 450 ? 0.12 : 0.25;
     activityPoints = Math.max(8, Math.round(33 - overLoad * sleepBuffer));
   }
 
-  // 3. Optional Heart Rate & Mood Modifier
+  // 3. Optional Vital, Biometric & Mood Modifiers (subtle, bounded so absent fields don't distort)
   let modifier = 0;
   if (typeof params.avgHeartRate === 'number' && params.avgHeartRate >= 145 && sleep < 420) {
     modifier -= 6;
+  }
+  if (typeof params.restingHeartRate === 'number' && params.restingHeartRate > 0) {
+    if (params.restingHeartRate <= 55) modifier += 3;
+    else if (params.restingHeartRate >= 75) modifier -= 4;
+  }
+  if (typeof params.hrvMs === 'number' && params.hrvMs > 0) {
+    if (params.hrvMs >= 65) modifier += 4;
+    else if (params.hrvMs <= 28) modifier -= 5;
+  }
+  if (typeof params.stressLevel === 'number' && params.stressLevel >= 0) {
+    if (params.stressLevel >= 65) modifier -= 5;
+    else if (params.stressLevel <= 25) modifier += 2;
+  }
+  if (typeof params.bodyBattery === 'number' && params.bodyBattery >= 0) {
+    if (params.bodyBattery >= 75) modifier += 4;
+    else if (params.bodyBattery <= 25) modifier -= 5;
   }
   if (typeof params.todayMood === 'number') {
     if (params.todayMood <= 2) modifier -= 6;
@@ -1664,6 +2659,7 @@ export function buildTodayHealthRecord(params: {
   overrideSleepMinutes?: number;
   overrideActivityMinutes?: number;
   overrideAvgHeartRate?: number | null;
+  overrideMetrics?: Partial<HealthDailyRecord>;
   extraSources?: HealthDataSource[];
   referenceDate?: Date;
 }): HealthDailyRecord {
@@ -1765,12 +2761,61 @@ export function buildTodayHealthRecord(params: {
   const avgHeartRate =
     typeof params.overrideAvgHeartRate === 'number'
       ? Math.round(params.overrideAvgHeartRate)
-      : telemetry.bleAvgHeartRate ?? params.existingRecord?.avgHeartRate ?? null;
+      : telemetry.bleAvgHeartRate ??
+        params.overrideMetrics?.avgHeartRate ??
+        params.existingRecord?.avgHeartRate ??
+        null;
+
+  const pickOpt = (
+    overrideVal: number | null | undefined,
+    existingVal: number | null | undefined
+  ): number | null => {
+    if (typeof overrideVal === 'number' && Number.isFinite(overrideVal)) return overrideVal;
+    if (typeof existingVal === 'number' && Number.isFinite(existingVal)) return existingVal;
+    return null;
+  };
+  const pickMaxInt = (
+    overrideVal: number | null | undefined,
+    existingVal: number | null | undefined
+  ): number | null => {
+    const o = typeof overrideVal === 'number' && Number.isFinite(overrideVal) ? overrideVal : null;
+    const e = typeof existingVal === 'number' && Number.isFinite(existingVal) ? existingVal : null;
+    if (o !== null && e !== null) return Math.max(o, e);
+    return o ?? e;
+  };
+
+  const om = params.overrideMetrics;
+  const ex = params.existingRecord;
+
+  const sleepDeepMinutes = pickOpt(om?.sleepDeepMinutes, ex?.sleepDeepMinutes);
+  const sleepLightMinutes = pickOpt(om?.sleepLightMinutes, ex?.sleepLightMinutes);
+  const sleepRemMinutes = pickOpt(om?.sleepRemMinutes, ex?.sleepRemMinutes);
+  const sleepAwakeMinutes = pickOpt(om?.sleepAwakeMinutes, ex?.sleepAwakeMinutes);
+  const steps = pickMaxInt(om?.steps, ex?.steps);
+  const distanceMeters = pickMaxInt(om?.distanceMeters, ex?.distanceMeters);
+  const caloriesActive = pickMaxInt(om?.caloriesActive, ex?.caloriesActive);
+  const floorsClimbed = pickMaxInt(om?.floorsClimbed, ex?.floorsClimbed);
+  const heartPoints = pickMaxInt(om?.heartPoints, ex?.heartPoints);
+  const workoutsCount = pickMaxInt(om?.workoutsCount, ex?.workoutsCount);
+  const restingHeartRate = pickOpt(om?.restingHeartRate, ex?.restingHeartRate);
+  const hrvMs = pickOpt(om?.hrvMs, ex?.hrvMs);
+  const stressLevel = pickOpt(om?.stressLevel, ex?.stressLevel);
+  const bodyBattery = pickOpt(om?.bodyBattery, ex?.bodyBattery);
+  const spo2Percent = pickOpt(om?.spo2Percent, ex?.spo2Percent);
+  const respirationRate = pickOpt(om?.respirationRate, ex?.respirationRate);
+  const vo2Max = pickOpt(om?.vo2Max, ex?.vo2Max);
+  const weightKg = pickOpt(om?.weightKg, ex?.weightKg);
+  const bodyFatPercent = pickOpt(om?.bodyFatPercent, ex?.bodyFatPercent);
+  const hydrationMl = pickMaxInt(om?.hydrationMl, ex?.hydrationMl);
 
   const { recoveryScore, recoveryState } = calculateRecoveryMetrics({
     sleepDurationMinutes,
     activityDurationMinutes,
     avgHeartRate,
+    restingHeartRate,
+    hrvMs,
+    stressLevel,
+    bodyBattery,
     todayMood,
   });
 
@@ -1780,6 +2825,26 @@ export function buildTodayHealthRecord(params: {
     sleepDurationMinutes,
     activityDurationMinutes,
     avgHeartRate,
+    sleepDeepMinutes,
+    sleepLightMinutes,
+    sleepRemMinutes,
+    sleepAwakeMinutes,
+    steps,
+    distanceMeters,
+    caloriesActive,
+    floorsClimbed,
+    heartPoints,
+    workoutsCount,
+    restingHeartRate,
+    hrvMs,
+    stressLevel,
+    bodyBattery,
+    spo2Percent,
+    respirationRate,
+    vo2Max,
+    weightKg,
+    bodyFatPercent,
+    hydrationMl,
     sources: Array.from(sourcesSet).slice(0, 8),
     recoveryScore,
     recoveryState,

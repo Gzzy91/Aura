@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserStats, SkillStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry, WeeklyCoachSummary, WeeklyRetrospective, HealthDailyRecord } from '../types';
+import { UserStats, SkillStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry, WeeklyCoachSummary, WeeklyRetrospective, HealthDailyRecord, HealthMetricKey } from '../types';
 import { User } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { toast } from 'sonner';
@@ -86,6 +86,7 @@ interface AppState {
   settings: {
     isPinEnabled: boolean;
     pin: string | null;
+    visibleHealthMetrics?: HealthMetricKey[];
   };
   stats: UserStats;
   quests: Quest[];
@@ -103,7 +104,7 @@ interface AppState {
   setUser: (user: User | null) => void;
   setInitialized: (val: boolean) => void;
   setLocked: (val: boolean) => void;
-  updateSettings: (updates: Partial<{ isPinEnabled: boolean; pin: string | null }>) => void;
+  updateSettings: (updates: Partial<{ isPinEnabled: boolean; pin: string | null; visibleHealthMetrics: HealthMetricKey[] }>) => void;
   addQuest: (quest: Omit<Quest, 'id' | 'completed' | 'createdAt'>) => void;
   completeQuest: (id: string, isNegativeHabit?: boolean, customDate?: number) => number | void;
   failQuest: (id: string) => void;
@@ -724,15 +725,47 @@ export const useStore = create<AppState>()(
       },
 
       saveHealthRecord: async (record) => {
+        const optInt = (val: number | null | undefined, min: number, max: number): number | null =>
+          typeof val === 'number' && Number.isFinite(val)
+            ? Math.max(min, Math.min(max, Math.round(val)))
+            : null;
+        const optFloat = (
+          val: number | null | undefined,
+          min: number,
+          max: number,
+          decimals = 1
+        ): number | null => {
+          if (typeof val !== 'number' || !Number.isFinite(val)) return null;
+          const factor = 10 ** decimals;
+          return Math.max(min, Math.min(max, Math.round(val * factor) / factor));
+        };
+
         const sanitized: HealthDailyRecord = {
           id: record.id,
           date: Math.round(record.date),
           sleepDurationMinutes: Math.max(0, Math.min(1440, Math.round(record.sleepDurationMinutes))),
           activityDurationMinutes: Math.max(0, Math.min(1440, Math.round(record.activityDurationMinutes))),
-          avgHeartRate:
-            typeof record.avgHeartRate === 'number'
-              ? Math.max(25, Math.min(240, Math.round(record.avgHeartRate)))
-              : null,
+          avgHeartRate: optInt(record.avgHeartRate, 25, 240),
+          sleepDeepMinutes: optInt(record.sleepDeepMinutes, 0, 1440),
+          sleepLightMinutes: optInt(record.sleepLightMinutes, 0, 1440),
+          sleepRemMinutes: optInt(record.sleepRemMinutes, 0, 1440),
+          sleepAwakeMinutes: optInt(record.sleepAwakeMinutes, 0, 1440),
+          steps: optInt(record.steps, 0, 500000),
+          distanceMeters: optInt(record.distanceMeters, 0, 1000000),
+          caloriesActive: optInt(record.caloriesActive, 0, 50000),
+          floorsClimbed: optInt(record.floorsClimbed, 0, 10000),
+          heartPoints: optInt(record.heartPoints, 0, 5000),
+          workoutsCount: optInt(record.workoutsCount, 0, 100),
+          restingHeartRate: optInt(record.restingHeartRate, 25, 220),
+          hrvMs: optFloat(record.hrvMs, 0, 500, 1),
+          stressLevel: optInt(record.stressLevel, 0, 100),
+          bodyBattery: optInt(record.bodyBattery, 0, 100),
+          spo2Percent: optFloat(record.spo2Percent, 50, 100, 1),
+          respirationRate: optFloat(record.respirationRate, 4, 80, 1),
+          vo2Max: optFloat(record.vo2Max, 10, 110, 1),
+          weightKg: optFloat(record.weightKg, 20, 400, 1),
+          bodyFatPercent: optFloat(record.bodyFatPercent, 1, 75, 1),
+          hydrationMl: optInt(record.hydrationMl, 0, 30000),
           sources: Array.from(new Set(record.sources || [])).slice(0, 8),
           recoveryScore: Math.max(0, Math.min(100, Math.round(record.recoveryScore))),
           recoveryState: record.recoveryState,
@@ -1405,7 +1438,8 @@ export const useStore = create<AppState>()(
                 stats: initialStats,
                 widgetOrder: state.widgetOrder,
                 notifiedQuestIds: state.notifiedQuestIds,
-                lastTrainingGeneratedDate: state.lastTrainingGeneratedDate
+                lastTrainingGeneratedDate: state.lastTrainingGeneratedDate,
+                settings: state.settings
               })).catch(handleSeedError(`users/${userId}`));
               state.quests.forEach(q => setDoc(doc(questsColRef, q.id), cleanData(q)).catch(handleSeedError(`users/${userId}/quests/${q.id}`)));
               state.diaryEntries.forEach(e => setDoc(doc(diaryColRef, e.id), cleanData(e)).catch(handleSeedError(`users/${userId}/diaryEntries/${e.id}`)));

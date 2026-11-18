@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { ComponentType, useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { PinLock } from './components/PinLock';
@@ -24,19 +24,47 @@ import { generateWeeklyRetrospective } from './services/coachService';
 
 import { Login } from './pages/Login';
 
-const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
-const Quests = lazy(() => import('./pages/Quests').then((m) => ({ default: m.Quests })));
-const Habits = lazy(() => import('./pages/Habits').then((m) => ({ default: m.Habits })));
-const Skills = lazy(() => import('./pages/Skills').then((m) => ({ default: m.Skills })));
-const Avatar = lazy(() => import('./pages/Avatar').then((m) => ({ default: m.Avatar })));
-const AICoach = lazy(() => import('./pages/AICoach').then((m) => ({ default: m.AICoach })));
-const Calendar = lazy(() => import('./pages/Calendar').then((m) => ({ default: m.Calendar })));
-const Diary = lazy(() => import('./pages/Diary').then((m) => ({ default: m.Diary })));
-const Visions = lazy(() => import('./pages/Visions').then((m) => ({ default: m.Visions })));
-const Focus = lazy(() => import('./pages/Focus').then((m) => ({ default: m.Focus })));
-const Mentaltraining = lazy(() => import('./pages/Mentaltraining').then((m) => ({ default: m.Mentaltraining })));
-const FoodJournal = lazy(() => import('./pages/FoodJournal').then((m) => ({ default: m.FoodJournal })));
-const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+function lazyWithRetry<T extends ComponentType<any>>(
+  importer: () => Promise<{ default: T }>
+) {
+  return lazy(async () => {
+    const storageKey = 'aura_chunk_reload_attempted';
+    try {
+      const mod = await importer();
+      try {
+        sessionStorage.removeItem(storageKey);
+      } catch {
+        // ignore storage errors
+      }
+      return mod;
+    } catch (error) {
+      try {
+        if (!sessionStorage.getItem(storageKey)) {
+          sessionStorage.setItem(storageKey, '1');
+          window.location.reload();
+          return new Promise<{ default: T }>(() => {});
+        }
+      } catch {
+        // ignore storage errors
+      }
+      throw error;
+    }
+  });
+}
+
+const Dashboard = lazyWithRetry(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
+const Quests = lazyWithRetry(() => import('./pages/Quests').then((m) => ({ default: m.Quests })));
+const Habits = lazyWithRetry(() => import('./pages/Habits').then((m) => ({ default: m.Habits })));
+const Skills = lazyWithRetry(() => import('./pages/Skills').then((m) => ({ default: m.Skills })));
+const Avatar = lazyWithRetry(() => import('./pages/Avatar').then((m) => ({ default: m.Avatar })));
+const AICoach = lazyWithRetry(() => import('./pages/AICoach').then((m) => ({ default: m.AICoach })));
+const Calendar = lazyWithRetry(() => import('./pages/Calendar').then((m) => ({ default: m.Calendar })));
+const Diary = lazyWithRetry(() => import('./pages/Diary').then((m) => ({ default: m.Diary })));
+const Visions = lazyWithRetry(() => import('./pages/Visions').then((m) => ({ default: m.Visions })));
+const Focus = lazyWithRetry(() => import('./pages/Focus').then((m) => ({ default: m.Focus })));
+const Mentaltraining = lazyWithRetry(() => import('./pages/Mentaltraining').then((m) => ({ default: m.Mentaltraining })));
+const FoodJournal = lazyWithRetry(() => import('./pages/FoodJournal').then((m) => ({ default: m.FoodJournal })));
+const Settings = lazyWithRetry(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 
 function PageLoader() {
   return (
@@ -50,13 +78,14 @@ const INACTIVITY_TIMEOUT = 1 * 60 * 1000; // 1 minute
 
 function AppContent() {
   const { user, loading, isInitialized, questsSynced, focusSynced, quests, focusSessions, stats, settings, setLocked, setUser, syncWithFirestore } = useStore();
-  const prevLevelRef = useRef(stats.level);
+  const prevLevelRef = useRef(stats?.level ?? 1);
   const lastActivityRef = useRef<number>(Date.now());
   const autoRetroTriggeredRef = useRef<Set<string>>(new Set());
   const navigate = useNavigate();
+  const isPinEnabled = Boolean(settings?.isPinEnabled);
 
   useEffect(() => {
-    if (!settings.isPinEnabled || !user) return;
+    if (!isPinEnabled || !user) return;
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -90,42 +119,63 @@ function AppContent() {
       document.removeEventListener('touchstart', handleActivity);
       clearInterval(inactivityInterval);
     };
-  }, [settings.isPinEnabled, user, setLocked]);
+  }, [isPinEnabled, user, setLocked]);
 
   useEffect(() => {
     let unsubSync: (() => void) | null = null;
+    let authResolved = false;
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      
-      // Clean up previous sync listener if it exists
-      if (unsubSync) {
-        unsubSync();
-        unsubSync = null;
+    const authFallbackTimer = setTimeout(() => {
+      if (!authResolved) {
+        console.warn('Auth state initialization timed out; releasing loading gate.');
+        setUser(auth.currentUser ?? null);
       }
+    }, 4000);
 
-      if (user) {
-        unsubSync = syncWithFirestore(user.uid);
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (currentUser) => {
+        authResolved = true;
+        clearTimeout(authFallbackTimer);
+        setUser(currentUser);
+
+        // Clean up previous sync listener if it exists
+        if (unsubSync) {
+          unsubSync();
+          unsubSync = null;
+        }
+
+        if (currentUser) {
+          unsubSync = syncWithFirestore(currentUser.uid);
+        }
+      },
+      (error) => {
+        authResolved = true;
+        clearTimeout(authFallbackTimer);
+        console.error('Firebase Auth listener error:', error);
+        setUser(auth.currentUser ?? null);
       }
-    });
+    );
 
     return () => {
+      clearTimeout(authFallbackTimer);
       unsubscribe();
       if (unsubSync) unsubSync();
     };
   }, [setUser, syncWithFirestore]);
 
   useEffect(() => {
-    if (stats.level > prevLevelRef.current) {
+    const currentLevel = stats?.level ?? 1;
+    if (currentLevel > prevLevelRef.current) {
       triggerLevelUpConfetti();
-      toast.success(`Level Up! Du hast Level ${stats.level} erreicht!`, {
+      toast.success(`Level Up! Du hast Level ${currentLevel} erreicht!`, {
         duration: 5000,
         icon: '🎉',
         id: 'level-up',
       });
     }
-    prevLevelRef.current = stats.level;
-  }, [stats.level]);
+    prevLevelRef.current = currentLevel;
+  }, [stats?.level]);
 
   const runAutoFailCheck = () => {
     const {

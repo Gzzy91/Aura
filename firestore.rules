@@ -110,7 +110,8 @@ service cloud.firestore {
              (!('widgetOrder' in data) || data.widgetOrder is list) &&
              (!('notifiedQuestIds' in data) || data.notifiedQuestIds is list) &&
              (!('lastTrainingGeneratedDate' in data) || data.lastTrainingGeneratedDate is string || data.lastTrainingGeneratedDate == null) &&
-             (!('settings' in data) || data.settings is map);
+             (!('settings' in data) || (data.settings is map &&
+               (!('visibleHealthMetrics' in data.settings) || (data.settings.visibleHealthMetrics is list && data.settings.visibleHealthMetrics.size() <= 30))));
     }
 
     function isValidQuest(data) {
@@ -178,6 +179,14 @@ service cloud.firestore {
              data.generatedAt is int;
     }
 
+    function isOptionalIntRange(data, key, minVal, maxVal) {
+      return !(key in data) || data[key] == null || (data[key] is int && data[key] >= minVal && data[key] <= maxVal);
+    }
+
+    function isOptionalNumRange(data, key, minVal, maxVal) {
+      return !(key in data) || data[key] == null || (data[key] is number && data[key] >= minVal && data[key] <= maxVal);
+    }
+
     function isValidHealthRecord(data, recordId) {
       return hasRequiredFields(['id', 'date', 'sleepDurationMinutes', 'activityDurationMinutes', 'sources', 'recoveryScore', 'recoveryState', 'syncedAt']) &&
              hasOnlyAllowedFields([
@@ -186,6 +195,26 @@ service cloud.firestore {
                'sleepDurationMinutes',
                'activityDurationMinutes',
                'avgHeartRate',
+               'sleepDeepMinutes',
+               'sleepLightMinutes',
+               'sleepRemMinutes',
+               'sleepAwakeMinutes',
+               'steps',
+               'distanceMeters',
+               'caloriesActive',
+               'floorsClimbed',
+               'heartPoints',
+               'workoutsCount',
+               'restingHeartRate',
+               'hrvMs',
+               'stressLevel',
+               'bodyBattery',
+               'spo2Percent',
+               'respirationRate',
+               'vo2Max',
+               'weightKg',
+               'bodyFatPercent',
+               'hydrationMl',
                'sources',
                'recoveryScore',
                'recoveryState',
@@ -198,6 +227,26 @@ service cloud.firestore {
              data.sleepDurationMinutes is int && data.sleepDurationMinutes >= 0 && data.sleepDurationMinutes <= 1440 &&
              data.activityDurationMinutes is int && data.activityDurationMinutes >= 0 && data.activityDurationMinutes <= 1440 &&
              (!('avgHeartRate' in data) || data.avgHeartRate == null || (data.avgHeartRate is number && data.avgHeartRate >= 25 && data.avgHeartRate <= 240)) &&
+             isOptionalIntRange(data, 'sleepDeepMinutes', 0, 1440) &&
+             isOptionalIntRange(data, 'sleepLightMinutes', 0, 1440) &&
+             isOptionalIntRange(data, 'sleepRemMinutes', 0, 1440) &&
+             isOptionalIntRange(data, 'sleepAwakeMinutes', 0, 1440) &&
+             isOptionalIntRange(data, 'steps', 0, 500000) &&
+             isOptionalIntRange(data, 'distanceMeters', 0, 1000000) &&
+             isOptionalIntRange(data, 'caloriesActive', 0, 50000) &&
+             isOptionalIntRange(data, 'floorsClimbed', 0, 10000) &&
+             isOptionalIntRange(data, 'heartPoints', 0, 5000) &&
+             isOptionalIntRange(data, 'workoutsCount', 0, 100) &&
+             isOptionalIntRange(data, 'restingHeartRate', 25, 220) &&
+             isOptionalNumRange(data, 'hrvMs', 0, 500) &&
+             isOptionalIntRange(data, 'stressLevel', 0, 100) &&
+             isOptionalIntRange(data, 'bodyBattery', 0, 100) &&
+             isOptionalNumRange(data, 'spo2Percent', 50, 100) &&
+             isOptionalNumRange(data, 'respirationRate', 4, 80) &&
+             isOptionalNumRange(data, 'vo2Max', 10, 110) &&
+             isOptionalNumRange(data, 'weightKg', 20, 400) &&
+             isOptionalNumRange(data, 'bodyFatPercent', 1, 75) &&
+             isOptionalIntRange(data, 'hydrationMl', 0, 30000) &&
              data.sources is list && data.sources.size() <= 8 &&
              data.sources.hasOnly(['browser_idle', 'device_motion', 'web_bluetooth', 'health_export', 'aura_activity', 'garmin_connect', 'google_health', 'manual']) &&
              data.recoveryScore is int && data.recoveryScore >= 0 && data.recoveryScore <= 100 &&

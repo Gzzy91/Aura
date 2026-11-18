@@ -10,7 +10,7 @@ export function PinLock() {
 
   useEffect(() => {
     if (pin.length === 4) {
-      if (pin === settings.pin) {
+      if (pin === settings?.pin) {
         setLocked(false);
         setPin('');
       } else {
@@ -21,10 +21,13 @@ export function PinLock() {
         }, 1000);
       }
     }
-  }, [pin, settings.pin, setLocked]);
+  }, [pin, settings?.pin, setLocked]);
 
   const shouldShow =
-    isLocked && settings.isPinEnabled && Boolean(settings.pin) && settings.pin!.length === 4;
+    isLocked &&
+    Boolean(settings?.isPinEnabled) &&
+    typeof settings?.pin === 'string' &&
+    settings.pin.length === 4;
 
   const handleNumberClick = (num: string) => {
     if (pin.length < 4) {

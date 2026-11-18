@@ -4,12 +4,23 @@ import {
   BatteryCharging,
   Calendar,
   Check,
+  Droplets,
+  Dumbbell,
+  Eye,
+  Flame,
+  Footprints,
+  Gauge,
   HeartPulse,
   Moon,
   Plus,
   RefreshCw,
+  Route,
+  Scale,
   SlidersHorizontal,
+  TrendingUp,
+  Wind,
   X,
+  Zap,
 } from 'lucide-react';
 import { format, isSameDay, isToday, isYesterday, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -27,14 +38,19 @@ import { toast } from 'sonner';
 import { useStore } from '@/store/useStore';
 import { cn, SKILL_COLORS } from '@/lib/utils';
 import {
+  DEFAULT_VISIBLE_HEALTH_METRICS,
+  HEALTH_METRICS_CATALOG,
   HealthProvidersStatus,
   RemoteHealthDayMetric,
   buildTodayHealthRecord,
   calculateRecoveryMetrics,
   fetchHealthProvidersStatus,
+  formatHealthMetricValue,
   formatMinutesAsHoursMinutes,
   generateEnergyRecoveryQuests,
   getHealthSessionToken,
+  getVisibleHealthMetricsSet,
+  hasHealthMetricValue,
   loadBrowserTelemetry,
   syncHealthProvider,
 } from '@/services/healthSyncService';
@@ -42,8 +58,10 @@ import {
   EnergyRecoverySuggestion,
   HealthDailyRecord,
   HealthDataSource,
+  HealthMetricKey,
   RecoveryState,
 } from '@/types';
+import { HealthMetricsPicker } from '@/components/HealthMetricsPicker';
 
 const SOURCE_LABELS: Record<HealthDataSource, string> = {
   browser_idle: 'Browser-Ruhezeit',
@@ -82,6 +100,36 @@ const RECOVERY_STATE_META: Record<
   },
 };
 
+const METRIC_ICON_META: Record<
+  HealthMetricKey,
+  { icon: typeof Activity; colorClass: string }
+> = {
+  recoveryScore: { icon: BatteryCharging, colorClass: 'text-amber-400' },
+  sleepDurationMinutes: { icon: Moon, colorClass: 'text-indigo-400' },
+  sleepDeepMinutes: { icon: Moon, colorClass: 'text-indigo-400' },
+  sleepLightMinutes: { icon: Moon, colorClass: 'text-sky-400' },
+  sleepRemMinutes: { icon: Moon, colorClass: 'text-purple-400' },
+  sleepAwakeMinutes: { icon: Moon, colorClass: 'text-amber-400' },
+  activityDurationMinutes: { icon: Activity, colorClass: 'text-emerald-400' },
+  steps: { icon: Footprints, colorClass: 'text-emerald-400' },
+  distanceMeters: { icon: Route, colorClass: 'text-teal-400' },
+  caloriesActive: { icon: Flame, colorClass: 'text-orange-400' },
+  floorsClimbed: { icon: TrendingUp, colorClass: 'text-cyan-400' },
+  heartPoints: { icon: HeartPulse, colorClass: 'text-rose-400' },
+  workoutsCount: { icon: Dumbbell, colorClass: 'text-lime-400' },
+  avgHeartRate: { icon: HeartPulse, colorClass: 'text-rose-400' },
+  restingHeartRate: { icon: HeartPulse, colorClass: 'text-pink-400' },
+  hrvMs: { icon: Activity, colorClass: 'text-violet-400' },
+  stressLevel: { icon: Zap, colorClass: 'text-amber-400' },
+  bodyBattery: { icon: BatteryCharging, colorClass: 'text-sky-400' },
+  spo2Percent: { icon: Wind, colorClass: 'text-cyan-400' },
+  respirationRate: { icon: Wind, colorClass: 'text-sky-300' },
+  vo2Max: { icon: Gauge, colorClass: 'text-emerald-300' },
+  weightKg: { icon: Scale, colorClass: 'text-neutral-300' },
+  bodyFatPercent: { icon: Scale, colorClass: 'text-amber-300' },
+  hydrationMl: { icon: Droplets, colorClass: 'text-sky-400' },
+};
+
 const HISTORY_CHART_MARGIN = { top: 8, right: 4, left: -20, bottom: 0 };
 const SLEEP_DOMAIN: [number, number] = [0, 12];
 const SCORE_DOMAIN: [number, number] = [0, 100];
@@ -90,39 +138,44 @@ const HISTORY_CURSOR = { fill: '#262626', opacity: 0.35 };
 const SCORE_LINE_DOT = { r: 3.5, fill: '#f59e0b', stroke: '#171717', strokeWidth: 2 };
 const SCORE_LINE_ACTIVE_DOT = { r: 5, fill: '#fbbf24' };
 
-function CustomHealthHistoryTooltip({ active, payload }: any) {
+function CustomHealthHistoryTooltip({
+  active,
+  payload,
+  visibleKeys,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: { fullDate: string; record: HealthDailyRecord } }>;
+  visibleKeys: HealthMetricKey[];
+}) {
   if (active && payload && payload.length) {
     const d = payload[0].payload;
+    const rec = d.record;
+    const visibleSet = new Set(visibleKeys);
+    const items = HEALTH_METRICS_CATALOG.filter(
+      (m) => visibleSet.has(m.key) && hasHealthMetricValue(m.key, rec)
+    ).slice(0, 8);
+
     return (
-      <div className="bg-neutral-900 border border-neutral-800 p-3 rounded-xl shadow-xl space-y-1.5 min-w-[165px]">
+      <div className="bg-neutral-900 border border-neutral-800 p-3 rounded-xl shadow-xl space-y-1.5 min-w-[175px]">
         <p className="font-bold text-white text-xs">{d.fullDate}</p>
-        <div className="flex items-center justify-between gap-4 text-xs">
-          <span className="text-neutral-400">Schlafdauer</span>
-          <span className="font-mono font-bold text-indigo-400">
-            {d.sleepMinutes > 0 ? formatMinutesAsHoursMinutes(d.sleepMinutes) : '–'}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-4 text-xs">
-          <span className="text-neutral-400">Aktivität</span>
-          <span className="font-mono font-bold text-emerald-400">{d.activityMinutes} Min</span>
-        </div>
-        <div className="flex items-center justify-between gap-4 text-xs">
-          <span className="text-neutral-400">Recovery-Score</span>
-          <span className="font-mono font-bold text-amber-400">{d.recoveryScore}/100</span>
-        </div>
-        {typeof d.avgHeartRate === 'number' && (
-          <div className="flex items-center justify-between gap-4 text-xs">
-            <span className="text-neutral-400">Ø Puls</span>
-            <span className="font-mono font-bold text-rose-400">{d.avgHeartRate} BPM</span>
-          </div>
-        )}
+        {items.map((m) => {
+          const val = formatHealthMetricValue(m.key, rec);
+          if (!val) return null;
+          const iconMeta = METRIC_ICON_META[m.key];
+          return (
+            <div key={m.key} className="flex items-center justify-between gap-4 text-xs">
+              <span className="text-neutral-400">{m.shortLabel}</span>
+              <span className={cn('font-mono font-bold tabular-nums', iconMeta.colorClass)}>
+                {val}
+              </span>
+            </div>
+          );
+        })}
       </div>
     );
   }
   return null;
 }
-
-const HEALTH_HISTORY_TOOLTIP_EL = <CustomHealthHistoryTooltip />;
 
 function formatHistoryDateLabel(ts: number): string {
   const dateObj = new Date(ts);
@@ -143,16 +196,36 @@ export function EnergyRecoveryWidget({
     diaryEntries,
     focusSessions,
     healthRecords,
+    settings,
+    updateSettings,
     saveHealthRecord,
     markRecoverySuggestionDecision,
     addQuest,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<'today' | 'history'>('today');
+  const [showMetricsConfig, setShowMetricsConfig] = useState(false);
+  const [showEmptyMetrics, setShowEmptyMetrics] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [providerStatus, setProviderStatus] = useState<HealthProvidersStatus | null>(null);
 
   const todayKey = format(new Date(), 'yyyy-MM-dd');
+
+  const visibleSet = useMemo(
+    () => getVisibleHealthMetricsSet(settings.visibleHealthMetrics),
+    [settings.visibleHealthMetrics]
+  );
+
+  const visibleKeysList = useMemo(() => Array.from(visibleSet), [visibleSet]);
+
+  const historyTooltipEl = useMemo(
+    () => <CustomHealthHistoryTooltip visibleKeys={visibleKeysList} />,
+    [visibleKeysList]
+  );
+
+  const handleChangeVisibleMetrics = (next: HealthMetricKey[]) => {
+    updateSettings({ visibleHealthMetrics: next });
+  };
 
   const storedTodayRecord = useMemo(
     () => healthRecords.find((r) => r.id === todayKey) || null,
@@ -193,6 +266,11 @@ export function EnergyRecoveryWidget({
             sortedHistory.reduce((s, r) => s + r.recoveryScore, 0) / sortedHistory.length
           )
         : 0;
+    const withSteps = sortedHistory.filter((r) => typeof r.steps === 'number' && r.steps > 0);
+    const avgSteps =
+      withSteps.length > 0
+        ? Math.round(withSteps.reduce((s, r) => s + (r.steps || 0), 0) / withSteps.length)
+        : 0;
 
     return {
       totalDays: sortedHistory.length,
@@ -200,6 +278,7 @@ export function EnergyRecoveryWidget({
       avgSleep,
       avgActivity,
       avgRecovery,
+      avgSteps,
     };
   }, [sortedHistory]);
 
@@ -211,10 +290,8 @@ export function EnergyRecoveryWidget({
         label: format(new Date(r.date), 'dd.MM.'),
         fullDate: format(new Date(r.date), 'EEEE, dd.MM.yyyy', { locale: de }),
         sleepHours: Number((r.sleepDurationMinutes / 60).toFixed(2)),
-        sleepMinutes: r.sleepDurationMinutes,
-        activityMinutes: r.activityDurationMinutes,
         recoveryScore: r.recoveryScore,
-        avgHeartRate: r.avgHeartRate,
+        record: r,
       }));
   }, [sortedHistory]);
 
@@ -246,6 +323,24 @@ export function EnergyRecoveryWidget({
       const safeDays = Array.isArray(days) ? days : [];
       const targetDays = safeDays.slice(0, 14);
       let touchedToday = false;
+
+      const pickVal = (
+        nextVal: number | null | undefined,
+        prevVal: number | null | undefined
+      ): number | null => {
+        if (typeof nextVal === 'number' && Number.isFinite(nextVal)) return nextVal;
+        if (typeof prevVal === 'number' && Number.isFinite(prevVal)) return prevVal;
+        return null;
+      };
+      const pickMax = (
+        nextVal: number | null | undefined,
+        prevVal: number | null | undefined
+      ): number | null => {
+        const a = typeof nextVal === 'number' && Number.isFinite(nextVal) ? nextVal : null;
+        const b = typeof prevVal === 'number' && Number.isFinite(prevVal) ? prevVal : null;
+        if (a !== null && b !== null) return Math.max(a, b);
+        return a ?? b;
+      };
 
       for (const day of targetDays) {
         const [y, m, d] = day.dateKey.split('-').map(Number);
@@ -283,6 +378,28 @@ export function EnergyRecoveryWidget({
                 ? Math.max(day.activityDurationMinutes, existing?.activityDurationMinutes || 0)
                 : undefined,
             overrideAvgHeartRate: day.avgHeartRate ?? existing?.avgHeartRate ?? null,
+            overrideMetrics: {
+              sleepDeepMinutes: pickVal(day.sleepDeepMinutes, existing?.sleepDeepMinutes),
+              sleepLightMinutes: pickVal(day.sleepLightMinutes, existing?.sleepLightMinutes),
+              sleepRemMinutes: pickVal(day.sleepRemMinutes, existing?.sleepRemMinutes),
+              sleepAwakeMinutes: pickVal(day.sleepAwakeMinutes, existing?.sleepAwakeMinutes),
+              steps: pickMax(day.steps, existing?.steps),
+              distanceMeters: pickMax(day.distanceMeters, existing?.distanceMeters),
+              caloriesActive: pickMax(day.caloriesActive, existing?.caloriesActive),
+              floorsClimbed: pickMax(day.floorsClimbed, existing?.floorsClimbed),
+              heartPoints: pickMax(day.heartPoints, existing?.heartPoints),
+              workoutsCount: pickMax(day.workoutsCount, existing?.workoutsCount),
+              restingHeartRate: pickVal(day.restingHeartRate, existing?.restingHeartRate),
+              hrvMs: pickVal(day.hrvMs, existing?.hrvMs),
+              stressLevel: pickVal(day.stressLevel, existing?.stressLevel),
+              bodyBattery: pickVal(day.bodyBattery, existing?.bodyBattery),
+              spo2Percent: pickVal(day.spo2Percent, existing?.spo2Percent),
+              respirationRate: pickVal(day.respirationRate, existing?.respirationRate),
+              vo2Max: pickVal(day.vo2Max, existing?.vo2Max),
+              weightKg: pickVal(day.weightKg, existing?.weightKg),
+              bodyFatPercent: pickVal(day.bodyFatPercent, existing?.bodyFatPercent),
+              hydrationMl: pickMax(day.hydrationMl, existing?.hydrationMl),
+            },
             extraSources: [source],
           });
           await saveHealthRecord(baseToday);
@@ -295,11 +412,20 @@ export function EnergyRecoveryWidget({
             day.activityDurationMinutes > 0
               ? day.activityDurationMinutes
               : existing?.activityDurationMinutes || 0;
-          const avgHr = day.avgHeartRate ?? existing?.avgHeartRate ?? null;
+          const avgHr = pickVal(day.avgHeartRate, existing?.avgHeartRate);
+          const restingHeartRate = pickVal(day.restingHeartRate, existing?.restingHeartRate);
+          const hrvMs = pickVal(day.hrvMs, existing?.hrvMs);
+          const stressLevel = pickVal(day.stressLevel, existing?.stressLevel);
+          const bodyBattery = pickVal(day.bodyBattery, existing?.bodyBattery);
+
           const { recoveryScore, recoveryState } = calculateRecoveryMetrics({
             sleepDurationMinutes: sleepMin,
             activityDurationMinutes: activityMin,
             avgHeartRate: avgHr,
+            restingHeartRate,
+            hrvMs,
+            stressLevel,
+            bodyBattery,
             todayMood: dayMood,
           });
 
@@ -309,6 +435,26 @@ export function EnergyRecoveryWidget({
             sleepDurationMinutes: sleepMin,
             activityDurationMinutes: activityMin,
             avgHeartRate: avgHr,
+            sleepDeepMinutes: pickVal(day.sleepDeepMinutes, existing?.sleepDeepMinutes),
+            sleepLightMinutes: pickVal(day.sleepLightMinutes, existing?.sleepLightMinutes),
+            sleepRemMinutes: pickVal(day.sleepRemMinutes, existing?.sleepRemMinutes),
+            sleepAwakeMinutes: pickVal(day.sleepAwakeMinutes, existing?.sleepAwakeMinutes),
+            steps: pickMax(day.steps, existing?.steps),
+            distanceMeters: pickMax(day.distanceMeters, existing?.distanceMeters),
+            caloriesActive: pickMax(day.caloriesActive, existing?.caloriesActive),
+            floorsClimbed: pickMax(day.floorsClimbed, existing?.floorsClimbed),
+            heartPoints: pickMax(day.heartPoints, existing?.heartPoints),
+            workoutsCount: pickMax(day.workoutsCount, existing?.workoutsCount),
+            restingHeartRate,
+            hrvMs,
+            stressLevel,
+            bodyBattery,
+            spo2Percent: pickVal(day.spo2Percent, existing?.spo2Percent),
+            respirationRate: pickVal(day.respirationRate, existing?.respirationRate),
+            vo2Max: pickVal(day.vo2Max, existing?.vo2Max),
+            weightKg: pickVal(day.weightKg, existing?.weightKg),
+            bodyFatPercent: pickVal(day.bodyFatPercent, existing?.bodyFatPercent),
+            hydrationMl: pickMax(day.hydrationMl, existing?.hydrationMl),
             sources: Array.from(
               new Set<HealthDataSource>([
                 ...(existing?.sources || []).filter((s) => s !== 'browser_idle'),
@@ -461,6 +607,49 @@ export function EnergyRecoveryWidget({
     providerStatus?.google.connected || providerStatus?.garmin.connected
   );
 
+  // Derived visibility splits for Heute tab
+  const showRecoveryPrimary = visibleSet.has('recoveryScore');
+  const showSleepPrimary = visibleSet.has('sleepDurationMinutes');
+  const showActivityPrimary = visibleSet.has('activityDurationMinutes');
+  const primaryVisibleCount =
+    (showRecoveryPrimary ? 1 : 0) +
+    (showSleepPrimary ? 1 : 0) +
+    (showActivityPrimary ? 1 : 0);
+
+  const sleepPhaseKeys: HealthMetricKey[] = [
+    'sleepDeepMinutes',
+    'sleepRemMinutes',
+    'sleepLightMinutes',
+    'sleepAwakeMinutes',
+  ];
+  const enabledSleepPhases = sleepPhaseKeys.filter(
+    (k) => visibleSet.has(k) && hasHealthMetricValue(k, todayRecord)
+  );
+  const sleepPhaseTotals = {
+    deep: visibleSet.has('sleepDeepMinutes') ? todayRecord.sleepDeepMinutes || 0 : 0,
+    rem: visibleSet.has('sleepRemMinutes') ? todayRecord.sleepRemMinutes || 0 : 0,
+    light: visibleSet.has('sleepLightMinutes') ? todayRecord.sleepLightMinutes || 0 : 0,
+    awake: visibleSet.has('sleepAwakeMinutes') ? todayRecord.sleepAwakeMinutes || 0 : 0,
+  };
+  const sleepPhaseSum =
+    sleepPhaseTotals.deep +
+    sleepPhaseTotals.rem +
+    sleepPhaseTotals.light +
+    sleepPhaseTotals.awake;
+
+  const secondaryEnabledCatalog = HEALTH_METRICS_CATALOG.filter(
+    (m) => !m.isPrimary && visibleSet.has(m.key)
+  );
+  const secondaryWithData = secondaryEnabledCatalog.filter((m) =>
+    hasHealthMetricValue(m.key, todayRecord)
+  );
+  const secondaryWithoutData = secondaryEnabledCatalog.filter(
+    (m) => !hasHealthMetricValue(m.key, todayRecord)
+  );
+  const displayedSecondaryMetrics = showEmptyMetrics
+    ? secondaryEnabledCatalog
+    : secondaryWithData;
+
   return (
     <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 h-full flex flex-col gap-5">
       {/* Header */}
@@ -504,6 +693,21 @@ export function EnergyRecoveryWidget({
             </button>
           </div>
 
+          <button
+            type="button"
+            onClick={() => setShowMetricsConfig((prev) => !prev)}
+            aria-expanded={showMetricsConfig}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors whitespace-nowrap min-h-[38px]',
+              showMetricsConfig
+                ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                : 'bg-neutral-950 border-neutral-800 text-neutral-300 hover:text-white hover:border-neutral-700'
+            )}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>Kennzahlen ({visibleSet.size})</span>
+          </button>
+
           {onNavigateToSettings && (
             <button
               type="button"
@@ -527,78 +731,266 @@ export function EnergyRecoveryWidget({
         </div>
       </div>
 
-      {activeTab === 'today' ? (
+      {/* Collapsible Metric Visibility Selector */}
+      {showMetricsConfig && (
+        <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3.5 sm:p-4 space-y-3">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h4 className="text-xs font-bold text-white">
+                Sichtbare Kennzahlen auswählen
+              </h4>
+              <p className="text-[11px] text-neutral-400 mt-0.5">
+                Entscheide individuell, welche der 24 Google Health &amp; Garmin Kennzahlen im
+                Dashboard und in der Historie angezeigt werden.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowMetricsConfig(false)}
+              aria-label="Kennzahlen-Auswahl schließen"
+              className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <HealthMetricsPicker
+            visibleMetrics={settings.visibleHealthMetrics}
+            onChange={handleChangeVisibleMetrics}
+            currentRecord={todayRecord}
+            historyRecords={sortedHistory}
+            compact
+          />
+        </div>
+      )}
+
+      {visibleSet.size === 0 ? (
+        <div className="p-6 rounded-xl bg-neutral-950/80 border border-neutral-800 text-center space-y-3">
+          <p className="text-xs text-neutral-400">
+            Alle Health-Kennzahlen sind derzeit ausgeblendet. Wähle gewünschte Kennzahlen aus oder
+            stelle die Standardansicht wieder her.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowMetricsConfig(true)}
+              className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition-colors"
+            >
+              Kennzahlen wählen
+            </button>
+            <button
+              type="button"
+              onClick={() => handleChangeVisibleMetrics(DEFAULT_VISIBLE_HEALTH_METRICS)}
+              className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold transition-colors"
+            >
+              Standard wiederherstellen
+            </button>
+          </div>
+        </div>
+      ) : activeTab === 'today' ? (
         <>
           {/* Primary Readiness & Duration Metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3.5 flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs text-neutral-400">
-                <span className="flex items-center gap-1.5">
-                  <BatteryCharging className="w-3.5 h-3.5 text-amber-500" />
-                  Recovery-Score
-                </span>
-                <span className="font-mono font-bold text-white tabular-nums">
-                  {todayRecord.recoveryScore}/100
-                </span>
-              </div>
-              <div className="mt-2 w-full h-2 bg-neutral-900 rounded-full overflow-hidden">
-                <div
-                  className={cn('h-full rounded-full transition-all', recoveryMeta.barClass)}
-                  style={{ width: `${todayRecord.recoveryScore}%` }}
-                />
-              </div>
-              <div className={cn('text-xs font-semibold mt-2', recoveryMeta.textClass)}>
-                {recoveryMeta.label}
-              </div>
-            </div>
+          {primaryVisibleCount > 0 && (
+            <div
+              className={cn(
+                'grid gap-3',
+                primaryVisibleCount === 1
+                  ? 'grid-cols-1'
+                  : primaryVisibleCount === 2
+                  ? 'grid-cols-1 sm:grid-cols-2'
+                  : 'grid-cols-1 sm:grid-cols-3'
+              )}
+            >
+              {showRecoveryPrimary && (
+                <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3.5 flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-xs text-neutral-400">
+                    <span className="flex items-center gap-1.5">
+                      <BatteryCharging className="w-3.5 h-3.5 text-amber-500" />
+                      Recovery-Score
+                    </span>
+                    <span className="font-mono font-bold text-white tabular-nums">
+                      {todayRecord.recoveryScore}/100
+                    </span>
+                  </div>
+                  <div className="mt-2 w-full h-2 bg-neutral-900 rounded-full overflow-hidden">
+                    <div
+                      className={cn('h-full rounded-full transition-all', recoveryMeta.barClass)}
+                      style={{ width: `${todayRecord.recoveryScore}%` }}
+                    />
+                  </div>
+                  <div className={cn('text-xs font-semibold mt-2', recoveryMeta.textClass)}>
+                    {recoveryMeta.label}
+                  </div>
+                </div>
+              )}
 
-            <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3.5 flex flex-col justify-between">
-              <div className="flex items-center gap-1.5 text-xs text-neutral-400">
-                <Moon className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Schlafdauer</span>
+              {showSleepPrimary && (
+                <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3.5 flex flex-col justify-between">
+                  <div className="flex items-center gap-1.5 text-xs text-neutral-400">
+                    <Moon className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Schlafdauer</span>
+                  </div>
+                  <div className="text-xl font-bold text-white tabular-nums mt-1">
+                    {todayRecord.sleepDurationMinutes > 0
+                      ? formatMinutesAsHoursMinutes(todayRecord.sleepDurationMinutes)
+                      : 'Nicht erfasst'}
+                  </div>
+                  <div className="text-[11px] text-neutral-500 mt-1">
+                    {todayRecord.sleepDurationMinutes === 0 ? (
+                      'Noch keine Schlafdaten'
+                    ) : (
+                      <>
+                        Ziel: 7h 30m ·{' '}
+                        {todayRecord.sources.includes('garmin_connect')
+                          ? 'Garmin Connect'
+                          : todayRecord.sources.includes('google_health')
+                          ? 'Google Health'
+                          : todayRecord.sources.includes('manual')
+                          ? 'Manuell'
+                          : todayRecord.sources.includes('health_export')
+                          ? 'Health-Export'
+                          : telemetry.overnightRestGapMinutes > 0
+                          ? 'Browser-Ruhefenster'
+                          : 'Einstellungen → Quellen'}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {showActivityPrimary && (
+                <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3.5 flex flex-col justify-between">
+                  <div className="flex items-center gap-1.5 text-xs text-neutral-400">
+                    <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Aktivitätsdauer</span>
+                  </div>
+                  <div className="text-xl font-bold text-white tabular-nums mt-1">
+                    {todayRecord.activityDurationMinutes} Min
+                  </div>
+                  <div className="text-[11px] text-neutral-500 mt-1 tabular-nums">
+                    {visibleSet.has('avgHeartRate') && todayRecord.avgHeartRate
+                      ? `Ø ${todayRecord.avgHeartRate} BPM`
+                      : `Fokus heute: ${todayFocusMinutes} Min`}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Sleep Stages Architecture Bar */}
+          {enabledSleepPhases.length > 0 && sleepPhaseSum > 0 && (
+            <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3.5 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-neutral-200 flex items-center gap-1.5">
+                  <Moon className="w-3.5 h-3.5 text-indigo-400" />
+                  Schlafphasen-Verteilung
+                </span>
+                <div className="flex flex-wrap items-center gap-3 text-[11px] tabular-nums">
+                  {sleepPhaseTotals.deep > 0 && (
+                    <span className="flex items-center gap-1 text-indigo-300">
+                      <span className="w-2 h-2 rounded-sm bg-indigo-500 inline-block" />
+                      Tief {formatMinutesAsHoursMinutes(sleepPhaseTotals.deep)}
+                    </span>
+                  )}
+                  {sleepPhaseTotals.rem > 0 && (
+                    <span className="flex items-center gap-1 text-purple-300">
+                      <span className="w-2 h-2 rounded-sm bg-purple-500 inline-block" />
+                      REM {formatMinutesAsHoursMinutes(sleepPhaseTotals.rem)}
+                    </span>
+                  )}
+                  {sleepPhaseTotals.light > 0 && (
+                    <span className="flex items-center gap-1 text-sky-300">
+                      <span className="w-2 h-2 rounded-sm bg-sky-400 inline-block" />
+                      Leicht {formatMinutesAsHoursMinutes(sleepPhaseTotals.light)}
+                    </span>
+                  )}
+                  {sleepPhaseTotals.awake > 0 && (
+                    <span className="flex items-center gap-1 text-amber-300">
+                      <span className="w-2 h-2 rounded-sm bg-amber-500 inline-block" />
+                      Wach {sleepPhaseTotals.awake} Min
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="text-xl font-bold text-white tabular-nums mt-1">
-                {todayRecord.sleepDurationMinutes > 0
-                  ? formatMinutesAsHoursMinutes(todayRecord.sleepDurationMinutes)
-                  : 'Nicht erfasst'}
-              </div>
-              <div className="text-[11px] text-neutral-500 mt-1">
-                {todayRecord.sleepDurationMinutes === 0 ? (
-                  'Noch keine Schlafdaten'
-                ) : (
-                  <>
-                    Ziel: 7h 30m ·{' '}
-                    {todayRecord.sources.includes('garmin_connect')
-                      ? 'Garmin Connect'
-                      : todayRecord.sources.includes('google_health')
-                      ? 'Google Health'
-                      : todayRecord.sources.includes('manual')
-                      ? 'Manuell'
-                      : todayRecord.sources.includes('health_export')
-                      ? 'Health-Export'
-                      : telemetry.overnightRestGapMinutes > 0
-                      ? 'Browser-Ruhefenster'
-                      : 'Einstellungen → Quellen'}
-                  </>
+              <div className="h-2.5 w-full rounded-full overflow-hidden bg-neutral-900 flex">
+                {sleepPhaseTotals.deep > 0 && (
+                  <div
+                    className="bg-indigo-500 h-full"
+                    style={{ width: `${(sleepPhaseTotals.deep / sleepPhaseSum) * 100}%` }}
+                  />
+                )}
+                {sleepPhaseTotals.rem > 0 && (
+                  <div
+                    className="bg-purple-500 h-full"
+                    style={{ width: `${(sleepPhaseTotals.rem / sleepPhaseSum) * 100}%` }}
+                  />
+                )}
+                {sleepPhaseTotals.light > 0 && (
+                  <div
+                    className="bg-sky-400 h-full"
+                    style={{ width: `${(sleepPhaseTotals.light / sleepPhaseSum) * 100}%` }}
+                  />
+                )}
+                {sleepPhaseTotals.awake > 0 && (
+                  <div
+                    className="bg-amber-500 h-full"
+                    style={{ width: `${(sleepPhaseTotals.awake / sleepPhaseSum) * 100}%` }}
+                  />
                 )}
               </div>
             </div>
+          )}
 
-            <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3.5 flex flex-col justify-between">
-              <div className="flex items-center gap-1.5 text-xs text-neutral-400">
-                <Activity className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Aktivitätsdauer</span>
-              </div>
-              <div className="text-xl font-bold text-white tabular-nums mt-1">
-                {todayRecord.activityDurationMinutes} Min
-              </div>
-              <div className="text-[11px] text-neutral-500 mt-1 tabular-nums">
-                {todayRecord.avgHeartRate
-                  ? `Ø ${todayRecord.avgHeartRate} BPM`
-                  : `Fokus heute: ${todayFocusMinutes} Min`}
-              </div>
+          {/* Extended Metrics Grid (All user-enabled non-primary metrics) */}
+          {secondaryEnabledCatalog.length > 0 && (
+            <div className="space-y-2.5">
+              {displayedSecondaryMetrics.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                  {displayedSecondaryMetrics.map((metric) => {
+                    const iconMeta = METRIC_ICON_META[metric.key];
+                    const Icon = iconMeta.icon;
+                    const formatted = formatHealthMetricValue(metric.key, todayRecord);
+                    return (
+                      <div
+                        key={metric.key}
+                        className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3 flex flex-col justify-between gap-1 min-w-0"
+                      >
+                        <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 min-w-0">
+                          <Icon className={cn('w-3.5 h-3.5 shrink-0', iconMeta.colorClass)} />
+                          <span className="truncate">{metric.shortLabel}</span>
+                        </div>
+                        <div
+                          className={cn(
+                            'text-base font-bold tabular-nums truncate',
+                            formatted ? 'text-white' : 'text-neutral-600'
+                          )}
+                        >
+                          {formatted || '–'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {secondaryWithoutData.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-neutral-950/60 border border-neutral-800/80 text-[11px] text-neutral-500">
+                  <span className="min-w-0">
+                    Heute ohne Messwert ({secondaryWithoutData.length}):{' '}
+                    <span className="text-neutral-400">
+                      {secondaryWithoutData.map((m) => m.shortLabel).join(', ')}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmptyMetrics((prev) => !prev)}
+                    className="text-amber-400 hover:text-amber-300 font-semibold whitespace-nowrap shrink-0"
+                  >
+                    {showEmptyMetrics ? 'Leere ausblenden' : 'Trotzdem als Kacheln'}
+                  </button>
+                </div>
+              )}
             </div>
-          </div>
+          )}
 
           {/* Personalized Energy-Recovery Quests */}
           <div className="space-y-2.5">
@@ -703,47 +1095,68 @@ export function EnergyRecoveryWidget({
         /* Health History Tab (Last 14 Days) */
         <div className="space-y-4">
           {/* 14-Day Summary Metrics */}
-          <div className="grid grid-cols-3 gap-2.5">
-            <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3">
-              <div className="text-[11px] text-neutral-400 flex items-center gap-1">
-                <Moon className="w-3 h-3 text-indigo-400 shrink-0" />
-                <span className="truncate">Ø Schlaf</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {showSleepPrimary && (
+              <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3">
+                <div className="text-[11px] text-neutral-400 flex items-center gap-1">
+                  <Moon className="w-3 h-3 text-indigo-400 shrink-0" />
+                  <span className="truncate">Ø Schlaf</span>
+                </div>
+                <div className="text-base sm:text-lg font-bold text-white tabular-nums mt-0.5">
+                  {historySummary.avgSleep > 0
+                    ? formatMinutesAsHoursMinutes(historySummary.avgSleep)
+                    : '–'}
+                </div>
+                <div className="text-[10px] text-neutral-500">
+                  {historySummary.sleepDaysCount}{' '}
+                  {historySummary.sleepDaysCount === 1 ? 'Nacht' : 'Nächte'}
+                </div>
               </div>
-              <div className="text-base sm:text-lg font-bold text-white tabular-nums mt-0.5">
-                {historySummary.avgSleep > 0
-                  ? formatMinutesAsHoursMinutes(historySummary.avgSleep)
-                  : '–'}
-              </div>
-              <div className="text-[10px] text-neutral-500">
-                {historySummary.sleepDaysCount}{' '}
-                {historySummary.sleepDaysCount === 1 ? 'Nacht' : 'Nächte'}
-              </div>
-            </div>
+            )}
 
-            <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3">
-              <div className="text-[11px] text-neutral-400 flex items-center gap-1">
-                <Activity className="w-3 h-3 text-emerald-400 shrink-0" />
-                <span className="truncate">Ø Aktivität</span>
+            {showActivityPrimary && (
+              <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3">
+                <div className="text-[11px] text-neutral-400 flex items-center gap-1">
+                  <Activity className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span className="truncate">Ø Aktivität</span>
+                </div>
+                <div className="text-base sm:text-lg font-bold text-white tabular-nums mt-0.5">
+                  {historySummary.avgActivity} Min
+                </div>
+                <div className="text-[10px] text-neutral-500">pro Tag</div>
               </div>
-              <div className="text-base sm:text-lg font-bold text-white tabular-nums mt-0.5">
-                {historySummary.avgActivity} Min
-              </div>
-              <div className="text-[10px] text-neutral-500">pro Tag</div>
-            </div>
+            )}
 
-            <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3">
-              <div className="text-[11px] text-neutral-400 flex items-center gap-1">
-                <BatteryCharging className="w-3 h-3 text-amber-500 shrink-0" />
-                <span className="truncate">Ø Recovery</span>
+            {visibleSet.has('steps') && (
+              <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3">
+                <div className="text-[11px] text-neutral-400 flex items-center gap-1">
+                  <Footprints className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span className="truncate">Ø Schritte</span>
+                </div>
+                <div className="text-base sm:text-lg font-bold text-white tabular-nums mt-0.5">
+                  {historySummary.avgSteps > 0
+                    ? historySummary.avgSteps.toLocaleString('de-DE')
+                    : '–'}
+                </div>
+                <div className="text-[10px] text-neutral-500">pro Tag</div>
               </div>
-              <div className="text-base sm:text-lg font-bold text-white tabular-nums mt-0.5">
-                {historySummary.totalDays > 0 ? `${historySummary.avgRecovery}/100` : '–'}
+            )}
+
+            {showRecoveryPrimary && (
+              <div className="bg-neutral-950/90 border border-neutral-800 rounded-xl p-3">
+                <div className="text-[11px] text-neutral-400 flex items-center gap-1">
+                  <BatteryCharging className="w-3 h-3 text-amber-500 shrink-0" />
+                  <span className="truncate">Ø Recovery</span>
+                </div>
+                <div className="text-base sm:text-lg font-bold text-white tabular-nums mt-0.5">
+                  {historySummary.totalDays > 0 ? `${historySummary.avgRecovery}/100` : '–'}
+                </div>
+                <div className="text-[10px] text-neutral-500">
+                  {historySummary.totalDays}{' '}
+                  {historySummary.totalDays === 1 ? 'Tag' : 'Tage'}
+                </div>
               </div>
-              <div className="text-[10px] text-neutral-500">
-                {historySummary.totalDays}{' '}
-                {historySummary.totalDays === 1 ? 'Tag' : 'Tage'}
-              </div>
-            </div>
+            )}
           </div>
 
           {historyChartData.length > 0 ? (
@@ -802,7 +1215,7 @@ export function EnergyRecoveryWidget({
                         axisLine={false}
                         hide
                       />
-                      <Tooltip cursor={HISTORY_CURSOR} content={HEALTH_HISTORY_TOOLTIP_EL} />
+                      <Tooltip cursor={HISTORY_CURSOR} content={historyTooltipEl} />
                       <Bar
                         yAxisId="sleep"
                         dataKey="sleepHours"
@@ -827,47 +1240,59 @@ export function EnergyRecoveryWidget({
               </div>
 
               {/* Daily History Breakdown */}
-              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
                 {sortedHistory.map((item) => {
                   const meta = RECOVERY_STATE_META[item.recoveryState];
                   const visibleSources = item.sources.filter(
                     (s) => s !== 'browser_idle' || item.sources.length === 1
                   );
+                  const rowMetrics = HEALTH_METRICS_CATALOG.filter(
+                    (m) =>
+                      m.key !== 'recoveryScore' &&
+                      visibleSet.has(m.key) &&
+                      hasHealthMetricValue(m.key, item)
+                  );
                   return (
                     <div
                       key={item.id}
-                      className="bg-neutral-950/90 border border-neutral-800 rounded-xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs"
+                      className="bg-neutral-950/90 border border-neutral-800 rounded-xl px-3.5 py-2.5 space-y-2 text-xs"
                     >
-                      <div className="min-w-0">
-                        <div className="font-semibold text-white">
-                          {formatHistoryDateLabel(item.date)}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="font-semibold text-white">
+                            {formatHistoryDateLabel(item.date)}
+                          </span>
+                          <span className="text-[11px] text-neutral-500 ml-2">
+                            {visibleSources.map((s) => SOURCE_LABELS[s]).join(' · ')}
+                          </span>
                         </div>
-                        <div className="text-[11px] text-neutral-500 truncate">
-                          {visibleSources.map((s) => SOURCE_LABELS[s]).join(' · ')}
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-3 tabular-nums">
-                        <span className="inline-flex items-center gap-1 text-indigo-300 font-medium">
-                          <Moon className="w-3.5 h-3.5 text-indigo-400" />
-                          {item.sleepDurationMinutes > 0
-                            ? formatMinutesAsHoursMinutes(item.sleepDurationMinutes)
-                            : '–'}
-                        </span>
-                        <span className="inline-flex items-center gap-1 text-emerald-300 font-medium">
-                          <Activity className="w-3.5 h-3.5 text-emerald-400" />
-                          {item.activityDurationMinutes} Min
-                        </span>
-                        {typeof item.avgHeartRate === 'number' && (
-                          <span className="inline-flex items-center gap-1 text-rose-300 font-medium">
-                            <HeartPulse className="w-3.5 h-3.5 text-rose-400" />
-                            {item.avgHeartRate} BPM
+                        {showRecoveryPrimary && (
+                          <span className={cn('font-mono font-bold tabular-nums', meta.textClass)}>
+                            {item.recoveryScore}/100
                           </span>
                         )}
-                        <span className={cn('font-mono font-bold', meta.textClass)}>
-                          {item.recoveryScore}/100
-                        </span>
                       </div>
+
+                      {rowMetrics.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 tabular-nums text-[11px]">
+                          {rowMetrics.map((m) => {
+                            const val = formatHealthMetricValue(m.key, item);
+                            if (!val) return null;
+                            const iconMeta = METRIC_ICON_META[m.key];
+                            const Icon = iconMeta.icon;
+                            return (
+                              <span
+                                key={m.key}
+                                className="inline-flex items-center gap-1 text-neutral-200 font-medium"
+                              >
+                                <Icon className={cn('w-3 h-3 shrink-0', iconMeta.colorClass)} />
+                                <span className="text-neutral-400">{m.shortLabel}:</span>
+                                <span>{val}</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -876,7 +1301,8 @@ export function EnergyRecoveryWidget({
           ) : (
             <div className="p-5 rounded-xl bg-neutral-950/70 border border-neutral-800 text-center space-y-2.5">
               <p className="text-xs text-neutral-400">
-                Noch keine Health-Historie gespeichert. Synchronisiere deinen Anbieter, um die letzten 14 Tage zu laden.
+                Noch keine Health-Historie gespeichert. Synchronisiere deinen Anbieter, um die
+                letzten 14 Tage zu laden.
               </p>
               {hasRemoteConnection ? (
                 <button
@@ -937,4 +1363,3 @@ export function EnergyRecoveryWidget({
     </div>
   );
 }
-

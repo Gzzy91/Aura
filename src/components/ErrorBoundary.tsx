@@ -29,6 +29,19 @@ export class ErrorBoundary extends Component<Props, State> {
     window.location.reload();
   };
 
+  private handleClearCacheAndReload = () => {
+    try {
+      localStorage.removeItem('rpg-storage');
+      localStorage.removeItem('aura_health_telemetry_v1');
+      localStorage.removeItem('aura_hidden_widgets_v1');
+      sessionStorage.removeItem('aura_chunk_reload_attempted');
+    } catch {
+      // ignore storage errors
+    }
+    this.setState({ hasError: false, error: null });
+    window.location.reload();
+  };
+
   public render() {
     if (this.state.hasError) {
       return (
@@ -48,13 +61,23 @@ export class ErrorBoundary extends Component<Props, State> {
                 {this.state.error.message}
               </div>
             )}
-            <button
-              onClick={this.handleReset}
-              className="w-full py-3 px-6 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-xl transition-all flex items-center justify-center gap-2"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Seite neu laden
-            </button>
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={this.handleReset}
+                className="w-full py-3 px-6 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-xl transition-all flex items-center justify-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Seite neu laden
+              </button>
+              <button
+                type="button"
+                onClick={this.handleClearCacheAndReload}
+                className="w-full py-2.5 px-4 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold rounded-xl transition-colors"
+              >
+                Lokalen Cache zurücksetzen &amp; neu laden
+              </button>
+            </div>
           </div>
         </div>
       );

@@ -3,7 +3,10 @@ import {
   Activity,
   Bluetooth,
   Calendar,
+  ChevronDown,
+  ChevronUp,
   Copy,
+  Eye,
   FileUp,
   HeartPulse,
   Link2,
@@ -21,6 +24,7 @@ import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 import {
   GoogleHealthApiMode,
+  HEALTH_METRICS_CATALOG,
   HealthProvidersStatus,
   ProviderNotConfiguredError,
   RemoteHealthDayMetric,
@@ -31,8 +35,10 @@ import {
   detectBrowserHealthCapabilities,
   disconnectHealthProvider,
   fetchHealthProvidersStatus,
-  formatMinutesAsHoursMinutes,
+  formatHealthMetricValue,
   getHealthSessionToken,
+  getVisibleHealthMetricsSet,
+  hasHealthMetricValue,
   loadBrowserTelemetry,
   openHealthProviderOAuthPopup,
   parseHealthExportFile,
@@ -40,7 +46,8 @@ import {
   startMotionActivityTracker,
   syncHealthProvider,
 } from '@/services/healthSyncService';
-import { HealthDataSource } from '@/types';
+import { HealthDataSource, HealthMetricKey } from '@/types';
+import { HealthMetricsPicker } from '@/components/HealthMetricsPicker';
 
 const SOURCE_LABELS: Record<HealthDataSource, string> = {
   browser_idle: 'Browser-Ruhezeit',
@@ -59,8 +66,12 @@ export function HealthSourcesSettings() {
     diaryEntries,
     focusSessions,
     healthRecords,
+    settings,
+    updateSettings,
     saveHealthRecord,
   } = useStore();
+
+  const [showMetricsSection, setShowMetricsSection] = useState(false);
 
   const [providerStatus, setProviderStatus] = useState<HealthProvidersStatus | null>(null);
   const [providerBackendError, setProviderBackendError] = useState<string | null>(null);
@@ -155,6 +166,24 @@ export function HealthSourcesSettings() {
       const targetDays = safeDays.slice(0, 14);
       let touchedToday = false;
 
+      const pickVal = (
+        nextVal: number | null | undefined,
+        prevVal: number | null | undefined
+      ): number | null => {
+        if (typeof nextVal === 'number' && Number.isFinite(nextVal)) return nextVal;
+        if (typeof prevVal === 'number' && Number.isFinite(prevVal)) return prevVal;
+        return null;
+      };
+      const pickMax = (
+        nextVal: number | null | undefined,
+        prevVal: number | null | undefined
+      ): number | null => {
+        const a = typeof nextVal === 'number' && Number.isFinite(nextVal) ? nextVal : null;
+        const b = typeof prevVal === 'number' && Number.isFinite(prevVal) ? prevVal : null;
+        if (a !== null && b !== null) return Math.max(a, b);
+        return a ?? b;
+      };
+
       for (const day of targetDays) {
         const [y, m, d] = day.dateKey.split('-').map(Number);
         const dayDate = new Date(y, m - 1, d, 12, 0, 0);
@@ -191,6 +220,28 @@ export function HealthSourcesSettings() {
                 ? Math.max(day.activityDurationMinutes, existing?.activityDurationMinutes || 0)
                 : undefined,
             overrideAvgHeartRate: day.avgHeartRate ?? existing?.avgHeartRate ?? null,
+            overrideMetrics: {
+              sleepDeepMinutes: pickVal(day.sleepDeepMinutes, existing?.sleepDeepMinutes),
+              sleepLightMinutes: pickVal(day.sleepLightMinutes, existing?.sleepLightMinutes),
+              sleepRemMinutes: pickVal(day.sleepRemMinutes, existing?.sleepRemMinutes),
+              sleepAwakeMinutes: pickVal(day.sleepAwakeMinutes, existing?.sleepAwakeMinutes),
+              steps: pickMax(day.steps, existing?.steps),
+              distanceMeters: pickMax(day.distanceMeters, existing?.distanceMeters),
+              caloriesActive: pickMax(day.caloriesActive, existing?.caloriesActive),
+              floorsClimbed: pickMax(day.floorsClimbed, existing?.floorsClimbed),
+              heartPoints: pickMax(day.heartPoints, existing?.heartPoints),
+              workoutsCount: pickMax(day.workoutsCount, existing?.workoutsCount),
+              restingHeartRate: pickVal(day.restingHeartRate, existing?.restingHeartRate),
+              hrvMs: pickVal(day.hrvMs, existing?.hrvMs),
+              stressLevel: pickVal(day.stressLevel, existing?.stressLevel),
+              bodyBattery: pickVal(day.bodyBattery, existing?.bodyBattery),
+              spo2Percent: pickVal(day.spo2Percent, existing?.spo2Percent),
+              respirationRate: pickVal(day.respirationRate, existing?.respirationRate),
+              vo2Max: pickVal(day.vo2Max, existing?.vo2Max),
+              weightKg: pickVal(day.weightKg, existing?.weightKg),
+              bodyFatPercent: pickVal(day.bodyFatPercent, existing?.bodyFatPercent),
+              hydrationMl: pickMax(day.hydrationMl, existing?.hydrationMl),
+            },
             extraSources: [source],
           });
           await saveHealthRecord(baseToday);
@@ -203,11 +254,20 @@ export function HealthSourcesSettings() {
             day.activityDurationMinutes > 0
               ? day.activityDurationMinutes
               : existing?.activityDurationMinutes || 0;
-          const avgHr = day.avgHeartRate ?? existing?.avgHeartRate ?? null;
+          const avgHr = pickVal(day.avgHeartRate, existing?.avgHeartRate);
+          const restingHeartRate = pickVal(day.restingHeartRate, existing?.restingHeartRate);
+          const hrvMs = pickVal(day.hrvMs, existing?.hrvMs);
+          const stressLevel = pickVal(day.stressLevel, existing?.stressLevel);
+          const bodyBattery = pickVal(day.bodyBattery, existing?.bodyBattery);
+
           const { recoveryScore, recoveryState } = calculateRecoveryMetrics({
             sleepDurationMinutes: sleepMin,
             activityDurationMinutes: activityMin,
             avgHeartRate: avgHr,
+            restingHeartRate,
+            hrvMs,
+            stressLevel,
+            bodyBattery,
             todayMood: dayMood,
           });
 
@@ -217,6 +277,26 @@ export function HealthSourcesSettings() {
             sleepDurationMinutes: sleepMin,
             activityDurationMinutes: activityMin,
             avgHeartRate: avgHr,
+            sleepDeepMinutes: pickVal(day.sleepDeepMinutes, existing?.sleepDeepMinutes),
+            sleepLightMinutes: pickVal(day.sleepLightMinutes, existing?.sleepLightMinutes),
+            sleepRemMinutes: pickVal(day.sleepRemMinutes, existing?.sleepRemMinutes),
+            sleepAwakeMinutes: pickVal(day.sleepAwakeMinutes, existing?.sleepAwakeMinutes),
+            steps: pickMax(day.steps, existing?.steps),
+            distanceMeters: pickMax(day.distanceMeters, existing?.distanceMeters),
+            caloriesActive: pickMax(day.caloriesActive, existing?.caloriesActive),
+            floorsClimbed: pickMax(day.floorsClimbed, existing?.floorsClimbed),
+            heartPoints: pickMax(day.heartPoints, existing?.heartPoints),
+            workoutsCount: pickMax(day.workoutsCount, existing?.workoutsCount),
+            restingHeartRate,
+            hrvMs,
+            stressLevel,
+            bodyBattery,
+            spo2Percent: pickVal(day.spo2Percent, existing?.spo2Percent),
+            respirationRate: pickVal(day.respirationRate, existing?.respirationRate),
+            vo2Max: pickVal(day.vo2Max, existing?.vo2Max),
+            weightKg: pickVal(day.weightKg, existing?.weightKg),
+            bodyFatPercent: pickVal(day.bodyFatPercent, existing?.bodyFatPercent),
+            hydrationMl: pickMax(day.hydrationMl, existing?.hydrationMl),
             sources: Array.from(
               new Set<HealthDataSource>([
                 ...(existing?.sources || []).filter((s) => s !== 'browser_idle'),
@@ -504,6 +584,26 @@ export function HealthSourcesSettings() {
           sleepDurationMinutes: sleepMin,
           activityDurationMinutes: activityMin,
           avgHeartRate: existing?.avgHeartRate ?? null,
+          sleepDeepMinutes: existing?.sleepDeepMinutes ?? null,
+          sleepLightMinutes: existing?.sleepLightMinutes ?? null,
+          sleepRemMinutes: existing?.sleepRemMinutes ?? null,
+          sleepAwakeMinutes: existing?.sleepAwakeMinutes ?? null,
+          steps: existing?.steps ?? null,
+          distanceMeters: existing?.distanceMeters ?? null,
+          caloriesActive: existing?.caloriesActive ?? null,
+          floorsClimbed: existing?.floorsClimbed ?? null,
+          heartPoints: existing?.heartPoints ?? null,
+          workoutsCount: existing?.workoutsCount ?? null,
+          restingHeartRate: existing?.restingHeartRate ?? null,
+          hrvMs: existing?.hrvMs ?? null,
+          stressLevel: existing?.stressLevel ?? null,
+          bodyBattery: existing?.bodyBattery ?? null,
+          spo2Percent: existing?.spo2Percent ?? null,
+          respirationRate: existing?.respirationRate ?? null,
+          vo2Max: existing?.vo2Max ?? null,
+          weightKg: existing?.weightKg ?? null,
+          bodyFatPercent: existing?.bodyFatPercent ?? null,
+          hydrationMl: existing?.hydrationMl ?? null,
           sources: Array.from(
             new Set<HealthDataSource>([...(existing?.sources || []), 'health_export'])
           ).slice(0, 8),
@@ -985,77 +1085,133 @@ export function HealthSourcesSettings() {
         </button>
       </form>
 
-      {/* Synced Health History Preview */}
-      <div className="pt-4 border-t border-neutral-800 space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <span className="font-semibold text-neutral-300 flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-amber-400" />
-            Synchronisierte Health-Historie (letzte 14 Tage)
-          </span>
-          <span className="text-neutral-500 tabular-nums">
-            {healthRecords.length} {healthRecords.length === 1 ? 'Tag' : 'Tage'} gespeichert
-          </span>
-        </div>
+      {/* Sichtbare Kennzahlen (User Configuration for all 24 metrics) */}
+      {(() => {
+        const visibleSet = getVisibleHealthMetricsSet(settings.visibleHealthMetrics);
+        const handleUpdateVisible = (next: HealthMetricKey[]) => {
+          updateSettings({ visibleHealthMetrics: next });
+        };
 
-        {healthRecords.length === 0 ? (
-          <div className="rounded-xl border border-neutral-800/80 bg-neutral-950/60 p-3.5 text-xs text-neutral-400">
-            Noch keine historischen Tagesdaten vorhanden. Verbinde Google Health oder Garmin und
-            klicke auf „Jetzt abrufen“, um die letzten 14 Tage zu importieren.
-          </div>
-        ) : (
-          <div className="max-h-60 overflow-y-auto pr-1 space-y-1.5">
-            {[...healthRecords]
-              .sort((a, b) => b.date - a.date)
-              .slice(0, 14)
-              .map((rec) => {
-                const dateObj = new Date(rec.date);
-                const label = isToday(dateObj)
-                  ? 'Heute'
-                  : isYesterday(dateObj)
-                  ? 'Gestern'
-                  : format(dateObj, 'EEE, dd.MM.', { locale: de });
-                const visibleSources = rec.sources.filter(
-                  (s) => s !== 'browser_idle' || rec.sources.length === 1
-                );
-
-                return (
-                  <div
-                    key={rec.id}
-                    className="rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs"
-                  >
-                    <div className="min-w-0">
-                      <span className="font-semibold text-white">{label}</span>
-                      <span className="text-neutral-500 text-[11px] ml-2">
-                        {visibleSources.map((s) => SOURCE_LABELS[s]).join(' · ')}
-                      </span>
+        return (
+          <>
+            <div className="pt-4 border-t border-neutral-800 space-y-3">
+              <button
+                type="button"
+                onClick={() => setShowMetricsSection((prev) => !prev)}
+                aria-expanded={showMetricsSection}
+                className="w-full flex items-center justify-between gap-3 rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-3 text-left hover:border-neutral-700 transition-colors"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Eye className="w-4 h-4 text-amber-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white">
+                      Angezeigte Health-Kennzahlen ({visibleSet.size}/24)
                     </div>
-                    <div className="flex flex-wrap items-center gap-3 tabular-nums">
-                      <span className="inline-flex items-center gap-1 text-indigo-300">
-                        <Moon className="w-3.5 h-3.5 text-indigo-400" />
-                        {rec.sleepDurationMinutes > 0
-                          ? formatMinutesAsHoursMinutes(rec.sleepDurationMinutes)
-                          : '–'}
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-emerald-300">
-                        <Activity className="w-3.5 h-3.5 text-emerald-400" />
-                        {rec.activityDurationMinutes} Min
-                      </span>
-                      {typeof rec.avgHeartRate === 'number' && (
-                        <span className="inline-flex items-center gap-1 text-rose-300">
-                          <HeartPulse className="w-3.5 h-3.5 text-rose-400" />
-                          {rec.avgHeartRate} BPM
-                        </span>
-                      )}
-                      <span className="font-mono font-bold text-amber-400">
-                        {rec.recoveryScore}/100
-                      </span>
+                    <div className="text-[11px] text-neutral-400 truncate">
+                      Wähle aus, welche Messwerte von Google Health &amp; Garmin sichtbar sind
                     </div>
                   </div>
-                );
-              })}
-          </div>
-        )}
-      </div>
+                </div>
+                {showMetricsSection ? (
+                  <ChevronUp className="w-4 h-4 text-neutral-400 shrink-0" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-neutral-400 shrink-0" />
+                )}
+              </button>
+
+              {showMetricsSection && (
+                <div className="rounded-xl border border-neutral-800 bg-neutral-950/80 p-3.5 sm:p-4">
+                  <HealthMetricsPicker
+                    visibleMetrics={settings.visibleHealthMetrics}
+                    onChange={handleUpdateVisible}
+                    currentRecord={todayRecord}
+                    historyRecords={healthRecords}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Synced Health History Preview */}
+            <div className="pt-4 border-t border-neutral-800 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-neutral-300 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                  Synchronisierte Health-Historie (letzte 14 Tage)
+                </span>
+                <span className="text-neutral-500 tabular-nums">
+                  {healthRecords.length} {healthRecords.length === 1 ? 'Tag' : 'Tage'} gespeichert
+                </span>
+              </div>
+
+              {healthRecords.length === 0 ? (
+                <div className="rounded-xl border border-neutral-800/80 bg-neutral-950/60 p-3.5 text-xs text-neutral-400">
+                  Noch keine historischen Tagesdaten vorhanden. Verbinde Google Health oder Garmin
+                  und klicke auf „Jetzt abrufen“, um die letzten 14 Tage zu importieren.
+                </div>
+              ) : (
+                <div className="max-h-72 overflow-y-auto pr-1 space-y-1.5">
+                  {[...healthRecords]
+                    .sort((a, b) => b.date - a.date)
+                    .slice(0, 14)
+                    .map((rec) => {
+                      const dateObj = new Date(rec.date);
+                      const label = isToday(dateObj)
+                        ? 'Heute'
+                        : isYesterday(dateObj)
+                        ? 'Gestern'
+                        : format(dateObj, 'EEE, dd.MM.', { locale: de });
+                      const visibleSources = rec.sources.filter(
+                        (s) => s !== 'browser_idle' || rec.sources.length === 1
+                      );
+                      const enabledValues = HEALTH_METRICS_CATALOG.filter(
+                        (m) =>
+                          m.key !== 'recoveryScore' &&
+                          visibleSet.has(m.key) &&
+                          hasHealthMetricValue(m.key, rec)
+                      );
+
+                      return (
+                        <div
+                          key={rec.id}
+                          className="rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 space-y-1.5 text-xs"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <span className="font-semibold text-white">{label}</span>
+                              <span className="text-neutral-500 text-[11px] ml-2">
+                                {visibleSources.map((s) => SOURCE_LABELS[s]).join(' · ')}
+                              </span>
+                            </div>
+                            {visibleSet.has('recoveryScore') && (
+                              <span className="font-mono font-bold text-amber-400 tabular-nums">
+                                {rec.recoveryScore}/100
+                              </span>
+                            )}
+                          </div>
+
+                          {enabledValues.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums text-[11px] text-neutral-300">
+                              {enabledValues.map((m) => {
+                                const val = formatHealthMetricValue(m.key, rec);
+                                if (!val) return null;
+                                return (
+                                  <span key={m.key}>
+                                    <span className="text-neutral-500">{m.shortLabel}: </span>
+                                    <span className="font-medium text-neutral-200">{val}</span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
