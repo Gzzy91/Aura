@@ -37,14 +37,14 @@ export function Visions() {
     .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
 
   return (
-    <div className="p-4 md:p-8 max-w-6xl mx-auto">
-      <header className="mb-8 flex justify-between items-end gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
-            <Compass className="w-8 h-8 text-blue-500" />
+    <div className="max-w-6xl mx-auto">
+      <header className="mb-6 sm:mb-8 flex justify-between items-start sm:items-end gap-3">
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-1.5 flex items-center gap-2.5 sm:gap-3">
+            <Compass className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500 shrink-0" />
             Lebensziele
           </h2>
-          <p className="text-neutral-400">
+          <p className="text-xs sm:text-sm text-neutral-400">
             Dein Nordstern. Verknüpfe tägliche Quests, um große Ziele planbar zu erreichen.
           </p>
         </div>
@@ -91,7 +91,7 @@ export function Visions() {
                 return (
                   <div
                     key={vision.id}
-                    className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 flex flex-col justify-between gap-6"
+                    className="bg-neutral-900 border border-neutral-800 rounded-3xl p-4 sm:p-6 flex flex-col justify-between gap-5 sm:gap-6"
                   >
                     <div>
                       <div className="flex justify-between items-start gap-3 mb-5">
@@ -139,15 +139,15 @@ export function Visions() {
                       </div>
 
                       <div>
-                        <div className="flex items-center justify-between mb-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                           <h4 className="text-xs font-bold text-neutral-400 tracking-wider uppercase flex items-center gap-2">
-                            <Target className="w-4 h-4 text-blue-400" />
+                            <Target className="w-4 h-4 text-blue-400 shrink-0" />
                             Offene Quests ({openQuests.length})
                           </h4>
                           <button
                             type="button"
                             onClick={() => setQuestForVisionId(vision.id)}
-                            className="inline-flex items-center gap-1 text-xs font-bold text-blue-400 hover:text-blue-300 px-2.5 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/25 hover:bg-blue-500/20 transition-colors"
+                            className="inline-flex items-center gap-1 text-xs font-bold text-blue-400 hover:text-blue-300 px-2.5 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/25 hover:bg-blue-500/20 transition-colors min-h-[36px]"
                           >
                             <Plus className="w-3.5 h-3.5" />
                             Quest verknüpfen

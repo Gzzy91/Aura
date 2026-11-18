@@ -3,22 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useRef } from 'react';
-import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
-import { Dashboard } from './pages/Dashboard';
-import { Quests } from './pages/Quests';
-import { Habits } from './pages/Habits';
-import { Skills } from './pages/Skills';
-import { Avatar } from './pages/Avatar';
-import { AICoach } from './pages/AICoach';
-import { Calendar } from './pages/Calendar';
-import { Diary } from './pages/Diary';
-import { Visions } from './pages/Visions';
-import { Focus } from './pages/Focus';
-import { Mentaltraining } from './pages/Mentaltraining';
-import { FoodJournal } from './pages/FoodJournal';
-import { Settings } from './pages/Settings';
 import { PinLock } from './components/PinLock';
 import { Toaster, toast } from 'sonner';
 import { NotificationManager } from './components/NotificationManager';
@@ -36,6 +23,28 @@ import {
 import { generateWeeklyRetrospective } from './services/coachService';
 
 import { Login } from './pages/Login';
+
+const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
+const Quests = lazy(() => import('./pages/Quests').then((m) => ({ default: m.Quests })));
+const Habits = lazy(() => import('./pages/Habits').then((m) => ({ default: m.Habits })));
+const Skills = lazy(() => import('./pages/Skills').then((m) => ({ default: m.Skills })));
+const Avatar = lazy(() => import('./pages/Avatar').then((m) => ({ default: m.Avatar })));
+const AICoach = lazy(() => import('./pages/AICoach').then((m) => ({ default: m.AICoach })));
+const Calendar = lazy(() => import('./pages/Calendar').then((m) => ({ default: m.Calendar })));
+const Diary = lazy(() => import('./pages/Diary').then((m) => ({ default: m.Diary })));
+const Visions = lazy(() => import('./pages/Visions').then((m) => ({ default: m.Visions })));
+const Focus = lazy(() => import('./pages/Focus').then((m) => ({ default: m.Focus })));
+const Mentaltraining = lazy(() => import('./pages/Mentaltraining').then((m) => ({ default: m.Mentaltraining })));
+const FoodJournal = lazy(() => import('./pages/FoodJournal').then((m) => ({ default: m.FoodJournal })));
+const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+
+function PageLoader() {
+  return (
+    <div className="min-h-[50vh] flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 const INACTIVITY_TIMEOUT = 1 * 60 * 1000; // 1 minute
 
@@ -376,23 +385,25 @@ function AppContent() {
       <NotificationManager />
       <PinLock />
       <Layout setActiveTab={handleSetActiveTab}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard setActiveTab={handleSetActiveTab} />} />
-          <Route path="/visions" element={<Visions />} />
-          <Route path="/quests" element={<Quests />} />
-          <Route path="/habits" element={<Habits />} />
-          <Route path="/focus" element={<Focus />} />
-          <Route path="/skills" element={<Skills />} />
-          <Route path="/avatar" element={<Avatar />} />
-          <Route path="/calendar" element={<Calendar />} />
-          <Route path="/diary" element={<Diary />} />
-          <Route path="/food" element={<FoodJournal />} />
-          <Route path="/mentaltraining" element={<Mentaltraining setActiveTab={handleSetActiveTab} />} />
-          <Route path="/coach" element={<AICoach />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard setActiveTab={handleSetActiveTab} />} />
+            <Route path="/visions" element={<Visions />} />
+            <Route path="/quests" element={<Quests />} />
+            <Route path="/habits" element={<Habits />} />
+            <Route path="/focus" element={<Focus />} />
+            <Route path="/skills" element={<Skills />} />
+            <Route path="/avatar" element={<Avatar />} />
+            <Route path="/calendar" element={<Calendar />} />
+            <Route path="/diary" element={<Diary />} />
+            <Route path="/food" element={<FoodJournal />} />
+            <Route path="/mentaltraining" element={<Mentaltraining setActiveTab={handleSetActiveTab} />} />
+            <Route path="/coach" element={<AICoach />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
       </Layout>
     </>
   );

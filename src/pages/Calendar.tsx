@@ -173,11 +173,11 @@ export function Calendar() {
   const isViewingCurrentMonth = isSameMonth(currentMonth, new Date());
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto">
+    <div className="space-y-6 sm:space-y-8 max-w-6xl mx-auto">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Kalender</h2>
-          <p className="text-neutral-400">Verfolge deine Quest-Historie, Planung &amp; Tagesstimmung</p>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Kalender</h2>
+          <p className="text-xs sm:text-sm text-neutral-400">Verfolge deine Quest-Historie, Planung &amp; Tagesstimmung</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
           <button
@@ -200,22 +200,22 @@ export function Calendar() {
             </button>
           )}
 
-          <div className="flex flex-1 sm:flex-none items-center justify-between gap-1 bg-neutral-900 p-1 rounded-xl border border-neutral-800">
+          <div className="flex flex-1 min-w-0 sm:flex-none items-center justify-between gap-1 bg-neutral-900 p-1 rounded-xl border border-neutral-800">
             <button
               type="button"
               onClick={prevMonth}
-              className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors"
+              className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
               aria-label="Vorheriger Monat"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <span className="px-2 sm:px-4 font-bold min-w-[130px] sm:min-w-[150px] text-center text-sm sm:text-base capitalize">
+            <span className="px-1.5 sm:px-4 font-bold flex-1 sm:flex-none sm:min-w-[150px] text-center text-xs sm:text-base capitalize truncate">
               {format(currentMonth, 'MMMM yyyy', { locale: de })}
             </span>
             <button
               type="button"
               onClick={nextMonth}
-              className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors"
+              className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
               aria-label="Nächster Monat"
             >
               <ChevronRight className="w-5 h-5" />
@@ -251,7 +251,7 @@ export function Calendar() {
                   key={idx}
                   onClick={() => setSelectedDay(day)}
                   className={cn(
-                    'h-20 sm:h-24 p-1.5 sm:p-2 border-r border-b border-neutral-800 transition-colors relative text-left flex flex-col justify-between',
+                    'h-14 sm:h-24 p-1 sm:p-2 border-r border-b border-neutral-800 transition-colors relative text-left flex flex-col justify-between',
                     !isCurrentMonth && 'opacity-30',
                     isSel
                       ? 'bg-amber-500/10 ring-1 ring-inset ring-amber-500/60'
@@ -313,7 +313,7 @@ export function Calendar() {
 
         {/* Day Details */}
         <div className="space-y-6">
-          <div className="bg-neutral-900 rounded-2xl border border-neutral-800 p-6 shadow-xl sticky top-8 space-y-5">
+          <div className="bg-neutral-900 rounded-2xl border border-neutral-800 p-4 sm:p-6 shadow-xl lg:sticky lg:top-8 space-y-5">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 bg-amber-500/10 rounded-xl flex items-center justify-center text-amber-500 shrink-0">
                 <CalendarIcon className="w-5 h-5" />
@@ -352,6 +352,7 @@ export function Calendar() {
               <AnimatePresence mode="popLayout">
                 {selectedDayQuests.length === 0 ? (
                   <motion.div
+                    key="empty-calendar-day"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     className="text-center py-8 text-neutral-500 border border-dashed border-neutral-800 rounded-xl text-sm"

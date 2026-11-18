@@ -408,7 +408,9 @@ export const useStore = create<AppState>()(
         set((state) => ({ deepTrainings: [...state.deepTrainings, training] }));
         const { user } = get();
         if (user) {
-          setDoc(doc(db, 'users', user.uid, 'deepTrainings', training.id), cleanData(training));
+          setDoc(doc(db, 'users', user.uid, 'deepTrainings', training.id), cleanData(training)).catch((error) => {
+            handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/deepTrainings/${training.id}`);
+          });
         }
       },
       
@@ -416,7 +418,9 @@ export const useStore = create<AppState>()(
         set({ lastTrainingGeneratedDate: dateStr });
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ lastTrainingGeneratedDate: dateStr }));
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ lastTrainingGeneratedDate: dateStr })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          });
         }
       },
 
@@ -426,7 +430,9 @@ export const useStore = create<AppState>()(
         set({ settings: newSettings });
         triggerHapticFeedback();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ settings: newSettings }));
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ settings: newSettings })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          });
         }
       },
 
@@ -434,7 +440,9 @@ export const useStore = create<AppState>()(
         set({ widgetOrder: order });
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ widgetOrder: order }));
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ widgetOrder: order })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          });
         }
       },
 
@@ -444,7 +452,9 @@ export const useStore = create<AppState>()(
         set(state => ({ visions: [...state.visions, vision] }));
         const { user } = get();
         if (user) {
-          setDoc(doc(db, 'users', user.uid, 'visions', id), cleanData(vision));
+          setDoc(doc(db, 'users', user.uid, 'visions', id), cleanData(vision)).catch((error) => {
+            handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/visions/${id}`);
+          });
         }
       },
 
@@ -454,7 +464,9 @@ export const useStore = create<AppState>()(
         }));
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid, 'visions', id), cleanUpdateData(updates));
+          updateDoc(doc(db, 'users', user.uid, 'visions', id), cleanUpdateData(updates)).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/visions/${id}`);
+          });
         }
       },
 
@@ -464,7 +476,9 @@ export const useStore = create<AppState>()(
         }));
         const { user } = get();
         if (user) {
-          deleteDoc(doc(db, 'users', user.uid, 'visions', id));
+          deleteDoc(doc(db, 'users', user.uid, 'visions', id)).catch((error) => {
+            handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/visions/${id}`);
+          });
         }
       },
 
@@ -474,7 +488,9 @@ export const useStore = create<AppState>()(
         set(state => ({ focusSessions: [...state.focusSessions, session] }));
         const { user } = get();
         if (user) {
-          setDoc(doc(db, 'users', user.uid, 'focusSessions', id), cleanData(session));
+          setDoc(doc(db, 'users', user.uid, 'focusSessions', id), cleanData(session)).catch((error) => {
+            handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/focusSessions/${id}`);
+          });
         }
       },
 
@@ -489,7 +505,9 @@ export const useStore = create<AppState>()(
         };
         set({ stats: newStats });
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          });
         }
       },
 
@@ -501,7 +519,9 @@ export const useStore = create<AppState>()(
         };
         set({ stats: newStats });
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          });
         }
       },
 
@@ -515,7 +535,9 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          setDoc(doc(db, 'users', user.uid, 'quests', id), cleanData(quest));
+          setDoc(doc(db, 'users', user.uid, 'quests', id), cleanData(quest)).catch((error) => {
+            handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/quests/${id}`);
+          });
         }
       },
 
@@ -777,11 +799,9 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          try {
-            setDoc(doc(db, 'users', user.uid, 'foodEntries', id), cleanData(entry));
-          } catch (error) {
+          setDoc(doc(db, 'users', user.uid, 'foodEntries', id), cleanData(entry)).catch((error) => {
             handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/foodEntries/${id}`);
-          }
+          });
         }
       },
 
@@ -794,11 +814,9 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          try {
-            updateDoc(doc(db, 'users', user.uid, 'foodEntries', id), cleanUpdateData(updates));
-          } catch (error) {
+          updateDoc(doc(db, 'users', user.uid, 'foodEntries', id), cleanUpdateData(updates)).catch((error) => {
             handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/foodEntries/${id}`);
-          }
+          });
         }
       },
 
@@ -809,11 +827,9 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          try {
-            deleteDoc(doc(db, 'users', user.uid, 'foodEntries', id));
-          } catch (error) {
+          deleteDoc(doc(db, 'users', user.uid, 'foodEntries', id)).catch((error) => {
             handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/foodEntries/${id}`);
-          }
+          });
         }
       },
 
@@ -865,12 +881,16 @@ export const useStore = create<AppState>()(
           if (user) {
             updateDoc(doc(db, 'users', user.uid, 'quests', id), cleanUpdateData({
               completions: nextQuests.find(q => q.id === id)?.completions
-            }));
+            })).catch((error) => {
+              handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/quests/${id}`);
+            });
           }
 
           set({ quests: nextQuests, stats: newStats });
           if (user) {
-            updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
+            updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats })).catch((error) => {
+              handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+            });
           }
           return actionTimestamp;
         } else {
@@ -905,14 +925,18 @@ export const useStore = create<AppState>()(
             nextQuests.push(recurringQuest);
             
             if (user) {
-              setDoc(doc(db, 'users', user.uid, 'quests', recurringQuest.id), cleanData(recurringQuest));
+              setDoc(doc(db, 'users', user.uid, 'quests', recurringQuest.id), cleanData(recurringQuest)).catch((error) => {
+                handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/quests/${recurringQuest.id}`);
+              });
             }
           }
         }
 
         set({ quests: nextQuests, stats: newStats });
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          });
         }
       },
 
@@ -962,7 +986,9 @@ export const useStore = create<AppState>()(
           nextQuests.push(recurringQuest);
 
           if (user) {
-            setDoc(doc(db, 'users', user.uid, 'quests', recurringQuest.id), cleanData(recurringQuest));
+            setDoc(doc(db, 'users', user.uid, 'quests', recurringQuest.id), cleanData(recurringQuest)).catch((error) => {
+              handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/quests/${recurringQuest.id}`);
+            });
           }
         }
 
@@ -1084,7 +1110,9 @@ export const useStore = create<AppState>()(
           if (quest) {
             updateDoc(doc(db, 'users', user.uid, 'quests', questId), cleanUpdateData({
               subtasks: quest.subtasks
-            }));
+            })).catch((error) => {
+              handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/quests/${questId}`);
+            });
           }
         }
       },
@@ -1128,8 +1156,12 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          deleteDoc(doc(db, 'users', user.uid, 'quests', id));
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
+          deleteDoc(doc(db, 'users', user.uid, 'quests', id)).catch((error) => {
+            handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/quests/${id}`);
+          });
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          });
         }
       },
 
@@ -1193,8 +1225,12 @@ export const useStore = create<AppState>()(
             failed: false,
             completedAt: deleteField(),
             ...(updatedDueDate !== quest.dueDate ? { dueDate: updatedDueDate } : {})
+          }).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/quests/${id}`);
           });
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          });
         }
       },
 
@@ -1205,7 +1241,9 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid, 'quests', id), cleanUpdateData(updates));
+          updateDoc(doc(db, 'users', user.uid, 'quests', id), cleanUpdateData(updates)).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/quests/${id}`);
+          });
         }
       },
 
@@ -1249,8 +1287,12 @@ export const useStore = create<AppState>()(
         set({ quests: newQuests, stats: newStats });
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid, 'quests', questId), cleanUpdateData({ completions: newCompletions }));
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
+          updateDoc(doc(db, 'users', user.uid, 'quests', questId), cleanUpdateData({ completions: newCompletions })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/quests/${questId}`);
+          });
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          });
         }
       },
 
@@ -1282,7 +1324,9 @@ export const useStore = create<AppState>()(
         set({ stats: newStats });
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          });
         }
       },
 
@@ -1318,7 +1362,9 @@ export const useStore = create<AppState>()(
         set((state) => ({ notifiedQuestIds: [...state.notifiedQuestIds, id] }));
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ notifiedQuestIds: get().notifiedQuestIds }));
+          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ notifiedQuestIds: get().notifiedQuestIds })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          });
         }
       },
 
@@ -1327,7 +1373,9 @@ export const useStore = create<AppState>()(
         const newStats = calculateStatsFromHistory(state.quests, state.focusSessions, state.stats);
         set({ stats: newStats });
         if (state.user) {
-          updateDoc(doc(db, 'users', state.user.uid), cleanUpdateData({ stats: newStats }));
+          updateDoc(doc(db, 'users', state.user.uid), cleanUpdateData({ stats: newStats })).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${state.user.uid}`);
+          });
         }
       },
 
@@ -1345,27 +1393,34 @@ export const useStore = create<AppState>()(
         const healthRecordsColRef = collection(db, 'users', userId, 'healthRecords');
 
         // Initial check: if user doc doesn't exist, upload current local state
-        getDoc(userDocRef).then((docSnap) => {
-          if (!docSnap.exists()) {
-            const state = get();
-            const initialStats = calculateStatsFromHistory(state.quests, state.focusSessions, state.stats);
-            setDoc(userDocRef, cleanData({
-              stats: initialStats,
-              widgetOrder: state.widgetOrder,
-              notifiedQuestIds: state.notifiedQuestIds,
-              lastTrainingGeneratedDate: state.lastTrainingGeneratedDate
-            }));
-            state.quests.forEach(q => setDoc(doc(questsColRef, q.id), cleanData(q)));
-            state.diaryEntries.forEach(e => setDoc(doc(diaryColRef, e.id), cleanData(e)));
-            state.visions.forEach(v => setDoc(doc(visionsColRef, v.id), cleanData(v)));
-            state.focusSessions.forEach(f => setDoc(doc(focusColRef, f.id), cleanData(f)));
-            state.deepTrainings.forEach(d => setDoc(doc(deepColRef, d.id), cleanData(d)));
-            state.foodEntries.forEach(f => setDoc(doc(foodColRef, f.id), cleanData(f)));
-            state.weeklyCoachSummaries.forEach(w => setDoc(doc(weeklyCoachSummariesColRef, w.id), cleanData(w)));
-            state.weeklyRetrospectives.forEach(r => setDoc(doc(weeklyRetrospectivesColRef, r.id), cleanData(r)));
-            state.healthRecords.forEach(h => setDoc(doc(healthRecordsColRef, h.id), cleanData(h)));
-          }
-        });
+        getDoc(userDocRef)
+          .then((docSnap) => {
+            if (!docSnap.exists()) {
+              const state = get();
+              const initialStats = calculateStatsFromHistory(state.quests, state.focusSessions, state.stats);
+              const handleSeedError = (path: string) => (err: unknown) => {
+                handleFirestoreError(err, OperationType.CREATE, path);
+              };
+              setDoc(userDocRef, cleanData({
+                stats: initialStats,
+                widgetOrder: state.widgetOrder,
+                notifiedQuestIds: state.notifiedQuestIds,
+                lastTrainingGeneratedDate: state.lastTrainingGeneratedDate
+              })).catch(handleSeedError(`users/${userId}`));
+              state.quests.forEach(q => setDoc(doc(questsColRef, q.id), cleanData(q)).catch(handleSeedError(`users/${userId}/quests/${q.id}`)));
+              state.diaryEntries.forEach(e => setDoc(doc(diaryColRef, e.id), cleanData(e)).catch(handleSeedError(`users/${userId}/diaryEntries/${e.id}`)));
+              state.visions.forEach(v => setDoc(doc(visionsColRef, v.id), cleanData(v)).catch(handleSeedError(`users/${userId}/visions/${v.id}`)));
+              state.focusSessions.forEach(f => setDoc(doc(focusColRef, f.id), cleanData(f)).catch(handleSeedError(`users/${userId}/focusSessions/${f.id}`)));
+              state.deepTrainings.forEach(d => setDoc(doc(deepColRef, d.id), cleanData(d)).catch(handleSeedError(`users/${userId}/deepTrainings/${d.id}`)));
+              state.foodEntries.forEach(f => setDoc(doc(foodColRef, f.id), cleanData(f)).catch(handleSeedError(`users/${userId}/foodEntries/${f.id}`)));
+              state.weeklyCoachSummaries.forEach(w => setDoc(doc(weeklyCoachSummariesColRef, w.id), cleanData(w)).catch(handleSeedError(`users/${userId}/weeklyCoachSummaries/${w.id}`)));
+              state.weeklyRetrospectives.forEach(r => setDoc(doc(weeklyRetrospectivesColRef, r.id), cleanData(r)).catch(handleSeedError(`users/${userId}/weeklyRetrospectives/${r.id}`)));
+              state.healthRecords.forEach(h => setDoc(doc(healthRecordsColRef, h.id), cleanData(h)).catch(handleSeedError(`users/${userId}/healthRecords/${h.id}`)));
+            }
+          })
+          .catch((error) => {
+            handleFirestoreError(error, OperationType.GET, `users/${userId}`);
+          });
 
         const unsubUser = onSnapshot(userDocRef, (doc) => {
           if (doc.exists()) {
@@ -1489,7 +1544,15 @@ export const useStore = create<AppState>()(
       name: 'rpg-storage',
       version: 1,
       partialize: (state) => {
-        const { isLocked, questsSynced, focusSynced, ...persistedState } = state;
+        const {
+          user,
+          loading,
+          isInitialized,
+          isLocked,
+          questsSynced,
+          focusSynced,
+          ...persistedState
+        } = state;
         return persistedState;
       },
       migrate: (persistedState: any, version: number) => {

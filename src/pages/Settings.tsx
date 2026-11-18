@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 import { HealthSourcesSettings } from '@/components/HealthSourcesSettings';
+import { sendBrowserNotification } from '@/lib/notification';
 
 export function Settings() {
   const { user, stats, settings, updateSettings, setLocked } = useStore();
@@ -62,8 +63,8 @@ export function Settings() {
     <div className="space-y-6">
       <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Einstellungen</h2>
-          <p className="text-neutral-400">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Einstellungen</h2>
+          <p className="text-xs sm:text-sm text-neutral-400">
             Verbundene Energie- &amp; Erholungsquellen, Benachrichtigungen und Sicherheit
           </p>
         </div>
@@ -79,7 +80,7 @@ export function Settings() {
       </header>
 
       {/* Energy & Recovery Sources */}
-      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 sm:p-6 space-y-5">
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 sm:p-6 space-y-5">
         <div className="border-b border-neutral-800 pb-4">
           <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2 text-white">
             <HeartPulse className="w-5 h-5 text-amber-500 shrink-0" />
@@ -97,7 +98,7 @@ export function Settings() {
       {/* Notifications & Security */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Notifications */}
-        <section className="bg-neutral-900 p-5 sm:p-6 rounded-2xl border border-neutral-800 flex flex-col justify-between gap-5">
+        <section className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 flex flex-col justify-between gap-5">
           <div className="space-y-4">
             <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
               <Bell className="w-5 h-5 text-amber-500" />
@@ -132,11 +133,10 @@ export function Settings() {
                   description: 'So sehen deine Erinnerungen aus!',
                   icon: <Bell className="w-4 h-4 text-amber-500" />,
                 });
-                if ('Notification' in window && Notification.permission === 'granted') {
-                  new Notification('Test-Benachrichtigung', {
-                    body: 'So sehen deine Erinnerungen aus!',
-                  });
-                }
+                void sendBrowserNotification('Test-Benachrichtigung', {
+                  body: 'So sehen deine Erinnerungen aus!',
+                  icon: '/favicon.svg',
+                });
               }}
               className="bg-neutral-800 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-neutral-700 transition-colors w-full flex items-center justify-center gap-2 min-h-[42px]"
             >
@@ -147,7 +147,7 @@ export function Settings() {
         </section>
 
         {/* Security / PIN Lock */}
-        <section className="bg-neutral-900 p-5 sm:p-6 rounded-2xl border border-neutral-800 flex flex-col justify-between gap-5">
+        <section className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 flex flex-col justify-between gap-5">
           <div className="space-y-4">
             <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
               <Lock className="w-5 h-5 text-amber-500" />
@@ -190,7 +190,7 @@ export function Settings() {
           </div>
 
           {settings.isPinEnabled ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setIsPinModalOpen(true)}

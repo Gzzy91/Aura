@@ -41,7 +41,7 @@ export function NotificationManager() {
           // Trigger browser notification safely
           sendBrowserNotification('Quest Erinnerung', {
             body: `Deine Quest "${quest.title}" ist bald fällig!`,
-            icon: '/favicon.ico'
+            icon: '/favicon.svg'
           });
 
           markNotified(quest.id);

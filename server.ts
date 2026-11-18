@@ -3,9 +3,9 @@ import express from 'express';
 import type { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, ThinkingLevel, Type, GenerateContentResponse } from '@google/genai';
-import { registerHealthOAuthRoutes } from './server/healthOAuth';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import type { GenerateContentResponse } from '@google/genai';
+import { registerHealthOAuthRoutes } from './server/healthOAuth.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -771,7 +771,17 @@ Write in GERMAN. Address the user as "Du".`;
 
   registerHealthOAuthRoutes(app);
 
+  app.all('/api/*', (_req: Request, res: Response) => {
+    res.status(404).json({ error: 'API-Endpunkt nicht gefunden.' });
+  });
+
+  app.get('/favicon.ico', (_req: Request, res: Response) => {
+    res.type('image/svg+xml');
+    res.sendFile(path.join(__dirname, 'public', 'favicon.svg'));
+  });
+
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',

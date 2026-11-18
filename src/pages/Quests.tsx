@@ -943,6 +943,7 @@ export function Quests() {
           {(view === 'active' || view === 'upcoming') && (
             (view === 'active' ? activeQuests : upcomingQuests).length === 0 ? (
               <motion.div
+                key={`empty-${view}`}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -1159,6 +1160,7 @@ export function Quests() {
           {view === 'history' && (
             displayedHistoryQuests.length === 0 ? (
               <motion.div
+                key="empty-history"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}

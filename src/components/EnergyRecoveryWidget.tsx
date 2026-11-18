@@ -307,7 +307,7 @@ export function EnergyRecoveryWidget({
   const telemetry = loadBrowserTelemetry();
 
   return (
-    <div className="bg-neutral-900 p-5 sm:p-6 rounded-2xl border border-neutral-800 h-full flex flex-col gap-5">
+    <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 h-full flex flex-col gap-5">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">

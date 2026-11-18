@@ -338,7 +338,7 @@ export function WeeklyRetrospectiveWidget({
   const adoptedIds = currentRetro?.adoptedRecommendationIds || [];
 
   return (
-    <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full flex flex-col gap-5">
+    <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 h-full flex flex-col gap-5">
       {/* Header + Schedule Status + Week Navigation */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="space-y-1">

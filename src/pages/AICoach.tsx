@@ -216,14 +216,14 @@ export function AICoach() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-9rem)] md:h-[calc(100vh-5rem)] max-w-5xl mx-auto">
-      <header className="mb-5 flex items-end justify-between gap-4 flex-shrink-0">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-            <Sparkles className="w-8 h-8 text-amber-500" />
+    <div className="flex flex-col h-[calc(100dvh-10.5rem)] md:h-[calc(100dvh-4.5rem)] min-h-[420px] max-w-5xl mx-auto">
+      <header className="mb-3 sm:mb-5 flex flex-wrap items-end justify-between gap-3 flex-shrink-0">
+        <div className="min-w-0">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-2.5 sm:gap-3">
+            <Sparkles className="w-7 h-7 sm:w-8 sm:h-8 text-amber-500 shrink-0" />
             KI-Coach
           </h2>
-          <p className="text-neutral-400 mt-1">
+          <p className="text-xs sm:text-sm text-neutral-400 mt-1">
             Individuelle Empfehlungen auf Basis deiner Stimmung, Gesundheit &amp; Quests
           </p>
         </div>
@@ -231,7 +231,7 @@ export function AICoach() {
           <button
             type="button"
             onClick={handleResetChat}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-xs font-bold text-neutral-300 hover:text-white transition-colors min-h-[40px]"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-xs font-bold text-neutral-300 hover:text-white transition-colors min-h-[40px] shrink-0"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Neuer Chat

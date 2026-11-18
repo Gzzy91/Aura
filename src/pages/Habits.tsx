@@ -384,58 +384,60 @@ export function Habits() {
         </div>
       )}
 
-      {/* 1-Line Quick-Add Bar */}
+      {/* Quick-Add Bar */}
       <form
         onSubmit={handleQuickAdd}
-        className="flex items-center gap-1.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl p-1.5"
+        className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 bg-neutral-900/80 border border-neutral-800/90 rounded-xl p-2 sm:p-1.5"
       >
         <input
           type="text"
           value={quickTitle}
           onChange={(e) => setQuickTitle(e.target.value)}
           placeholder="Schnell-Habit (+5 EP)..."
-          className="flex-1 min-w-0 bg-transparent px-2.5 py-1.5 text-xs sm:text-sm text-white placeholder-neutral-500 focus:outline-none"
+          className="w-full sm:w-auto sm:flex-1 min-w-0 bg-transparent px-2.5 py-2 sm:py-1.5 text-sm text-white placeholder-neutral-500 focus:outline-none"
         />
-        <button
-          type="button"
-          onClick={cycleQuickDirection}
-          title="Richtung wechseln (Positiv / Beides / Negativ)"
-          aria-label="Habit-Richtung wechseln"
-          className={cn(
-            'px-2 py-1.5 rounded-lg border text-[11px] font-bold transition-colors shrink-0 min-h-[34px] whitespace-nowrap',
-            quickDirection === 'positive'
-              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
-              : quickDirection === 'both'
-              ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
-              : 'bg-rose-500/15 border-rose-500/30 text-rose-400'
-          )}
-        >
-          {quickDirection === 'positive' ? '+ Pos' : quickDirection === 'both' ? '± Beides' : '- Neg'}
-        </button>
-        <select
-          value={quickSkill}
-          onChange={(e) => setQuickSkill(e.target.value as SkillType)}
-          aria-label="Skill für Schnell-Habit"
-          className={cn(
-            'bg-neutral-950 border border-neutral-800 rounded-lg px-2 py-1.5 text-[11px] font-semibold focus:outline-none focus:border-amber-500 shrink-0 min-h-[34px]',
-            SKILL_COLORS[quickSkill]
-          )}
-        >
-          {ALL_SKILLS.map((s) => (
-            <option key={s} value={s} className="text-white bg-neutral-900">
-              {s}
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          disabled={!quickTitle.trim()}
-          title="Schnell-Habit erstellen"
-          aria-label="Schnell-Habit erstellen"
-          className="w-9 h-9 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500 text-neutral-950 flex items-center justify-center transition-colors shrink-0"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-        </button>
+        <div className="flex items-center gap-1.5 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={cycleQuickDirection}
+            title="Richtung wechseln (Positiv / Beides / Negativ)"
+            aria-label="Habit-Richtung wechseln"
+            className={cn(
+              'px-2.5 py-1.5 rounded-lg border text-xs sm:text-[11px] font-bold transition-colors flex-1 sm:flex-none min-h-[38px] sm:min-h-[34px] whitespace-nowrap',
+              quickDirection === 'positive'
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                : quickDirection === 'both'
+                ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                : 'bg-rose-500/15 border-rose-500/30 text-rose-400'
+            )}
+          >
+            {quickDirection === 'positive' ? '+ Pos' : quickDirection === 'both' ? '± Beides' : '- Neg'}
+          </button>
+          <select
+            value={quickSkill}
+            onChange={(e) => setQuickSkill(e.target.value as SkillType)}
+            aria-label="Skill für Schnell-Habit"
+            className={cn(
+              'bg-neutral-950 border border-neutral-800 rounded-lg px-2 py-1.5 text-xs sm:text-[11px] font-semibold focus:outline-none focus:border-amber-500 flex-1 sm:flex-none min-w-0 min-h-[38px] sm:min-h-[34px]',
+              SKILL_COLORS[quickSkill]
+            )}
+          >
+            {ALL_SKILLS.map((s) => (
+              <option key={s} value={s} className="text-white bg-neutral-900">
+                {s}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            disabled={!quickTitle.trim()}
+            title="Schnell-Habit erstellen"
+            aria-label="Schnell-Habit erstellen"
+            className="w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500 text-neutral-950 flex items-center justify-center transition-colors shrink-0"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+          </button>
+        </div>
       </form>
 
       {/* Segmented Status Tabs */}
@@ -444,15 +446,15 @@ export function Habits() {
           type="button"
           onClick={() => setStatusTab('all')}
           className={cn(
-            'flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs sm:text-sm font-semibold transition-all min-w-0 whitespace-nowrap',
+            'flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1.5 sm:px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all min-w-0 whitespace-nowrap',
             statusTab === 'all'
               ? 'bg-neutral-800 text-white shadow-sm'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-800/40'
           )}
         >
-          <Target className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+          <Target className="w-3.5 h-3.5 shrink-0 text-amber-500 hidden sm:inline-block" />
           <span className="truncate">Alle</span>
-          <span className="text-[11px] font-mono text-neutral-400 tabular-nums shrink-0">
+          <span className="text-[10px] sm:text-[11px] font-mono text-neutral-400 tabular-nums shrink-0">
             {tabCounts.all}
           </span>
         </button>
@@ -461,15 +463,15 @@ export function Habits() {
           type="button"
           onClick={() => setStatusTab('open_today')}
           className={cn(
-            'flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs sm:text-sm font-semibold transition-all min-w-0 whitespace-nowrap',
+            'flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1.5 sm:px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all min-w-0 whitespace-nowrap',
             statusTab === 'open_today'
               ? 'bg-neutral-800 text-white shadow-sm'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-800/40'
           )}
         >
-          <Sparkles className="w-3.5 h-3.5 shrink-0 text-sky-400" />
+          <Sparkles className="w-3.5 h-3.5 shrink-0 text-sky-400 hidden sm:inline-block" />
           <span className="truncate">Heute offen</span>
-          <span className="text-[11px] font-mono text-neutral-400 tabular-nums shrink-0">
+          <span className="text-[10px] sm:text-[11px] font-mono text-neutral-400 tabular-nums shrink-0">
             {tabCounts.openToday}
           </span>
         </button>
@@ -478,15 +480,15 @@ export function Habits() {
           type="button"
           onClick={() => setStatusTab('done_today')}
           className={cn(
-            'flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs sm:text-sm font-semibold transition-all min-w-0 whitespace-nowrap',
+            'flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1.5 sm:px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all min-w-0 whitespace-nowrap',
             statusTab === 'done_today'
               ? 'bg-neutral-800 text-white shadow-sm'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-800/40'
           )}
         >
-          <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+          <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400 hidden sm:inline-block" />
           <span className="truncate">Heute aktiv</span>
-          <span className="text-[11px] font-mono text-neutral-400 tabular-nums shrink-0">
+          <span className="text-[10px] sm:text-[11px] font-mono text-neutral-400 tabular-nums shrink-0">
             {tabCounts.doneToday}
           </span>
         </button>

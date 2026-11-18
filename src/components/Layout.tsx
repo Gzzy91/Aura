@@ -371,8 +371,8 @@ export function Layout({ children, setActiveTab }: LayoutProps) {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 min-h-0 overflow-y-auto bg-neutral-950 flex flex-col pb-[5.5rem] md:pb-0 relative z-0">
-        <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto w-full">{children}</div>
+      <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-neutral-950 flex flex-col pb-[5.5rem] md:pb-0 relative z-0">
+        <div className="p-3.5 sm:p-6 md:p-8 max-w-6xl mx-auto w-full">{children}</div>
       </main>
 
       {/* Bottom Nav for Mobile */}

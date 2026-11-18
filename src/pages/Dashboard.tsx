@@ -219,7 +219,14 @@ const WEEKLY_XP_TOOLTIP_EL = <CustomWeeklyXpTooltip />;
 
 const WeeklySummaryChart = memo(function WeeklySummaryChart({ data }: { data: any[] }) {
   return (
-    <ResponsiveContainer width="100%" height="100%" minWidth={0} debounce={50}>
+    <ResponsiveContainer
+      width="100%"
+      height="100%"
+      minWidth={0}
+      minHeight={180}
+      initialDimension={{ width: 320, height: 180 }}
+      debounce={50}
+    >
       <ComposedChart data={data} margin={WEEKLY_SUMMARY_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke="#262626" vertical={false} />
         <XAxis
@@ -279,7 +286,14 @@ const WeeklySummaryChart = memo(function WeeklySummaryChart({ data }: { data: an
 
 const FoodMoodChart = memo(function FoodMoodChart({ data }: { data: any[] }) {
   return (
-    <ResponsiveContainer width="100%" height="100%" minWidth={0} debounce={50}>
+    <ResponsiveContainer
+      width="100%"
+      height="100%"
+      minWidth={0}
+      minHeight={180}
+      initialDimension={{ width: 320, height: 180 }}
+      debounce={50}
+    >
       <BarChart data={data} margin={FOOD_MOOD_CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke="#262626" vertical={false} />
         <XAxis
@@ -323,7 +337,14 @@ const FourWeekTrendChart = memo(function FourWeekTrendChart({ data }: { data: an
   return (
     <div className="flex flex-col gap-3">
       <div className="h-[265px] w-full">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0} debounce={50}>
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+          minWidth={0}
+          minHeight={240}
+          initialDimension={{ width: 320, height: 240 }}
+          debounce={50}
+        >
           <LineChart data={data} margin={TREND_CHART_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#262626" />
             <XAxis
@@ -372,8 +393,15 @@ const FourWeekTrendChart = memo(function FourWeekTrendChart({ data }: { data: an
 const WeeklyXpChart = memo(function WeeklyXpChart({ data }: { data: any[] }) {
   return (
     <div className="flex flex-col h-full gap-2">
-      <div className="flex-1 min-h-0 w-full">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0} debounce={50}>
+      <div className="flex-1 min-h-[220px] w-full">
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+          minWidth={0}
+          minHeight={220}
+          initialDimension={{ width: 320, height: 220 }}
+          debounce={50}
+        >
           <BarChart data={data} margin={WEEKLY_XP_CHART_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#262626" vertical={false} />
             <XAxis
@@ -1285,8 +1313,8 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
     <div className="space-y-6">
       <header className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Charakterstatus</h2>
-          <p className="text-neutral-400">Dein aktueller Fortschritt, Stimmung &amp; Erholung</p>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Charakterstatus</h2>
+          <p className="text-xs sm:text-sm text-neutral-400">Dein aktueller Fortschritt, Stimmung &amp; Erholung</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <button
@@ -1321,7 +1349,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4"
+            className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 sm:p-5 space-y-4"
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1366,13 +1394,13 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
 
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
         <SortableContext items={visibleWidgetIds} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {visibleWidgetIds.map(id => {
               switch (id) {
                 case 'avatar':
                   return (
                     <SortableWidget key="avatar" id="avatar" className="col-span-1">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 flex flex-col items-center justify-between text-center h-full gap-4">
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 flex flex-col items-center justify-between text-center h-full gap-4">
                         <div className="flex flex-col items-center pt-2">
                           <AvatarVisual level={stats.level} size="md" className="mb-3" />
                           <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-widest mb-0.5">
@@ -1395,7 +1423,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                 case 'level':
                   return (
                     <SortableWidget key="level" id="level" className="col-span-1 md:col-span-2 lg:col-span-2">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 flex flex-col items-center justify-center text-center h-full">
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 flex flex-col items-center justify-center text-center h-full">
                         <div className="w-full">
                           <div className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-2">
                             Aktuelles Level
@@ -1417,7 +1445,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                 case 'streak':
                   return (
                     <SortableWidget key="streak" id="streak" className="col-span-1">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 flex flex-col items-center justify-center text-center h-full">
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 flex flex-col items-center justify-center text-center h-full">
                         <Flame className="w-11 h-11 text-orange-500 mb-3" />
                         <div className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-1">
                           Tägliche Serie
@@ -1435,7 +1463,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                   const ActiveMoodIcon = activeMoodMeta?.icon;
                   return (
                     <SortableWidget key="mood" id="mood" className="col-span-1">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 flex flex-col justify-between h-full">
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 flex flex-col justify-between h-full">
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <h3 className="text-lg font-bold flex items-center gap-2 text-white">
@@ -1540,7 +1568,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                   const avgMoodMeta = roundedAvg ? MOOD_ICONS[roundedAvg] : null;
                   return (
                     <SortableWidget key="weekly_summary" id="weekly_summary" className="col-span-1 md:col-span-2 lg:col-span-2">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full flex flex-col gap-5">
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 h-full flex flex-col gap-5">
                         {/* Header + Week Switcher */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                           <div>
@@ -1677,7 +1705,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                         </div>
 
                         {/* 7-Day Interactive Strip */}
-                        <div className="grid grid-cols-7 gap-1.5">
+                        <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
                           {weeklySummaryData.dailyBreakdown.map((d) => {
                             const moodMeta = d.mood ? MOOD_ICONS[d.mood] : null;
                             const MoodIcon = moodMeta?.icon;
@@ -1693,7 +1721,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                                   }
                                 }}
                                 className={cn(
-                                  "p-2 rounded-xl border flex flex-col items-center justify-between gap-1 text-center transition-all",
+                                  "p-1 sm:p-2 rounded-xl border flex flex-col items-center justify-between gap-1 text-center transition-all overflow-hidden min-w-0",
                                   d.isToday
                                     ? "border-amber-500/50 bg-amber-500/5"
                                     : "border-neutral-800 bg-neutral-950/60",
@@ -1707,18 +1735,18 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                                   {d.shortDay}
                                 </span>
                                 {d.mood && MoodIcon && moodMeta ? (
-                                  <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center", moodMeta.bg)} title={`${d.mood}/5 Sterne – ${moodMeta.label}`}>
-                                    <MoodIcon className={cn("w-4 h-4", moodMeta.color)} />
+                                  <div className={cn("w-6 h-6 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center", moodMeta.bg)} title={`${d.mood}/5 Sterne – ${moodMeta.label}`}>
+                                    <MoodIcon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", moodMeta.color)} />
                                   </div>
                                 ) : (
-                                  <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-neutral-900/80 text-neutral-700 text-xs font-bold">
+                                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center bg-neutral-900/80 text-neutral-700 text-xs font-bold">
                                     –
                                   </div>
                                 )}
-                                <span className="text-[10px] font-mono font-bold text-amber-400">
+                                <span className="text-[9px] sm:text-[10px] font-mono font-bold text-amber-400">
                                   {d.mood ? `${d.mood}★` : '0★'}
                                 </span>
-                                <span className="text-[9px] font-mono text-neutral-500">
+                                <span className="text-[9px] font-mono text-neutral-500 truncate max-w-full">
                                   +{d.xp}
                                 </span>
                               </button>
@@ -1860,7 +1888,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                   const data = foodMoodCorrelationData;
                   return (
                     <SortableWidget key="food_mood_correlation" id="food_mood_correlation" className="col-span-1 md:col-span-2 lg:col-span-2">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full flex flex-col gap-5">
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 h-full flex flex-col gap-5">
                         {/* Header & Controls */}
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                           <div>
@@ -2279,7 +2307,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                 case 'trend':
                   return (
                     <SortableWidget key="trend" id="trend" className="col-span-1 lg:col-span-2">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800">
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800">
                         <div className="flex items-center justify-between mb-6">
                           <div>
                             <h3 className="text-xl font-bold flex items-center gap-2">
@@ -2299,53 +2327,51 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                 case 'chart':
                   return (
                     <SortableWidget key="chart" id="chart" className="col-span-1 md:col-span-2 lg:col-span-2">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full">
-                        <div className="flex flex-wrap justify-between items-center gap-2 mb-6">
-                          <h3 className="text-xl font-bold flex items-center gap-2">
-                            <BarChart2 className="w-5 h-5 text-amber-500" />
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 h-full">
+                        <div className="flex flex-wrap justify-between items-center gap-2 mb-5 sm:mb-6">
+                          <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
+                            <BarChart2 className="w-5 h-5 text-amber-500 shrink-0" />
                             Wöchentliche EP Übersicht
                           </h3>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 bg-neutral-950 border border-neutral-800 rounded-xl p-1">
+                            <button
+                              type="button"
+                              onClick={prevWeek}
+                              className="p-1.5 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors"
+                              aria-label="Vorherige Woche"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                            </button>
+                            <span className="text-xs font-bold text-neutral-300 px-1.5 sm:px-2 tabular-nums whitespace-nowrap">
+                              {format(startOfWeek(chartDate, { weekStartsOn: 1 }), 'dd.MM.')} – {format(endOfWeek(chartDate, { weekStartsOn: 1 }), 'dd.MM.yyyy')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={nextWeek}
+                              disabled={weeklySummaryData.isCurrentWeek}
+                              className={cn(
+                                'p-1.5 rounded-lg transition-colors',
+                                weeklySummaryData.isCurrentWeek
+                                  ? 'text-neutral-700 cursor-not-allowed'
+                                  : 'hover:bg-neutral-800 text-neutral-400 hover:text-white'
+                              )}
+                              aria-label="Nächste Woche"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
                             {!weeklySummaryData.isCurrentWeek && (
                               <button
                                 type="button"
                                 onClick={() => setChartDate(new Date())}
-                                className="px-2 py-1 text-[10px] font-bold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 rounded-lg transition-colors"
+                                className="px-2 py-1 text-[10px] font-bold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 rounded-lg transition-colors ml-0.5"
                               >
                                 Aktuell
                               </button>
                             )}
-                            <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider tabular-nums">
-                              {format(startOfWeek(chartDate, { weekStartsOn: 1 }), 'dd.MM.')} – {format(endOfWeek(chartDate, { weekStartsOn: 1 }), 'dd.MM.yyyy')}
-                            </span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 h-[300px] w-full -ml-2">
-                          <button
-                            type="button"
-                            onClick={prevWeek}
-                            className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors z-10"
-                            aria-label="Vorherige Woche"
-                          >
-                            <ChevronLeft className="w-6 h-6" />
-                          </button>
-                          <div className="flex-1 h-full min-w-0">
-                            <WeeklyXpChart data={weeklyXpData} />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={nextWeek}
-                            disabled={weeklySummaryData.isCurrentWeek}
-                            className={cn(
-                              'p-2 rounded-full transition-colors z-10',
-                              weeklySummaryData.isCurrentWeek
-                                ? 'text-neutral-700 cursor-not-allowed'
-                                : 'hover:bg-neutral-800 text-neutral-400 hover:text-white'
-                            )}
-                            aria-label="Nächste Woche"
-                          >
-                            <ChevronRight className="w-6 h-6" />
-                          </button>
+                        <div className="h-[240px] sm:h-[300px] w-full">
+                          <WeeklyXpChart data={weeklyXpData} />
                         </div>
                       </div>
                     </SortableWidget>
@@ -2353,105 +2379,79 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                 case 'recurring_chart':
                   return (
                     <SortableWidget key="recurring_chart" id="recurring_chart" className="col-span-1 md:col-span-2 lg:col-span-2">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full">
-                        <div className="flex flex-wrap justify-between items-center gap-2 mb-6">
-                          <h3 className="text-xl font-bold flex items-center gap-2">
-                            <Target className="w-5 h-5 text-amber-500" />
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 h-full">
+                        <div className="flex flex-wrap justify-between items-center gap-2 mb-5 sm:mb-6">
+                          <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
+                            <Target className="w-5 h-5 text-amber-500 shrink-0" />
                             Wiederkehrende Quests
                           </h3>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 bg-neutral-950 border border-neutral-800 rounded-xl p-1">
+                            <button
+                              type="button"
+                              onClick={prevWeek}
+                              className="p-1.5 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors"
+                              aria-label="Vorherige Woche"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                            </button>
+                            <span className="text-xs font-bold text-neutral-300 px-1.5 sm:px-2 tabular-nums whitespace-nowrap">
+                              {format(startOfWeek(chartDate, { weekStartsOn: 1 }), 'dd.MM.')} – {format(endOfWeek(chartDate, { weekStartsOn: 1 }), 'dd.MM.yyyy')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={nextWeek}
+                              disabled={weeklySummaryData.isCurrentWeek}
+                              className={cn(
+                                'p-1.5 rounded-lg transition-colors',
+                                weeklySummaryData.isCurrentWeek
+                                  ? 'text-neutral-700 cursor-not-allowed'
+                                  : 'hover:bg-neutral-800 text-neutral-400 hover:text-white'
+                              )}
+                              aria-label="Nächste Woche"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
                             {!weeklySummaryData.isCurrentWeek && (
                               <button
                                 type="button"
                                 onClick={() => setChartDate(new Date())}
-                                className="px-2 py-1 text-[10px] font-bold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 rounded-lg transition-colors"
+                                className="px-2 py-1 text-[10px] font-bold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 rounded-lg transition-colors ml-0.5"
                               >
                                 Aktuell
                               </button>
                             )}
-                            <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider tabular-nums">
-                              {format(startOfWeek(chartDate, { weekStartsOn: 1 }), 'dd.MM.')} – {format(endOfWeek(chartDate, { weekStartsOn: 1 }), 'dd.MM.yyyy')}
-                            </span>
                           </div>
                         </div>
                         {weeklyRecurringData.length === 0 ? (
-                          <div className="flex items-center gap-2 h-[300px] w-full -ml-2">
-                            <button
-                              type="button"
-                              onClick={prevWeek}
-                              className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors z-10"
-                              aria-label="Vorherige Woche"
-                            >
-                              <ChevronLeft className="w-6 h-6" />
-                            </button>
-                            <div className="flex-1 h-full min-w-0 flex items-center justify-center text-neutral-500 text-sm">
-                              Keine Quests in dieser Woche abgeschlossen.
-                            </div>
-                            <button
-                              type="button"
-                              onClick={nextWeek}
-                              disabled={weeklySummaryData.isCurrentWeek}
-                              className={cn(
-                                'p-2 rounded-full transition-colors z-10',
-                                weeklySummaryData.isCurrentWeek
-                                  ? 'text-neutral-700 cursor-not-allowed'
-                                  : 'hover:bg-neutral-800 text-neutral-400 hover:text-white'
-                              )}
-                              aria-label="Nächste Woche"
-                            >
-                              <ChevronRight className="w-6 h-6" />
-                            </button>
+                          <div className="h-[220px] sm:h-[300px] w-full flex items-center justify-center text-neutral-500 text-sm text-center px-4">
+                            Keine Quests in dieser Woche abgeschlossen.
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2 h-[300px] w-full -ml-2">
-                            <button
-                              type="button"
-                              onClick={prevWeek}
-                              className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors z-10 shrink-0"
-                              aria-label="Vorherige Woche"
-                            >
-                              <ChevronLeft className="w-6 h-6" />
-                            </button>
-                            <div className="flex-1 h-full min-w-0 flex flex-col gap-2 overflow-y-auto custom-scrollbar pr-2 pb-2">
-                              {weeklyRecurringData.map((item, index) => {
-                                const maxCount = Math.max(7, ...weeklyRecurringData.map(d => d.count));
-                                return (
-                                  <div key={index} className="flex flex-col bg-neutral-950 p-3 rounded-xl border border-neutral-800 shrink-0">
-                                    <div className="flex justify-between items-start mb-2 gap-2">
-                                      <span className="text-sm font-medium text-white break-words" title={item.fullTitle}>
-                                        {item.fullTitle}
+                          <div className="h-[250px] sm:h-[300px] w-full flex flex-col gap-2 overflow-y-auto custom-scrollbar pr-1 pb-2">
+                            {weeklyRecurringData.map((item, index) => {
+                              const maxCount = Math.max(7, ...weeklyRecurringData.map(d => d.count));
+                              return (
+                                <div key={index} className="flex flex-col bg-neutral-950 p-3 rounded-xl border border-neutral-800 shrink-0">
+                                  <div className="flex justify-between items-start mb-2 gap-2">
+                                    <span className="text-sm font-medium text-white break-words" title={item.fullTitle}>
+                                      {item.fullTitle}
+                                    </span>
+                                    <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                                      <span className="text-xs font-medium text-neutral-500 uppercase tracking-wider hidden sm:inline-block">{item.skill}</span>
+                                      <span className="text-sm font-mono font-bold tabular-nums" style={{ color: item.fill }}>
+                                        {item.count}×
                                       </span>
-                                      <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                                        <span className="text-xs font-medium text-neutral-500 uppercase tracking-wider hidden sm:inline-block">{item.skill}</span>
-                                        <span className="text-sm font-mono font-bold tabular-nums" style={{ color: item.fill }}>
-                                          {item.count}×
-                                        </span>
-                                      </div>
-                                    </div>
-                                    <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden">
-                                      <div 
-                                        className="h-full rounded-full transition-all duration-500 ease-in-out" 
-                                        style={{ width: `${Math.min((item.count / maxCount) * 100, 100)}%`, backgroundColor: item.fill }}
-                                      />
                                     </div>
                                   </div>
-                                );
-                              })}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={nextWeek}
-                              disabled={weeklySummaryData.isCurrentWeek}
-                              className={cn(
-                                'p-2 rounded-full transition-colors z-10 shrink-0',
-                                weeklySummaryData.isCurrentWeek
-                                  ? 'text-neutral-700 cursor-not-allowed'
-                                  : 'hover:bg-neutral-800 text-neutral-400 hover:text-white'
-                              )}
-                              aria-label="Nächste Woche"
-                            >
-                              <ChevronRight className="w-6 h-6" />
-                            </button>
+                                  <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden">
+                                    <div 
+                                      className="h-full rounded-full transition-all duration-500 ease-in-out" 
+                                      style={{ width: `${Math.min((item.count / maxCount) * 100, 100)}%`, backgroundColor: item.fill }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -2460,28 +2460,38 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                 case 'calendar':
                   return (
                     <SortableWidget key="calendar" id="calendar" className="col-span-1 md:col-span-2 lg:col-span-2">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full">
-                        <div className="flex justify-between items-center mb-6">
-                          <h3 className="text-xl font-bold flex items-center gap-2">
-                            <CalendarIcon className="w-5 h-5 text-amber-500" />
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 h-full">
+                        <div className="flex flex-wrap justify-between items-center gap-2 mb-5 sm:mb-6">
+                          <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
+                            <CalendarIcon className="w-5 h-5 text-amber-500 shrink-0" />
                             Stimmungs-Kalender
                           </h3>
-                          <div className="text-sm font-bold text-neutral-400 uppercase tracking-widest text-center">
-                            {format(viewDate, 'MMMM yyyy', { locale: de })}
+                          <div className="flex items-center gap-1 bg-neutral-950 border border-neutral-800 rounded-xl p-1">
+                            <button 
+                              type="button"
+                              onClick={prevMonth}
+                              className="p-1.5 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors"
+                              aria-label="Vorheriger Monat"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                            </button>
+                            <span className="text-xs font-bold text-neutral-300 px-2 uppercase tracking-wider text-center min-w-[105px] capitalize">
+                              {format(viewDate, 'MMMM yyyy', { locale: de })}
+                            </span>
+                            <button 
+                              type="button"
+                              onClick={nextMonth}
+                              className="p-1.5 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors"
+                              aria-label="Nächster Monat"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
                         
-                        <div className="flex items-center gap-2 -ml-2">
-                          <button 
-                            onClick={prevMonth}
-                            className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors z-10"
-                          >
-                            <ChevronLeft className="w-6 h-6" />
-                          </button>
-                          <div className="flex-1 min-w-0">
-                            <div className="grid grid-cols-7 gap-2">
+                        <div className="grid grid-cols-7 gap-1 sm:gap-2">
                           {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(day => (
-                            <div key={day} className="text-center text-[10px] font-bold text-neutral-500 uppercase tracking-tighter pb-2">
+                            <div key={day} className="text-center text-[10px] font-bold text-neutral-500 uppercase tracking-tighter pb-1.5 sm:pb-2">
                               {day}
                             </div>
                           ))}
@@ -2496,10 +2506,11 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                             return (
                               <button 
                                 key={i} 
+                                type="button"
                                 disabled={!entry}
                                 onClick={() => entry && setSelectedEntry(entry)}
                                 className={cn(
-                                  "aspect-square rounded-lg border flex flex-col items-center justify-center relative transition-all",
+                                  "aspect-square rounded-lg border flex flex-col items-center justify-center relative transition-all min-w-0",
                                   isCurrentMonth ? "bg-neutral-950/50 border-neutral-800" : "bg-transparent border-transparent opacity-20",
                                   isCurrentWeek && !isToday && "bg-neutral-800/40 border-neutral-700",
                                   isToday && "border-amber-500/50 ring-1 ring-amber-500/20 bg-amber-500/5",
@@ -2507,30 +2518,22 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                                 )}
                               >
                                 <span className={cn(
-                                  "text-[10px] absolute top-1 left-1 font-mono",
+                                  "text-[9px] sm:text-[10px] absolute top-0.5 left-1 sm:top-1 sm:left-1 font-mono leading-none",
                                   isToday ? "text-amber-500 font-bold" : "text-neutral-600"
                                 )}>
                                   {format(day, 'd')}
                                 </span>
                                 {MoodIcon && (
-                                  <div className={cn("p-1.5 rounded-full", mood.bg)}>
-                                    <MoodIcon className={cn("w-4 h-4", mood.color)} />
+                                  <div className={cn("p-1 sm:p-1.5 rounded-full mt-2 sm:mt-0", mood.bg)}>
+                                    <MoodIcon className={cn("w-3 h-3 sm:w-4 sm:h-4", mood.color)} />
                                   </div>
                                 )}
                               </button>
                             );
                           })}
-                            </div>
-                          </div>
-                          <button 
-                            onClick={nextMonth}
-                            className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors z-10"
-                          >
-                            <ChevronRight className="w-6 h-6" />
-                          </button>
                         </div>
                         
-                        <div className="mt-6 flex flex-wrap gap-4 justify-center border-t border-neutral-800 pt-4">
+                        <div className="mt-5 sm:mt-6 flex flex-wrap gap-3 sm:gap-4 justify-center border-t border-neutral-800 pt-4">
                           {Object.entries(MOOD_ICONS).map(([val, info]) => {
                             const Icon = info.icon;
                             return (
@@ -2549,7 +2552,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                 case 'today':
                   return (
                     <SortableWidget key="today" id="today" className="col-span-1">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full">
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 h-full">
                         <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                           <CheckCircle2 className="w-5 h-5 text-green-500" />
                           Heute erledigt
@@ -2588,7 +2591,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                 case 'reminders':
                   return (upcomingReminders.length > 0 || needsDiaryEntryToday) ? (
                     <SortableWidget key="reminders" id="reminders" className="col-span-1">
-                      <div className="bg-neutral-900 p-6 rounded-2xl border border-neutral-800 h-full">
+                      <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 h-full">
                         <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                           <Bell className="w-5 h-5 text-amber-500" />
                           Anstehende Erinnerungen
@@ -2692,19 +2695,19 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg bg-neutral-900 border border-neutral-800 rounded-3xl shadow-2xl overflow-hidden"
+              className="relative w-full max-w-lg bg-neutral-900 border border-neutral-800 rounded-3xl shadow-2xl overflow-hidden max-h-[90dvh] flex flex-col"
             >
-              <div className="p-6 border-b border-neutral-800 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <div className={cn("p-2 rounded-xl", (MOOD_ICONS[selectedEntry.mood] || MOOD_ICONS[3]).bg)}>
+              <div className="p-4 sm:p-6 border-b border-neutral-800 flex justify-between items-center shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={cn("p-2 rounded-xl shrink-0", (MOOD_ICONS[selectedEntry.mood] || MOOD_ICONS[3]).bg)}>
                     {(() => {
                       const moodInfo = MOOD_ICONS[selectedEntry.mood] || MOOD_ICONS[3];
                       const Icon = moodInfo.icon;
                       return <Icon className={cn("w-6 h-6", moodInfo.color)} />;
                     })()}
                   </div>
-                  <div>
-                    <h3 className="font-bold text-lg">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-base sm:text-lg truncate">
                       Tagebucheintrag • {(MOOD_ICONS[selectedEntry.mood] || MOOD_ICONS[3]).label}
                     </h3>
                     <p className="text-xs text-neutral-500">{format(selectedEntry.date, 'dd. MMMM yyyy', { locale: de })}</p>
@@ -2712,13 +2715,13 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                 </div>
                 <button 
                   onClick={() => setSelectedEntry(null)}
-                  className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 transition-colors"
+                  className="p-2 hover:bg-neutral-800 rounded-xl text-neutral-400 transition-colors shrink-0"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              <div className="p-4 sm:p-6 space-y-6 overflow-y-auto flex-1">
                 <div className="flex items-center justify-between bg-neutral-950 px-4 py-3 rounded-2xl border border-neutral-800">
                   <span className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Stimmung</span>
                   <div className="flex items-center gap-1">

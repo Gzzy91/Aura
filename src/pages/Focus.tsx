@@ -205,20 +205,20 @@ export function Focus() {
   const activePreset = mode === 'work' ? workMinutes : breakMinutes;
 
   return (
-    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-8">
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div className="max-w-5xl mx-auto space-y-6 sm:space-y-8">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-            <Target className="w-8 h-8 text-amber-500" />
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-2.5 sm:gap-3">
+            <Target className="w-7 h-7 sm:w-8 sm:h-8 text-amber-500 shrink-0" />
             Fokus-Kammer
           </h2>
-          <p className="text-neutral-400 mt-1">
+          <p className="text-xs sm:text-sm text-neutral-400 mt-1">
             Ungestörte Tiefenarbeit mit Timer-Presets, Quest-Verknüpfung &amp; direktem EP-Fortschritt.
           </p>
         </div>
 
-        <div className="flex items-center gap-3 bg-neutral-900 border border-neutral-800 rounded-2xl px-4 py-2.5 shrink-0">
-          <Flame className="w-4 h-4 text-amber-500" />
+        <div className="flex items-center gap-3 bg-neutral-900 border border-neutral-800 rounded-2xl px-4 py-2.5 shrink-0 self-start sm:self-auto">
+          <Flame className="w-4 h-4 text-amber-500 shrink-0" />
           <div className="text-xs">
             <span className="text-neutral-400">Heute fokussiert: </span>
             <strong className="text-white tabular-nums">{todayMinutes} Min</strong>
@@ -227,17 +227,17 @@ export function Focus() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
         {/* Main Timer Column */}
-        <section className="lg:col-span-7 bg-neutral-900 border border-neutral-800 rounded-3xl p-6 sm:p-8 flex flex-col items-center">
+        <section className="lg:col-span-7 bg-neutral-900 border border-neutral-800 rounded-3xl p-4 sm:p-8 flex flex-col items-center">
           {/* Mode Switch + Presets */}
-          <div className="w-full flex flex-wrap items-center justify-between gap-3 mb-8">
-            <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1">
+          <div className="w-full flex flex-wrap items-center justify-between gap-2.5 mb-6 sm:mb-8">
+            <div className="flex w-full sm:w-auto bg-neutral-950 border border-neutral-800 rounded-xl p-1">
               <button
                 type="button"
                 onClick={() => switchMode('work')}
                 className={cn(
-                  'px-4 py-2 rounded-lg text-sm font-bold transition-colors min-h-[40px]',
+                  'flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors min-h-[40px]',
                   mode === 'work'
                     ? 'bg-amber-500 text-neutral-950'
                     : 'text-neutral-400 hover:text-neutral-200'
@@ -249,7 +249,7 @@ export function Focus() {
                 type="button"
                 onClick={() => switchMode('break')}
                 className={cn(
-                  'px-4 py-2 rounded-lg text-sm font-bold transition-colors min-h-[40px]',
+                  'flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-colors min-h-[40px]',
                   mode === 'break'
                     ? 'bg-blue-500 text-neutral-950'
                     : 'text-neutral-400 hover:text-neutral-200'
@@ -259,14 +259,14 @@ export function Focus() {
               </button>
             </div>
 
-            <div className="flex items-center gap-1.5 bg-neutral-950 border border-neutral-800 rounded-xl p-1">
+            <div className="flex w-full sm:w-auto items-center justify-between sm:justify-start gap-1 bg-neutral-950 border border-neutral-800 rounded-xl p-1">
               {presets.map((mins) => (
                 <button
                   key={mins}
                   type="button"
                   onClick={() => selectPreset(mins)}
                   className={cn(
-                    'px-3 py-1.5 rounded-lg text-xs font-bold tabular-nums transition-colors min-h-[36px]',
+                    'flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold tabular-nums transition-colors min-h-[36px]',
                     activePreset === mins
                       ? mode === 'work'
                         ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
@@ -281,7 +281,7 @@ export function Focus() {
           </div>
 
           {/* Circular Progress Dial */}
-          <div className="relative mb-8 flex flex-col items-center justify-center w-64 h-64 sm:w-72 sm:h-72">
+          <div className="relative mb-6 sm:mb-8 flex flex-col items-center justify-center w-56 h-56 sm:w-72 sm:h-72">
             <svg viewBox="0 0 288 288" className="absolute inset-0 w-full h-full -rotate-90">
               <circle
                 cx="144"
@@ -307,7 +307,7 @@ export function Focus() {
               />
             </svg>
             <div className="z-10 text-center">
-              <div className="text-5xl sm:text-6xl font-mono font-bold tracking-tighter tabular-nums mb-1.5 text-white">
+              <div className="text-4xl sm:text-6xl font-mono font-bold tracking-tighter tabular-nums mb-1.5 text-white">
                 {formatTime(timeLeft)}
               </div>
               <div className="text-neutral-400 font-semibold uppercase tracking-widest text-xs">
@@ -317,12 +317,12 @@ export function Focus() {
           </div>
 
           {/* Primary Controls */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-center">
             <button
               type="button"
               onClick={toggleTimer}
               className={cn(
-                'h-14 px-8 rounded-2xl flex items-center justify-center gap-2.5 font-bold text-sm transition-colors min-w-[150px]',
+                'flex-1 sm:flex-none h-12 sm:h-14 px-6 sm:px-8 rounded-2xl flex items-center justify-center gap-2.5 font-bold text-sm transition-colors sm:min-w-[150px]',
                 isActive
                   ? 'bg-neutral-800 text-neutral-100 hover:bg-neutral-700'
                   : mode === 'work'
@@ -355,14 +355,14 @@ export function Focus() {
         </section>
 
         {/* Configuration + History Column */}
-        <aside className="lg:col-span-5 space-y-6">
+        <aside className="lg:col-span-5 space-y-5 sm:space-y-6">
           {/* Skill & Optional Quest Selection */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 space-y-5">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-4 sm:p-6 space-y-5">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-neutral-400 mb-3">
                 Skill für diese Session
               </label>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                 {VALID_SKILLS.map((skill) => {
                   const Icon = SKILL_ICONS[skill];
                   const selected = selectedSkill === skill;
@@ -416,7 +416,7 @@ export function Focus() {
           </div>
 
           {/* Recent Sessions History */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-4 sm:p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-2">
                 <Clock className="w-4 h-4 text-amber-500" />

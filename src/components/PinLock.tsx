@@ -23,7 +23,8 @@ export function PinLock() {
     }
   }, [pin, settings.pin, setLocked]);
 
-  if (!isLocked || !settings.isPinEnabled || !settings.pin || settings.pin.length !== 4) return null;
+  const shouldShow =
+    isLocked && settings.isPinEnabled && Boolean(settings.pin) && settings.pin!.length === 4;
 
   const handleNumberClick = (num: string) => {
     if (pin.length < 4) {
@@ -37,12 +38,14 @@ export function PinLock() {
 
   return (
     <AnimatePresence>
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-6"
-      >
+      {shouldShow && (
+        <motion.div
+          key="pin-lock-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-6"
+        >
         <div className="w-full max-w-xs text-center space-y-8">
           <div className="flex flex-col items-center gap-4">
             <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
@@ -91,7 +94,8 @@ export function PinLock() {
             </button>
           </div>
         </div>
-      </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
   );
 }

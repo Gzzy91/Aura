@@ -166,14 +166,14 @@ export function FoodJournal() {
   const macroTotalGrams = todayStats.protein + todayStats.carbs + todayStats.fat;
 
   return (
-    <div className="max-w-5xl mx-auto pb-20 space-y-6">
+    <div className="max-w-5xl mx-auto pb-8 space-y-6">
       <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-white flex items-center gap-3 tracking-tight">
-            <Utensils className="w-8 h-8 text-amber-500" />
+          <h2 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-2.5 sm:gap-3 tracking-tight">
+            <Utensils className="w-7 h-7 sm:w-8 sm:h-8 text-amber-500 shrink-0" />
             Food Journal
           </h2>
-          <p className="text-neutral-400 mt-1 text-sm">
+          <p className="text-neutral-400 mt-1 text-xs sm:text-sm">
             Ernährung, Makros &amp; Energie im Überblick
           </p>
         </div>
@@ -202,7 +202,7 @@ export function FoodJournal() {
       </header>
 
       {/* Today's Nutrition Overview Strip */}
-      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4">
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 sm:p-5 space-y-4">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-bold uppercase tracking-wider text-neutral-400">
             Heute im Überblick
@@ -297,7 +297,7 @@ export function FoodJournal() {
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
-            className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 shadow-xl"
+            className="bg-neutral-900 border border-neutral-800 rounded-3xl p-4 sm:p-6 shadow-xl"
           >
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Quick Fill from Frequent Meals */}
@@ -339,7 +339,7 @@ export function FoodJournal() {
                       className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-amber-500"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1.5 px-1">
                         Mahlzeit
@@ -473,7 +473,7 @@ export function FoodJournal() {
                 <button
                   type="button"
                   onClick={() => toggleDay(day)}
-                  className="w-full text-left p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-neutral-800/30 transition-colors"
+                  className="w-full text-left p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-neutral-800/30 transition-colors"
                 >
                   <div className="flex items-center gap-4">
                     <div

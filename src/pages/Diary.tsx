@@ -127,11 +127,11 @@ export function Diary() {
     <div className="space-y-8 pb-12 max-w-5xl mx-auto">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-            <Book className="w-8 h-8 text-amber-500" />
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-2.5 sm:gap-3">
+            <Book className="w-7 h-7 sm:w-8 sm:h-8 text-amber-500 shrink-0" />
             Tagebuch
           </h2>
-          <p className="text-neutral-400 mt-1">
+          <p className="text-xs sm:text-sm text-neutral-400 mt-1">
             Dokumentiere dein Wohlbefinden, Reflexionen und tägliche Erfolge
           </p>
         </div>
@@ -161,7 +161,7 @@ export function Diary() {
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
-            className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl"
+            className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 sm:p-6 shadow-xl"
           >
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -314,12 +314,12 @@ export function Diary() {
               })}
             </div>
 
-            <div className="flex items-center gap-1.5 bg-neutral-900 border border-neutral-800 rounded-xl px-2.5 py-1 min-h-[44px]">
+            <div className="flex items-center gap-1.5 bg-neutral-900 border border-neutral-800 rounded-xl px-2.5 py-1 min-h-[44px] w-full sm:w-auto">
               <input
                 type="date"
                 value={filterDate}
                 onChange={(e) => setFilterDate(e.target.value)}
-                className="bg-transparent text-sm font-mono text-neutral-300 focus:outline-none py-1"
+                className="bg-transparent text-sm font-mono text-neutral-300 focus:outline-none py-1 flex-1 min-w-0"
                 aria-label="Nach Datum filtern"
               />
               {filterDate && (
@@ -384,7 +384,7 @@ export function Diary() {
                   animate={{ opacity: 1, y: 0 }}
                   className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden"
                 >
-                  <div className="p-5 sm:p-6 flex flex-col md:flex-row gap-5">
+                  <div className="p-4 sm:p-6 flex flex-col md:flex-row gap-4 sm:gap-5">
                     <div className="flex flex-row md:flex-col items-center md:items-start justify-between md:justify-start gap-4 md:w-44 flex-shrink-0">
                       <div className="flex items-center gap-3">
                         <div className={cn('p-3 rounded-xl', moodInfo.bg)}>

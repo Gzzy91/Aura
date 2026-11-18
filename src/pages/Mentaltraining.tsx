@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Lightbulb,
   Target,
@@ -307,6 +307,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
   const [activeSubTab, setActiveSubTab] = useState<'impulse' | 'tiefentraining' | 'archiv'>('impulse');
   const [expandedTraining, setExpandedTraining] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const attemptedTrainingDateRef = useRef<string | null>(null);
   
   const [trainingFilterCategory, setTrainingFilterCategory] = useState<string>('Alle');
   const [trainingSortOrder, setTrainingSortOrder] = useState<'newest' | 'oldest' | 'alphabetical'>('newest');
@@ -351,20 +352,24 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
       now.setDate(now.getDate() - 1);
     }
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    
-    if (lastTrainingGeneratedDate !== todayStr && !isGenerating) {
+
+    if (lastTrainingGeneratedDate !== todayStr && attemptedTrainingDateRef.current !== todayStr) {
+      attemptedTrainingDateRef.current = todayStr;
       setIsGenerating(true);
       const existingTitles = allTrainings.map(t => t.title);
-      generateDailyTraining(existingTitles).then((newTraining) => {
-        addDeepTraining({ ...newTraining, id: crypto.randomUUID(), createdAt: Date.now() });
-        setLastTrainingGeneratedDate(todayStr);
-        setIsGenerating(false);
-      }).catch(err => {
-        console.error("Failed to generate daily training", err);
-        setIsGenerating(false);
-      });
+      generateDailyTraining(existingTitles)
+        .then((newTraining) => {
+          addDeepTraining({ ...newTraining, id: crypto.randomUUID(), createdAt: Date.now() });
+          setLastTrainingGeneratedDate(todayStr);
+        })
+        .catch((err) => {
+          console.warn('Daily training auto-generation skipped:', err instanceof Error ? err.message : err);
+        })
+        .finally(() => {
+          setIsGenerating(false);
+        });
     }
-  }, [lastTrainingGeneratedDate, allTrainings, isGenerating, addDeepTraining, setLastTrainingGeneratedDate]);
+  }, [lastTrainingGeneratedDate, allTrainings, addDeepTraining, setLastTrainingGeneratedDate]);
 
   const [selectedArchiveDate, setSelectedArchiveDate] = useState<Date>(() => {
     const d = new Date();
@@ -417,24 +422,24 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header className="mb-6">
-        <h2 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
-          <Lightbulb className="w-8 h-8 text-amber-400" />
+    <div className="max-w-5xl mx-auto space-y-6 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <header className="mb-4 sm:mb-6">
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2 flex items-center gap-2.5 sm:gap-3">
+          <Lightbulb className="w-7 h-7 sm:w-8 sm:h-8 text-amber-400 shrink-0" />
           Mentaltraining
         </h2>
-        <p className="text-neutral-400 leading-relaxed">
+        <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
           Tägliche Impulse für deinen Geist und detaillierte psychologische Konzepte für langfristiges Wachstum. 
           Dein persönlicher Coach für Mindset und Performance.
         </p>
       </header>
 
       {/* Tabs */}
-      <div className="flex gap-2 p-1 bg-neutral-900 rounded-xl max-w-md mb-6 border border-neutral-800">
+      <div className="flex gap-1.5 sm:gap-2 p-1 bg-neutral-900 rounded-xl w-full max-w-md mb-6 border border-neutral-800">
         <button
           onClick={() => setActiveSubTab('impulse')}
           className={cn(
-            "flex-1 py-2 text-sm font-medium rounded-lg transition-all",
+            "flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
             activeSubTab === 'impulse' 
               ? "bg-amber-500 text-black shadow-md shadow-amber-500/20" 
               : "text-neutral-400 hover:text-white"
@@ -445,7 +450,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
         <button
           onClick={() => setActiveSubTab('tiefentraining')}
           className={cn(
-            "flex-1 py-2 text-sm font-medium rounded-lg transition-all",
+            "flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
             activeSubTab === 'tiefentraining' 
               ? "bg-amber-500 text-black shadow-md shadow-amber-500/20" 
               : "text-neutral-400 hover:text-white"
@@ -456,7 +461,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
         <button
           onClick={() => setActiveSubTab('archiv')}
           className={cn(
-            "flex-1 py-2 text-sm font-medium rounded-lg transition-all",
+            "flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
             activeSubTab === 'archiv' 
               ? "bg-amber-500 text-black shadow-md shadow-amber-500/20" 
               : "text-neutral-400 hover:text-white"
@@ -478,7 +483,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
               );
 
               return (
-                <div key={skill} className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 flex flex-col justify-between gap-5 hover:border-amber-500/30 transition-colors">
+                <div key={skill} className="bg-neutral-900 border border-neutral-800 rounded-3xl p-4 sm:p-6 flex flex-col justify-between gap-5 hover:border-amber-500/30 transition-colors">
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-4">
                       <span className="text-xs font-bold uppercase tracking-wider text-amber-500 bg-amber-500/10 px-3 py-1 rounded-full">
@@ -553,13 +558,13 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
 
       {activeSubTab === 'tiefentraining' && (
         <div className="animate-in fade-in duration-300 space-y-6">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6">
-             <div className="flex items-center justify-between mb-4">
-               <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                 <BookOpen className="w-6 h-6 text-blue-400" />
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-4 sm:p-6">
+             <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+               <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                 <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400 shrink-0" />
                  Die Coach-Bibliothek
                </h3>
-               <span className="text-xs font-medium text-neutral-500 bg-neutral-800 px-3 py-1 rounded-full">
+               <span className="text-xs font-medium text-neutral-500 bg-neutral-800 px-3 py-1 rounded-full shrink-0">
                  {allTrainings.length} Module verfügbar
                </span>
              </div>
@@ -616,22 +621,22 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                    <span className="text-xs font-bold text-amber-500 uppercase tracking-widest">Empfehlung für heute</span>
                  </div>
-                 <div className="flex items-center justify-between">
-                   <div className="flex items-center gap-4">
-                     <div className="bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                   <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
+                     <div className="bg-amber-500/10 p-3 rounded-xl border border-amber-500/20 shrink-0">
                        {(() => {
                          const FeaturedIcon = allTrainings[dailyIndices.Deep]?.icon || BookOpen;
                          return <FeaturedIcon className="w-6 h-6 text-amber-500" />;
                        })()}
                      </div>
-                     <div>
-                       <h4 className="text-lg font-bold text-white">{allTrainings[dailyIndices.Deep]?.title}</h4>
-                       <p className="text-sm text-neutral-400">{allTrainings[dailyIndices.Deep]?.category}</p>
+                     <div className="min-w-0">
+                       <h4 className="text-base sm:text-lg font-bold text-white">{allTrainings[dailyIndices.Deep]?.title}</h4>
+                       <p className="text-xs sm:text-sm text-neutral-400">{allTrainings[dailyIndices.Deep]?.category}</p>
                      </div>
                    </div>
                    <button 
                      onClick={() => setExpandedTraining(allTrainings[dailyIndices.Deep]?.id)}
-                     className="text-sm font-bold text-blue-400 hover:text-blue-300 transition-colors"
+                     className="text-sm font-bold text-blue-400 hover:text-blue-300 transition-colors self-start sm:self-auto shrink-0"
                    >
                      Zum Training →
                    </button>
@@ -680,7 +685,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                         </button>
                         
                         {isExpanded && (
-                          <div className="p-6 pt-2 border-t border-neutral-800 bg-neutral-900/30">
+                          <div className="p-4 sm:p-6 pt-2 border-t border-neutral-800 bg-neutral-900/30">
                             <div className="prose prose-invert max-w-none prose-p:text-neutral-300 prose-headings:text-white">
                               {renderMarkdown(training.content)}
                             </div>
@@ -700,10 +705,10 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
           <div className="flex flex-col md:flex-row gap-6">
             {/* Date Selector Sidebar */}
             <div className="w-full md:w-64 flex-shrink-0 space-y-2">
-              <h3 className="text-sm font-bold text-neutral-500 uppercase tracking-wider px-2 mb-4 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-neutral-500 uppercase tracking-wider px-2 mb-2 md:mb-4 flex items-center gap-2">
                 <History className="w-4 h-4" /> Letzte 30 Tage
               </h3>
-              <div className="max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar space-y-1">
+              <div className="flex md:flex-col gap-1.5 md:gap-1 overflow-x-auto md:overflow-x-visible md:max-h-[60vh] md:overflow-y-auto pb-2 md:pb-0 md:pr-2 custom-scrollbar">
                 {archiveDays.map((date) => {
                   const isSelected = date.toDateString() === selectedArchiveDate.toDateString();
                   return (
@@ -711,7 +716,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                       key={date.toISOString()}
                       onClick={() => setSelectedArchiveDate(date)}
                       className={cn(
-                        "w-full text-left px-4 py-3 rounded-xl transition-all border flex items-center justify-between group",
+                        "shrink-0 md:shrink md:w-full text-left px-3.5 py-2.5 md:px-4 md:py-3 rounded-xl transition-all border flex items-center justify-between gap-2 group",
                         isSelected 
                           ? "bg-amber-500/10 border-amber-500 text-amber-500 shadow-lg shadow-amber-500/5" 
                           : "bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-white"
@@ -721,11 +726,11 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                         <span className="text-xs font-medium opacity-60">
                           {date.toLocaleDateString(undefined, { weekday: 'short' })}
                         </span>
-                        <span className="font-bold">
+                        <span className="font-bold text-xs sm:text-sm whitespace-nowrap">
                           {date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
                         </span>
                       </div>
-                      <ChevronRight className={cn("w-4 h-4 transition-transform", isSelected ? "text-amber-500 translate-x-0.5" : "text-neutral-600 group-hover:text-neutral-300")} />
+                      <ChevronRight className={cn("hidden md:block w-4 h-4 transition-transform", isSelected ? "text-amber-500 translate-x-0.5" : "text-neutral-600 group-hover:text-neutral-300")} />
                     </button>
                   );
                 })}
@@ -733,8 +738,8 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
             </div>
 
             {/* Archive Content Area */}
-            <div className="flex-1 space-y-6">
-              <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6">
+            <div className="flex-1 min-w-0 space-y-6">
+              <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
                     <div className="bg-amber-500/10 p-2 rounded-lg">
@@ -795,7 +800,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
                 </div>
               </div>
 
-              <div className="bg-amber-500/5 border border-amber-500/10 rounded-3xl p-6">
+              <div className="bg-amber-500/5 border border-amber-500/10 rounded-3xl p-4 sm:p-6">
                 <h4 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
                   <Brain className="w-5 h-5 text-amber-500" /> Coaching-Tipp fürs Archiv
                 </h4>

@@ -430,7 +430,7 @@ export function Avatar() {
 
       <div className="grid lg:grid-cols-12 gap-6 items-start">
         {/* Left: Avatar Showcase & Equipped Loadout */}
-        <div className="lg:col-span-5 bg-neutral-900 rounded-2xl border border-neutral-800 p-6 flex flex-col items-center gap-6">
+        <div className="lg:col-span-5 bg-neutral-900 rounded-2xl border border-neutral-800 p-4 sm:p-6 flex flex-col items-center gap-5 sm:gap-6">
           <div className="pt-4 pb-2 flex flex-col items-center text-center">
             <AvatarVisual
               level={stats.level}
@@ -502,7 +502,7 @@ export function Avatar() {
         {/* Right: Skins, Equipment & Inspector */}
         <div className="lg:col-span-7 space-y-5">
           {/* Inspector Panel (Touch & Desktop friendly, zero clipping) */}
-          <div className="bg-neutral-900 rounded-2xl border border-neutral-800 p-5 space-y-4">
+          <div className="bg-neutral-900 rounded-2xl border border-neutral-800 p-4 sm:p-5 space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-xs text-neutral-400">
@@ -581,7 +581,7 @@ export function Avatar() {
           </div>
 
           {/* Skins Grid */}
-          <section className="bg-neutral-900 rounded-2xl border border-neutral-800 p-5">
+          <section className="bg-neutral-900 rounded-2xl border border-neutral-800 p-4 sm:p-5">
             <h3 className="text-base font-bold mb-3.5 flex items-center gap-2 text-white">
               <UserIcon className="w-4 h-4 text-amber-500" />
               Emblem-Designs
@@ -626,7 +626,7 @@ export function Avatar() {
           </section>
 
           {/* Equipment Section */}
-          <section className="bg-neutral-900 rounded-2xl border border-neutral-800 p-5 space-y-4">
+          <section className="bg-neutral-900 rounded-2xl border border-neutral-800 p-4 sm:p-5 space-y-4">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-base font-bold flex items-center gap-2 text-white">
                 <Sword className="w-4 h-4 text-amber-500" />
@@ -653,7 +653,7 @@ export function Avatar() {
                   title={cat.label}
                   aria-label={cat.label}
                   className={cn(
-                    'py-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[10px] font-medium',
+                    'py-2 min-h-[40px] rounded-lg transition-colors flex flex-col items-center justify-center gap-1 text-[10px] font-medium',
                     activeCategory === cat.id
                       ? 'bg-neutral-800 text-amber-400'
                       : 'text-neutral-500 hover:text-neutral-200'
