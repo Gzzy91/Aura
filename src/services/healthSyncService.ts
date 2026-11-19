@@ -52,6 +52,7 @@ export interface HealthProvidersStatus {
   garmin: {
     configured: boolean;
     connected: boolean;
+    authMode?: 'api_key' | 'oauth' | null;
     callbackUrl: string;
     connectedAt: number | null;
   };
@@ -553,6 +554,7 @@ function buildStaticLiveStatus(): HealthProvidersStatus {
     garmin: {
       configured: false,
       connected: false,
+      authMode: null,
       callbackUrl: `${origin}/api/health/garmin/callback`,
       connectedAt: null,
     },
@@ -736,6 +738,10 @@ export async function openHealthProviderOAuthPopup(
   const contentType = res.headers.get('content-type') || '';
   const rawText = await res.text();
   let data: {
+    mode?: 'api_key' | 'oauth';
+    connected?: boolean;
+    sessionToken?: string;
+    connectedAt?: number;
     url?: string;
     error?: string;
     configured?: boolean;
@@ -771,9 +777,24 @@ export async function openHealthProviderOAuthPopup(
     const fallbackCallback =
       data.callbackUrl || `${window.location.origin}/api/health/${provider}/callback`;
     throw new ProviderNotConfiguredError(
-      data.error || 'OAuth-Zugangsdaten fehlen in den Server-Secrets.',
+      data.error || 'Zugangsdaten fehlen in den Server-Secrets.',
       fallbackCallback
     );
+  }
+
+  if (provider === 'garmin' && data.mode === 'api_key' && data.connected) {
+    const token = data.sessionToken || '__garmin_personal_api_key__';
+    setHealthSessionToken('garmin', token);
+    window.postMessage(
+      {
+        type: 'HEALTH_OAUTH_SUCCESS',
+        provider: 'garmin',
+        sessionToken: token,
+        connectedAt: data.connectedAt || Date.now(),
+      },
+      window.location.origin
+    );
+    return;
   }
 
   if (!res.ok || !data.url) {
@@ -784,7 +805,7 @@ export async function openHealthProviderOAuthPopup(
     }
     throw new Error(
       data.error ||
-        `OAuth-Autorisierungs-URL konnte nicht erzeugt werden (HTTP ${res.status}).`
+        `Autorisierung konnte nicht gestartet werden (HTTP ${res.status}).`
     );
   }
 

@@ -126,15 +126,38 @@ function getAppBaseUrl(req?: Request): string {
   return 'http://localhost:3000';
 }
 
+const SERVER_STARTED_AT = Date.now();
+const GARMIN_API_KEY_OFF_COOKIE = 'aura_health_garmin_api_key_off';
+
 function getGarminConfig(req?: Request) {
-  const clientId = process.env.GARMIN_CLIENT_ID?.trim() || '';
-  const clientSecret = process.env.GARMIN_CLIENT_SECRET?.trim() || '';
+  const personalApiKey = (process.env.GARMIN_PERSONAL_API_KEY || '')
+    .trim()
+    .replace(/^["']|["']$/g, '');
+  const personalApiBaseUrl = (
+    process.env.GARMIN_PERSONAL_API_BASE_URL || 'https://personal.connectapi.garmin.com'
+  )
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/\/+$/, '');
+  const clientId = (process.env.GARMIN_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
+  const clientSecret = (process.env.GARMIN_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
   const callbackUrl = `${getAppBaseUrl(req)}/api/health/garmin/callback`;
+  const hasPersonalKey =
+    Boolean(personalApiKey) && personalApiKey !== 'MY_GARMIN_PERSONAL_API_KEY';
+  const hasOAuth = Boolean(clientId && clientSecret);
+  const authMode: 'api_key' | 'oauth' | null = hasPersonalKey
+    ? 'api_key'
+    : hasOAuth
+    ? 'oauth'
+    : null;
   return {
+    personalApiKey: hasPersonalKey ? personalApiKey : '',
+    personalApiBaseUrl: personalApiBaseUrl || 'https://personal.connectapi.garmin.com',
     clientId,
     clientSecret,
     callbackUrl,
-    configured: Boolean(clientId && clientSecret),
+    authMode,
+    configured: Boolean(authMode),
   };
 }
 
@@ -207,6 +230,30 @@ function clearHealthSessionCookie(res: Response, provider: ProviderId) {
     sameSite: 'none',
     path: '/',
   });
+}
+
+function isGarminApiKeyManuallyDisconnected(req: Request): boolean {
+  const cookies = parseCookies(req);
+  return cookies[GARMIN_API_KEY_OFF_COOKIE] === '1';
+}
+
+function setGarminApiKeyOffCookie(res: Response, off: boolean) {
+  if (off) {
+    res.cookie(GARMIN_API_KEY_OFF_COOKIE, '1', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      path: '/',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+  } else {
+    res.clearCookie(GARMIN_API_KEY_OFF_COOKIE, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      path: '/',
+    });
+  }
 }
 
 function base64UrlEncode(buf: Buffer): string {
@@ -805,6 +852,749 @@ async function fetchGarminHealthMetrics(session: HealthOAuthSession): Promise<Re
   }
   for (const [dk, count] of workoutsByDay.entries()) {
     mergeDayMetric(dayMap, dk, { workoutsCount: count });
+  }
+
+  return finalizeDayMap(dayMap);
+}
+
+class GarminApiAuthError extends Error {
+  status: number;
+  constructor(message: string, status = 401) {
+    super(message);
+    this.name = 'GarminApiAuthError';
+    this.status = status;
+  }
+}
+
+interface CachedGarminPersonalToken {
+  apiKeyHash: string;
+  baseUrl: string;
+  accessToken: string;
+  expiresAt: number;
+}
+
+let cachedGarminPersonalToken: CachedGarminPersonalToken | null = null;
+
+function extractJwtExpiryMs(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const payload = JSON.parse(Buffer.from(padded, 'base64').toString('utf8')) as { exp?: number };
+    if (typeof payload.exp === 'number' && Number.isFinite(payload.exp)) {
+      return payload.exp * 1000;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function getGarminPersonalBearerToken(
+  apiKey: string,
+  baseUrl: string,
+  forceRefresh = false
+): Promise<string> {
+  const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex');
+  if (
+    !forceRefresh &&
+    cachedGarminPersonalToken &&
+    cachedGarminPersonalToken.apiKeyHash === apiKeyHash &&
+    cachedGarminPersonalToken.baseUrl === baseUrl &&
+    Date.now() < cachedGarminPersonalToken.expiresAt - 60_000
+  ) {
+    return cachedGarminPersonalToken.accessToken;
+  }
+
+  const tokenUrl = `${baseUrl}/personalapitoken-service/personal-api/personal-api-key/token`;
+  const resp = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `ApiKey ${apiKey}`,
+      Accept: 'application/json',
+    },
+  });
+
+  const rawText = await resp.text().catch(() => '');
+  let parsed: { access_token?: string; token?: string; expires_in?: number; message?: string } = {};
+  if (rawText.trim().startsWith('{')) {
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      parsed = {};
+    }
+  } else if (rawText.trim() && !rawText.trim().startsWith('<')) {
+    // Some endpoints return a raw JWT string directly
+    if (rawText.trim().split('.').length === 3) {
+      parsed = { access_token: rawText.trim() };
+    }
+  }
+
+  if (!resp.ok) {
+    if (resp.status === 401 || resp.status === 403) {
+      cachedGarminPersonalToken = null;
+      throw new GarminApiAuthError(
+        `Garmin Personal API Key ungültig oder abgelaufen (HTTP ${resp.status}). Bitte prüfe GARMIN_PERSONAL_API_KEY in Settings > Secrets.`,
+        resp.status
+      );
+    }
+    throw new Error(
+      parsed.message ||
+        `Garmin Personal API Token-Austausch fehlgeschlagen (HTTP ${resp.status}).`
+    );
+  }
+
+  const accessToken = parsed.access_token || parsed.token || '';
+  if (!accessToken) {
+    throw new Error('Ungültige Token-Antwort von der Garmin Personal API erhalten.');
+  }
+
+  const jwtExpMs = extractJwtExpiryMs(accessToken);
+  const expiresAt =
+    typeof parsed.expires_in === 'number' && parsed.expires_in > 0
+      ? Date.now() + parsed.expires_in * 1000
+      : jwtExpMs || Date.now() + 20 * 3600 * 1000;
+
+  cachedGarminPersonalToken = {
+    apiKeyHash,
+    baseUrl,
+    accessToken,
+    expiresAt,
+  };
+
+  return accessToken;
+}
+
+function normalizeGarminDateKey(val: unknown): string {
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    const match = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+  }
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    const ms = val > 10_000_000_000 ? val : val * 1000;
+    return toDateKey(ms);
+  }
+  return '';
+}
+
+function unwrapGarminList(json: unknown, preferredKeys: string[] = []): Array<Record<string, any>> {
+  if (Array.isArray(json)) {
+    return json.filter((x): x is Record<string, any> => Boolean(x && typeof x === 'object'));
+  }
+  if (json && typeof json === 'object') {
+    const obj = json as Record<string, any>;
+    for (const k of [...preferredKeys, 'data', 'items', 'summaries', 'results']) {
+      if (Array.isArray(obj[k])) {
+        return obj[k].filter((x: unknown): x is Record<string, any> => Boolean(x && typeof x === 'object'));
+      }
+    }
+    return [obj];
+  }
+  return [];
+}
+
+async function fetchGarminPersonalEndpoint(
+  apiKey: string,
+  baseUrl: string,
+  path: string,
+  tokenRef: { token: string }
+): Promise<{ ok: boolean; status: number; json: unknown }> {
+  const doGet = async (bearer: string) =>
+    fetch(`${baseUrl}${path}`, {
+      headers: {
+        Authorization: `Bearer ${bearer}`,
+        Accept: 'application/json',
+      },
+    });
+
+  try {
+    let resp = await doGet(tokenRef.token);
+    if (resp.status === 401) {
+      tokenRef.token = await getGarminPersonalBearerToken(apiKey, baseUrl, true);
+      resp = await doGet(tokenRef.token);
+    }
+    if (!resp.ok || resp.status === 204) {
+      return { ok: resp.status === 204, status: resp.status, json: null };
+    }
+    const text = await resp.text().catch(() => '');
+    if (!text.trim()) return { ok: true, status: resp.status, json: null };
+    try {
+      return { ok: true, status: resp.status, json: JSON.parse(text) };
+    } catch {
+      return { ok: true, status: resp.status, json: null };
+    }
+  } catch (err) {
+    if (err instanceof GarminApiAuthError) throw err;
+    return { ok: false, status: 0, json: null };
+  }
+}
+
+async function fetchGarminPersonalApiMetrics(
+  apiKey: string,
+  baseUrl: string
+): Promise<RemoteHealthDayMetric[]> {
+  const initialToken = await getGarminPersonalBearerToken(apiKey, baseUrl);
+  const tokenRef = { token: initialToken };
+
+  const nowMs = Date.now();
+  const endDate = toDateKey(nowMs);
+  const yesterdayDate = toDateKey(nowMs - 86_400_000);
+  const startDate = toDateKey(nowMs - 13 * 86_400_000);
+
+  const [
+    dailySummariesRes,
+    todayUserSummaryRes,
+    sleepSummariesRes,
+    todaySleepRes,
+    stepsRes,
+    stressRes,
+    hydrationRes,
+    bodyBatteryRes,
+    dailyHrRes,
+    yesterdayHrRes,
+    hrvRes,
+    spo2TodayRes,
+    spo2YesterdayRes,
+    vo2Res,
+    weightRes,
+    activitiesRes,
+  ] = await Promise.all([
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/usersummary-service/v2/dailysummaries?startDate=${startDate}&endDate=${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/usersummary-service/usersummary/daily?calendarDate=${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/sleep-service/sleep/dailySleepSummariesByDate?startDate=${startDate}&endDate=${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/sleep-service/sleep/dailySleep?date=${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/usersummary-service/stats/steps/daily/${startDate}/${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/usersummary-service/stats/stress/daily/${startDate}/${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/usersummary-service/stats/hydration/daily/${startDate}/${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/wellness-service/wellness/bodyBattery/reports/daily?startDate=${startDate}&endDate=${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/wellness-service/wellness/dailyHeartRate?date=${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/wellness-service/wellness/dailyHeartRate?date=${yesterdayDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/hrv-service/hrv/daily/${startDate}/${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/wellness-service/wellness/daily/spo2acclimation/${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/wellness-service/wellness/daily/spo2acclimation/${yesterdayDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/metrics-service/metrics/maxmet/daily/${startDate}/${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/weight-service/weight/range/${startDate}/${endDate}`,
+      tokenRef
+    ),
+    fetchGarminPersonalEndpoint(
+      apiKey,
+      baseUrl,
+      `/activitylist-service/activities/search/activities?start=0&limit=50`,
+      tokenRef
+    ),
+  ]);
+
+  const coreResponses = [
+    dailySummariesRes,
+    todayUserSummaryRes,
+    sleepSummariesRes,
+    todaySleepRes,
+    stepsRes,
+  ];
+  const anySucceeded = [
+    ...coreResponses,
+    stressRes,
+    hydrationRes,
+    bodyBatteryRes,
+    dailyHrRes,
+    hrvRes,
+    vo2Res,
+    weightRes,
+    activitiesRes,
+  ].some((r) => r.ok);
+
+  if (!anySucceeded) {
+    const authFail = coreResponses.find((r) => r.status === 401 || r.status === 403);
+    if (authFail) {
+      throw new GarminApiAuthError(
+        `Garmin Personal API hat den Zugriff verweigert (HTTP ${authFail.status}). Bitte prüfe deinen GARMIN_PERSONAL_API_KEY in Settings > Secrets.`,
+        authFail.status
+      );
+    }
+    throw new Error(
+      'Garmin Personal API ist aktuell nicht erreichbar oder lieferte keine gültige Antwort.'
+    );
+  }
+
+  const dayMap = new Map<string, DayAccumulator>();
+
+  // 1. Daily Summaries (v2 + daily user summary)
+  const dailySummaryItems = [
+    ...unwrapGarminList(dailySummariesRes.json, ['data', 'dailySummaries']),
+    ...unwrapGarminList(todayUserSummaryRes.json, ['data']),
+  ];
+  for (const d of dailySummaryItems) {
+    const dk =
+      normalizeGarminDateKey(d.calendarDate) ||
+      normalizeGarminDateKey(d.summaryDate) ||
+      normalizeGarminDateKey(d.startTimeGMT) ||
+      normalizeGarminDateKey(d.startTimeInSeconds);
+    if (!dk || dk < startDate || dk > endDate) continue;
+
+    const modMin = Number(
+      d.intensityMinutes?.moderate ??
+        d.moderateIntensityMinutes ??
+        (typeof d.moderateIntensityDurationInSeconds === 'number'
+          ? Math.round(d.moderateIntensityDurationInSeconds / 60)
+          : 0)
+    );
+    const vigMin = Number(
+      d.intensityMinutes?.vigorous ??
+        d.vigorousIntensityMinutes ??
+        (typeof d.vigorousIntensityDurationInSeconds === 'number'
+          ? Math.round(d.vigorousIntensityDurationInSeconds / 60)
+          : 0)
+    );
+    const intensityMin =
+      (Number.isFinite(modMin) ? modMin : 0) + (Number.isFinite(vigMin) ? vigMin : 0);
+    const activeSec = Number(d.activeSeconds ?? d.activeTimeInSeconds ?? 0);
+    const activeMin =
+      intensityMin > 0
+        ? Math.round(intensityMin)
+        : Number.isFinite(activeSec) && activeSec > 0
+        ? Math.round(activeSec / 60)
+        : 0;
+    const heartPts = intensityMin > 0 ? Math.round(modMin + vigMin * 2) : null;
+
+    const stepsRaw =
+      d.movement?.steps?.value ?? d.movement?.steps ?? d.totalSteps ?? d.steps ?? null;
+    const distRaw =
+      d.movement?.distance?.value ??
+      d.movement?.distanceMeters ??
+      d.totalDistanceMeters ??
+      d.distanceInMeters ??
+      null;
+    const calRaw =
+      d.calories?.active?.value ??
+      d.calories?.active ??
+      d.activeKilocalories ??
+      null;
+    const floorsRaw = d.floors?.ascended ?? d.floorsAscended ?? d.floorsClimbed ?? null;
+    const rhrRaw =
+      d.heartRate?.restingValue ??
+      d.restingHeartRate ??
+      d.restingHeartRateInBeatsPerMinute ??
+      null;
+    const avgHrRaw =
+      d.heartRate?.avgValue ??
+      d.averageHeartRate ??
+      d.averageHeartRateInBeatsPerMinute ??
+      null;
+    const stressRaw = d.stress?.avgLevel ?? d.averageStressLevel ?? null;
+    const bbRaw =
+      d.bodyBattery?.maxValue ??
+      d.bodyBattery?.mostRecentValue ??
+      d.bodyBatteryMostRecentValue ??
+      d.bodyBatteryHighestValue ??
+      d.bodyBatteryChargedValue ??
+      null;
+    const spo2Raw =
+      d.spo2?.avgValue ?? d.averageSpo2 ?? d.averageSpo2Value ?? d.latestSpo2 ?? null;
+    const respRaw =
+      d.respiration?.avgValue ?? d.avgWakingRespirationValue ?? null;
+    const hydRaw =
+      d.hydration?.valueInML ?? d.hydrationIntakeInML ?? d.hydrationIntakeInMl ?? null;
+
+    mergeDayMetric(dayMap, dk, {
+      activityMinutes: activeMin,
+      steps: typeof stepsRaw === 'number' ? stepsRaw : null,
+      distanceMeters: typeof distRaw === 'number' ? distRaw : null,
+      caloriesActive: typeof calRaw === 'number' ? calRaw : null,
+      floorsClimbed: typeof floorsRaw === 'number' ? floorsRaw : null,
+      heartPoints: heartPts,
+      restingHeartRate: typeof rhrRaw === 'number' && rhrRaw > 0 ? rhrRaw : null,
+      avgHeartRate:
+        typeof avgHrRaw === 'number' && avgHrRaw > 0
+          ? avgHrRaw
+          : typeof rhrRaw === 'number' && rhrRaw > 0
+          ? rhrRaw
+          : null,
+      stressLevel: typeof stressRaw === 'number' && stressRaw >= 0 ? stressRaw : null,
+      bodyBattery: typeof bbRaw === 'number' && bbRaw >= 0 ? bbRaw : null,
+      spo2Percent: typeof spo2Raw === 'number' && spo2Raw > 0 ? spo2Raw : null,
+      respirationRate: typeof respRaw === 'number' && respRaw > 0 ? respRaw : null,
+      hydrationMl: typeof hydRaw === 'number' && hydRaw > 0 ? hydRaw : null,
+    });
+  }
+
+  // 2. Sleep Summaries + Today Sleep (deduplicated per wake-up calendarDate)
+  const sleepMap = new Map<
+    string,
+    {
+      mins: number;
+      deep: number;
+      light: number;
+      rem: number;
+      awake: number;
+      rhr: number | null;
+      hrv: number | null;
+      spo2: number | null;
+      resp: number | null;
+    }
+  >();
+
+  const rawSleepItems = [
+    ...unwrapGarminList(sleepSummariesRes.json, ['data', 'sleepSummaries', 'dailySleepDTOs']),
+    ...unwrapGarminList(todaySleepRes.json, ['data']),
+  ];
+  for (const wrapper of rawSleepItems) {
+    const dto =
+      wrapper.dailySleepDTO && typeof wrapper.dailySleepDTO === 'object'
+        ? (wrapper.dailySleepDTO as Record<string, any>)
+        : wrapper;
+    const dk =
+      normalizeGarminDateKey(dto.calendarDate) ||
+      normalizeGarminDateKey(wrapper.calendarDate) ||
+      normalizeGarminDateKey(dto.sleepEndTimestampLocal) ||
+      normalizeGarminDateKey(dto.sleepEndTimestampGMT) ||
+      normalizeGarminDateKey(dto.startTimeInSeconds);
+    if (!dk || dk < startDate || dk > endDate) continue;
+
+    const deep = Math.round(Number(dto.deepSleepSeconds ?? dto.deepSleepDurationInSeconds ?? 0) / 60);
+    const light = Math.round(Number(dto.lightSleepSeconds ?? dto.lightSleepDurationInSeconds ?? 0) / 60);
+    const rem = Math.round(Number(dto.remSleepSeconds ?? dto.remSleepInSeconds ?? 0) / 60);
+    const awake = Math.round(Number(dto.awakeSleepSeconds ?? dto.awakeDurationInSeconds ?? 0) / 60);
+    const totalSecRaw = Number(dto.sleepTimeSeconds ?? dto.durationInSeconds ?? 0);
+    const stageSumMin = deep + light + rem;
+    const mins = totalSecRaw > 0 ? Math.round(totalSecRaw / 60) : stageSumMin;
+    if (mins <= 0 && stageSumMin <= 0) continue;
+
+    const rhr = Number(wrapper.restingHeartRate ?? dto.restingHeartRate ?? 0);
+    const hrv = Number(wrapper.avgOvernightHrv ?? dto.avgOvernightHrv ?? 0);
+    const spo2 = Number(
+      dto.averageSpO2Value ?? dto.averageSpo2Value ?? wrapper.averageSpO2Value ?? 0
+    );
+    const resp = Number(
+      dto.averageRespirationValue ??
+        dto.avgSleepRespirationValue ??
+        wrapper.averageRespirationValue ??
+        0
+    );
+
+    const candidate = {
+      mins: Math.max(mins, stageSumMin),
+      deep,
+      light,
+      rem,
+      awake,
+      rhr: rhr > 0 ? rhr : null,
+      hrv: hrv > 0 ? hrv : null,
+      spo2: spo2 > 0 ? spo2 : null,
+      resp: resp > 0 ? resp : null,
+    };
+
+    const prev = sleepMap.get(dk);
+    if (
+      !prev ||
+      candidate.deep + candidate.light + candidate.rem > prev.deep + prev.light + prev.rem ||
+      candidate.mins > prev.mins
+    ) {
+      sleepMap.set(dk, candidate);
+    }
+  }
+
+  for (const [dk, v] of sleepMap.entries()) {
+    mergeDayMetric(dayMap, dk, {
+      sleepMinutes: v.mins,
+      sleepDeepMinutes: v.deep > 0 ? v.deep : null,
+      sleepLightMinutes: v.light > 0 ? v.light : null,
+      sleepRemMinutes: v.rem > 0 ? v.rem : null,
+      sleepAwakeMinutes: v.awake > 0 ? v.awake : null,
+      restingHeartRate: v.rhr,
+      hrvMs: v.hrv,
+      spo2Percent: v.spo2,
+      respirationRate: v.resp,
+    });
+  }
+
+  // 3. Steps stats
+  for (const item of unwrapGarminList(stepsRes.json, ['data'])) {
+    const dk = normalizeGarminDateKey(item.calendarDate);
+    if (!dk) continue;
+    const steps = item.totalSteps ?? item.steps ?? item.values?.totalSteps ?? item.values?.steps;
+    const dist = item.totalDistance ?? item.totalDistanceMeters ?? item.values?.totalDistance;
+    mergeDayMetric(dayMap, dk, {
+      steps: typeof steps === 'number' ? steps : null,
+      distanceMeters: typeof dist === 'number' ? dist : null,
+    });
+  }
+
+  // 4. Stress stats
+  for (const item of unwrapGarminList(stressRes.json, ['data'])) {
+    const dk = normalizeGarminDateKey(item.calendarDate);
+    if (!dk) continue;
+    const lvl =
+      item.overallStressLevel ??
+      item.avgStressLevel ??
+      item.values?.overallStressLevel ??
+      item.values?.avgStressLevel;
+    if (typeof lvl === 'number' && lvl >= 0) {
+      mergeDayMetric(dayMap, dk, { stressLevel: lvl });
+    }
+  }
+
+  // 5. Hydration stats
+  for (const item of unwrapGarminList(hydrationRes.json, ['data'])) {
+    const dk = normalizeGarminDateKey(item.calendarDate);
+    if (!dk) continue;
+    const ml =
+      item.valueInML ??
+      item.hydrationIntakeInML ??
+      item.hydrationIntakeInMl ??
+      item.values?.valueInML;
+    if (typeof ml === 'number' && ml > 0) {
+      mergeDayMetric(dayMap, dk, { hydrationMl: ml });
+    }
+  }
+
+  // 6. Body Battery daily reports
+  for (const item of unwrapGarminList(bodyBatteryRes.json, ['data'])) {
+    const dk = normalizeGarminDateKey(item.date || item.calendarDate);
+    if (!dk) continue;
+    let bb: number | null = null;
+    if (Array.isArray(item.bodyBatteryValuesArray) && item.bodyBatteryValuesArray.length > 0) {
+      const levels: number[] = [];
+      for (const row of item.bodyBatteryValuesArray) {
+        if (Array.isArray(row)) {
+          // Tuple formats seen in Garmin API: [offsetMs, level] or [ts, status, level, version]
+          const candidate =
+            typeof row[2] === 'number'
+              ? row[2]
+              : typeof row[1] === 'number'
+              ? row[1]
+              : null;
+          if (candidate !== null && candidate >= 0 && candidate <= 100) {
+            levels.push(candidate);
+          }
+        }
+      }
+      if (levels.length > 0) {
+        bb = Math.max(...levels);
+      }
+    }
+    if (bb === null) {
+      const fallback =
+        item.bodyBatteryHighestValue ??
+        item.bodyBatteryMostRecentValue ??
+        item.charged ??
+        null;
+      if (typeof fallback === 'number' && fallback >= 0 && fallback <= 100) {
+        bb = fallback;
+      }
+    }
+    if (bb !== null) {
+      mergeDayMetric(dayMap, dk, { bodyBattery: bb });
+    }
+  }
+
+  // 7. Daily Heart Rate (today + yesterday)
+  for (const hrPayload of [dailyHrRes.json, yesterdayHrRes.json]) {
+    for (const item of unwrapGarminList(hrPayload, ['data'])) {
+      const dk = normalizeGarminDateKey(item.calendarDate);
+      if (!dk) continue;
+      const rhr = typeof item.restingHeartRate === 'number' ? item.restingHeartRate : null;
+      let avgHr: number | null = null;
+      if (Array.isArray(item.heartRateValues)) {
+        const bpms: number[] = [];
+        for (const pair of item.heartRateValues) {
+          const val = Array.isArray(pair) ? pair[1] : pair?.bpm;
+          if (typeof val === 'number' && val >= 25 && val <= 240) {
+            bpms.push(val);
+          }
+        }
+        if (bpms.length > 0) {
+          avgHr = bpms.reduce((a, b) => a + b, 0) / bpms.length;
+        }
+      }
+      mergeDayMetric(dayMap, dk, {
+        restingHeartRate: rhr && rhr > 0 ? rhr : null,
+        avgHeartRate: avgHr,
+      });
+    }
+  }
+
+  // 8. HRV daily summaries
+  for (const item of unwrapGarminList(hrvRes.json, ['hrvSummaries', 'data'])) {
+    const dk = normalizeGarminDateKey(item.calendarDate);
+    if (!dk) continue;
+    const hrv = Number(item.lastNightAvg ?? item.weeklyAvg ?? 0);
+    if (hrv > 0) {
+      mergeDayMetric(dayMap, dk, { hrvMs: hrv });
+    }
+  }
+
+  // 9. SpO2 Acclimation
+  for (const spo2Payload of [spo2TodayRes.json, spo2YesterdayRes.json]) {
+    for (const item of unwrapGarminList(spo2Payload, ['data'])) {
+      const dk = normalizeGarminDateKey(item.calendarDate);
+      if (!dk) continue;
+      const val = Number(item.averageSpo2 ?? item.avgSpo2 ?? item.latestSpo2 ?? 0);
+      if (val >= 50 && val <= 100) {
+        mergeDayMetric(dayMap, dk, { spo2Percent: val });
+      }
+    }
+  }
+
+  // 10. Max MET / VO2 Max
+  for (const item of unwrapGarminList(vo2Res.json, ['data'])) {
+    const dk = normalizeGarminDateKey(item.calendarDate || item.generic?.calendarDate || item.cycling?.calendarDate);
+    if (!dk) continue;
+    const vo2 = Number(
+      item.generic?.vo2MaxPreciseValue ??
+        item.generic?.vo2MaxValue ??
+        item.cycling?.vo2MaxPreciseValue ??
+        item.cycling?.vo2MaxValue ??
+        item.vo2MaxPrecise ??
+        item.vo2Max ??
+        item.maxMetPrecise ??
+        item.maxMet ??
+        0
+    );
+    if (vo2 > 0) {
+      mergeDayMetric(dayMap, dk, { vo2Max: vo2 });
+    }
+  }
+
+  // 11. Weight / Body Composition
+  for (const item of unwrapGarminList(weightRes.json, ['dailyWeightSummaries', 'dateWeightList', 'data'])) {
+    const metric =
+      item.latestWeight && typeof item.latestWeight === 'object'
+        ? (item.latestWeight as Record<string, any>)
+        : Array.isArray(item.allWeightMetrics) && item.allWeightMetrics.length > 0
+        ? (item.allWeightMetrics[item.allWeightMetrics.length - 1] as Record<string, any>)
+        : item;
+    const dk =
+      normalizeGarminDateKey(item.summaryDate) ||
+      normalizeGarminDateKey(item.calendarDate) ||
+      normalizeGarminDateKey(metric.calendarDate) ||
+      normalizeGarminDateKey(metric.date);
+    if (!dk) continue;
+
+    const rawWeight = Number(metric.weight ?? item.weight ?? 0);
+    const weightKg = rawWeight > 400 ? rawWeight / 1000 : rawWeight > 0 ? rawWeight : null;
+    const bodyFatRaw = metric.bodyFat ?? metric.bodyFatPercentage ?? item.bodyFat ?? null;
+    const bodyFatPercent = typeof bodyFatRaw === 'number' && bodyFatRaw > 0 ? bodyFatRaw : null;
+
+    if (weightKg || bodyFatPercent) {
+      mergeDayMetric(dayMap, dk, { weightKg, bodyFatPercent });
+    }
+  }
+
+  // 12. Activities (Workouts count + duration/calories/distance/HR supplements)
+  const activityRollup = new Map<
+    string,
+    { count: number; durationMin: number; calories: number; distanceMeters: number }
+  >();
+  for (const act of unwrapGarminList(activitiesRes.json, ['activityList', 'data'])) {
+    const dk =
+      normalizeGarminDateKey(act.startTimeLocal) ||
+      normalizeGarminDateKey(act.startTimeGMT) ||
+      normalizeGarminDateKey(act.beginTimestamp);
+    if (!dk || dk < startDate || dk > endDate) continue;
+
+    const prev = activityRollup.get(dk) || {
+      count: 0,
+      durationMin: 0,
+      calories: 0,
+      distanceMeters: 0,
+    };
+    const durSec = Number(act.movingDuration ?? act.duration ?? act.elapsedDuration ?? 0);
+    const cal = Number(act.calories ?? 0);
+    const dist = Number(act.distance ?? 0);
+    activityRollup.set(dk, {
+      count: prev.count + 1,
+      durationMin: prev.durationMin + (durSec > 0 ? Math.round(durSec / 60) : 0),
+      calories: prev.calories + (cal > 0 ? Math.round(cal) : 0),
+      distanceMeters: prev.distanceMeters + (dist > 0 ? Math.round(dist) : 0),
+    });
+
+    if (typeof act.averageHR === 'number' && act.averageHR > 0) {
+      mergeDayMetric(dayMap, dk, { avgHeartRate: act.averageHR });
+    }
+  }
+
+  for (const [dk, agg] of activityRollup.entries()) {
+    mergeDayMetric(dayMap, dk, {
+      workoutsCount: agg.count,
+      activityMinutes: agg.durationMin > 0 ? agg.durationMin : undefined,
+      caloriesActive: agg.calories > 0 ? agg.calories : null,
+      distanceMeters: agg.distanceMeters > 0 ? agg.distanceMeters : null,
+    });
   }
 
   return finalizeDayMap(dayMap);
@@ -1723,13 +2513,18 @@ export function registerHealthOAuthRoutes(app: Express) {
     const googleCfg = getGoogleHealthConfig(req);
     const garminSession = getSessionForProvider(req, 'garmin');
     const googleSession = getSessionForProvider(req, 'google');
+    const garminApiKeyConnected =
+      garminCfg.authMode === 'api_key' && !isGarminApiKeyManuallyDisconnected(req);
 
     res.json({
       garmin: {
         configured: garminCfg.configured,
-        connected: Boolean(garminSession),
+        connected: garminCfg.authMode === 'api_key' ? garminApiKeyConnected : Boolean(garminSession),
+        authMode: garminCfg.authMode,
         callbackUrl: garminCfg.callbackUrl,
-        connectedAt: garminSession?.session.connectedAt || null,
+        connectedAt:
+          garminSession?.session.connectedAt ||
+          (garminApiKeyConnected ? SERVER_STARTED_AT : null),
       },
       google: {
         configured: googleCfg.configured,
@@ -1741,18 +2536,49 @@ export function registerHealthOAuthRoutes(app: Express) {
     });
   });
 
-  // Garmin Connect: Build OAuth 2.0 PKCE Authorization URL
-  app.get('/api/health/garmin/auth-url', (req: Request, res: Response) => {
+  // Garmin Connect: Build OAuth 2.0 PKCE Authorization URL OR connect directly via Personal API Key
+  app.get('/api/health/garmin/auth-url', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     pruneExpiredStates();
     const cfg = getGarminConfig(req);
     if (!cfg.configured) {
       res.status(200).json({
         configured: false,
+        authMode: null,
         callbackUrl: cfg.callbackUrl,
         error:
-          'Garmin Connect OAuth ist noch nicht konfiguriert. Bitte hinterlege GARMIN_CLIENT_ID und GARMIN_CLIENT_SECRET in Settings > Secrets und starte den Server neu.',
+          'Garmin Connect ist noch nicht konfiguriert. Bitte hinterlege GARMIN_PERSONAL_API_KEY in Settings > Secrets und lade die App neu.',
       });
+      return;
+    }
+
+    if (cfg.authMode === 'api_key') {
+      try {
+        await getGarminPersonalBearerToken(cfg.personalApiKey, cfg.personalApiBaseUrl, true);
+        setGarminApiKeyOffCookie(res, false);
+        const sessionToken = base64UrlEncode(crypto.randomBytes(32));
+        const connectedAt = Date.now();
+        sessions.set(sessionToken, {
+          provider: 'garmin',
+          accessToken: 'personal-api-key',
+          expiresAt: connectedAt + 24 * 3600 * 1000,
+          connectedAt,
+        });
+        setHealthSessionCookie(res, 'garmin', sessionToken);
+        res.json({
+          mode: 'api_key',
+          connected: true,
+          sessionToken,
+          connectedAt,
+        });
+      } catch (err: unknown) {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : 'Garmin Personal API Key konnte nicht verifiziert werden.';
+        const status = err instanceof GarminApiAuthError ? err.status : 502;
+        res.status(status).json({ error: msg });
+      }
       return;
     }
 
@@ -1778,6 +2604,7 @@ export function registerHealthOAuthRoutes(app: Express) {
     });
 
     res.json({
+      mode: 'oauth',
       url: `https://connect.garmin.com/oauth2Confirm?${params.toString()}`,
     });
   });
@@ -1891,8 +2718,34 @@ export function registerHealthOAuthRoutes(app: Express) {
   };
   app.get(['/api/health/garmin/callback', '/api/health/garmin/callback/'], handleGarminCallback);
 
-  // Garmin Connect: Direct Sync
+  // Garmin Connect: Direct Sync (Personal API Key or OAuth)
   app.post('/api/health/garmin/sync', async (req: Request, res: Response) => {
+    const cfg = getGarminConfig(req);
+    if (cfg.authMode === 'api_key') {
+      if (isGarminApiKeyManuallyDisconnected(req)) {
+        res.status(401).json({ error: 'Garmin Connect wurde getrennt. Bitte erneut verbinden.' });
+        return;
+      }
+      try {
+        const days = await fetchGarminPersonalApiMetrics(
+          cfg.personalApiKey,
+          cfg.personalApiBaseUrl
+        );
+        res.json({
+          provider: 'garmin_connect',
+          authMode: 'api_key',
+          days,
+          syncedAt: Date.now(),
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Garmin-Sync fehlgeschlagen.';
+        const status = err instanceof GarminApiAuthError ? err.status : 502;
+        console.error('Garmin Personal API sync error:', err);
+        res.status(status).json({ error: msg });
+      }
+      return;
+    }
+
     const found = getSessionForProvider(req, 'garmin');
     if (!found) {
       res.status(401).json({ error: 'Garmin Connect ist nicht verbunden.' });
@@ -1903,6 +2756,7 @@ export function registerHealthOAuthRoutes(app: Express) {
       const days = await fetchGarminHealthMetrics(found.session);
       res.json({
         provider: 'garmin_connect',
+        authMode: 'oauth',
         days,
         syncedAt: Date.now(),
       });
@@ -1947,6 +2801,10 @@ export function registerHealthOAuthRoutes(app: Express) {
       sessions.delete(found.sessionToken);
     }
     clearHealthSessionCookie(res, 'garmin');
+    const cfg = getGarminConfig(req);
+    if (cfg.authMode === 'api_key') {
+      setGarminApiKeyOffCookie(res, true);
+    }
     res.json({ disconnected: true });
   });
 

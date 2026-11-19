@@ -732,12 +732,16 @@ export function HealthSourcesSettings() {
                   <div className="text-sm font-bold text-white truncate">Garmin Connect</div>
                   <div className="text-xs text-neutral-400 truncate">
                     {providerStatus?.garmin.connected
-                      ? 'Verbunden · Dailies & Schlaf'
+                      ? providerStatus.garmin.authMode === 'api_key'
+                        ? 'Verbunden · Personal API Key'
+                        : 'Verbunden · Dailies & Schlaf'
                       : providerStatus?.backendAvailable === false
                       ? 'Node-Server erforderlich'
                       : providerStatus?.garmin.configured
-                      ? 'OAuth 2.0 PKCE bereit'
-                      : 'OAuth-Secrets erforderlich'}
+                      ? providerStatus.garmin.authMode === 'api_key'
+                        ? 'Personal API Key bereit'
+                        : 'OAuth 2.0 PKCE bereit'
+                      : 'Personal API Key erforderlich'}
                   </div>
                 </div>
               </div>
@@ -879,13 +883,13 @@ export function HealthSourcesSettings() {
           </div>
         )}
 
-        {/* Setup instructions if OAuth credentials are not yet configured in Settings > Secrets */}
+        {/* Setup instructions if Garmin Personal API Key or Google OAuth credentials are not yet configured in Settings > Secrets */}
         {setupGuideProvider && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3.5 space-y-2 text-xs">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3.5 space-y-2.5 text-xs">
             <div className="flex items-center justify-between gap-2">
               <span className="font-bold text-amber-300">
                 {setupGuideProvider === 'garmin'
-                  ? 'Garmin Connect OAuth einrichten'
+                  ? 'Garmin Connect Personal API einrichten'
                   : 'Google Health / Fit OAuth einrichten'}
               </span>
               <button
@@ -896,34 +900,82 @@ export function HealthSourcesSettings() {
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <p className="text-xs text-neutral-300 leading-relaxed">
-              {setupGuideProvider === 'garmin'
-                ? 'Hinterlege GARMIN_CLIENT_ID und GARMIN_CLIENT_SECRET in den AI Studio Secrets und trage diese Redirect-URI im Garmin Developer Portal ein:'
-                : 'Hinterlege GOOGLE_HEALTH_CLIENT_ID und GOOGLE_HEALTH_CLIENT_SECRET in den AI Studio Secrets und trage diese Redirect-URI in der Google Cloud Console ein:'}
-            </p>
-            {(() => {
-              const activeCallbackUrl =
-                setupCallbackUrl ||
-                (setupGuideProvider === 'garmin'
-                  ? providerStatus?.garmin.callbackUrl
-                  : providerStatus?.google.callbackUrl) ||
-                `${window.location.origin}/api/health/${setupGuideProvider}/callback`;
-              return (
-                <div className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5">
-                  <code className="text-xs text-neutral-200 truncate flex-1">
-                    {activeCallbackUrl}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyCallbackUrl(activeCallbackUrl)}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-amber-400 hover:text-amber-300 shrink-0"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Kopieren</span>
-                  </button>
-                </div>
-              );
-            })()}
+
+            {setupGuideProvider === 'garmin' ? (
+              <div className="space-y-2 text-xs text-neutral-300 leading-relaxed">
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>
+                    Öffne in <strong>Garmin Connect Web</strong> unter{' '}
+                    <strong>Profil &amp; Konto &rarr; Einstellungen &rarr; Personal API Key</strong>{' '}
+                    den Bereich für deinen persönlichen Schlüssel und klicke auf{' '}
+                    <strong>Schlüssel erstellen</strong>.
+                  </li>
+                  <li>
+                    Kopiere den einmalig angezeigten Schlüssel und hinterlege ihn in den AI Studio{' '}
+                    <strong>Settings &gt; Secrets</strong> unter dem Namen{' '}
+                    <code className="text-amber-300 font-semibold">GARMIN_PERSONAL_API_KEY</code>.
+                  </li>
+                  <li>
+                    Lade die App neu (im Live-Betrieb danach erneut teilen) &ndash; Garmin Connect
+                    synchronisiert dann Schlaf, HRV, Body Battery, Puls, Schritte und Workouts direkt.
+                  </li>
+                </ol>
+                {(() => {
+                  const activeCallbackUrl =
+                    setupCallbackUrl ||
+                    providerStatus?.garmin.callbackUrl ||
+                    `${window.location.origin}/api/health/garmin/callback`;
+                  return (
+                    <div className="pt-1 border-t border-neutral-800/80 space-y-1.5">
+                      <span className="block text-[11px] text-neutral-400">
+                        Optional (nur für OAuth 2.0 PKCE mit GARMIN_CLIENT_ID / GARMIN_CLIENT_SECRET):
+                      </span>
+                      <div className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5">
+                        <code className="text-xs text-neutral-300 truncate flex-1">
+                          {activeCallbackUrl}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyCallbackUrl(activeCallbackUrl)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-amber-400 hover:text-amber-300 shrink-0"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Kopieren</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-neutral-300 leading-relaxed">
+                  Hinterlege GOOGLE_HEALTH_CLIENT_ID und GOOGLE_HEALTH_CLIENT_SECRET in den AI Studio
+                  Secrets und trage diese Redirect-URI in der Google Cloud Console ein:
+                </p>
+                {(() => {
+                  const activeCallbackUrl =
+                    setupCallbackUrl ||
+                    providerStatus?.google.callbackUrl ||
+                    `${window.location.origin}/api/health/google/callback`;
+                  return (
+                    <div className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1.5">
+                      <code className="text-xs text-neutral-200 truncate flex-1">
+                        {activeCallbackUrl}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCallbackUrl(activeCallbackUrl)}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-amber-400 hover:text-amber-300 shrink-0"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Kopieren</span>
+                      </button>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
           </div>
         )}
       </div>
