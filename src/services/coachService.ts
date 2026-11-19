@@ -98,21 +98,46 @@ export interface CoachChatResponse {
     name?: string;
     args?: Record<string, unknown>;
   };
+  modelContent?: unknown;
   priorHistory?: unknown[];
 }
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.error || `Anfrage fehlgeschlagen (${res.status})`);
+  const rawText = await res.text().catch(() => '');
+  let data: { error?: string } = {};
+  if (rawText) {
+    try {
+      data = JSON.parse(rawText) as { error?: string };
+    } catch {
+      data = {};
+    }
   }
-  return data as T;
+
+  if (!res.ok) {
+    if (typeof data.error === 'string' && data.error.trim()) {
+      throw new Error(data.error);
+    }
+    if (res.status === 404) {
+      throw new Error(
+        'Der KI-Coach-Endpunkt ist in dieser Live-Umgebung nicht erreichbar (HTTP 404). Bitte stelle sicher, dass die App mit aktivem Backend-Server neu geteilt/deployed wurde.'
+      );
+    }
+    if (res.status === 502 || res.status === 504) {
+      throw new Error(
+        `Der KI-Coach-Server antwortet momentan verzögert (HTTP ${res.status}). Bitte versuche es gleich erneut.`
+      );
+    }
+    throw new Error(`Anfrage fehlgeschlagen (HTTP ${res.status})`);
+  }
+
+  return (data && Object.keys(data).length > 0 ? data : {}) as T;
 }
 
 export async function generateDailyTraining(
@@ -141,6 +166,7 @@ export async function sendCoachChatMessage(payload: {
   context: CoachChatContext;
   functionCallResult?: {
     priorHistory: unknown[];
+    modelContent?: unknown;
     call: unknown;
     result: Record<string, unknown>;
   };

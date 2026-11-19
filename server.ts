@@ -15,7 +15,8 @@ const GEMINI_MODEL = 'gemini-4-hydrogen';
 const FALLBACK_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
 function getAiClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const rawKey = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
+  const apiKey = rawKey.trim().replace(/^["']|["']$/g, '');
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
     throw new Error('GEMINI_API_KEY ist nicht konfiguriert. Bitte hinterlege deinen API-Key in Settings > Secrets.');
   }
@@ -61,9 +62,17 @@ function extractGeminiError(error: unknown): { status: number; message: string; 
       isTransient: false,
     };
   }
-  if (parsedCode === 403 || parsedStatus === 'PERMISSION_DENIED' || (parsedCode === 400 && lower.includes('api_key_invalid')) || lower.includes('api key not valid')) {
+  if (
+    parsedCode === 401 ||
+    parsedCode === 403 ||
+    parsedStatus === 'UNAUTHENTICATED' ||
+    parsedStatus === 'PERMISSION_DENIED' ||
+    (parsedCode === 400 && lower.includes('api_key_invalid')) ||
+    lower.includes('api key not valid') ||
+    lower.includes('api_key_invalid')
+  ) {
     return {
-      status: parsedCode === 400 ? 400 : 403,
+      status: parsedCode === 400 ? 400 : parsedCode === 401 ? 401 : 403,
       message: 'Der Gemini API-Key ist ungültig oder hat keine Berechtigung. Bitte prüfe deinen API-Key unter Settings > Secrets.',
       isTransient: false,
     };
@@ -219,7 +228,12 @@ async function generateWithResilience(
         primaryError = err;
         primaryDone = true;
         const info = extractGeminiError(err);
-        if (!info.isTransient) {
+        const isAuthOrKeyError =
+          info.status === 401 ||
+          info.status === 403 ||
+          info.message.includes('nicht konfiguriert') ||
+          info.message.includes('API-Key ist ungültig');
+        if (isAuthOrKeyError) {
           if (!settled) {
             settled = true;
             cleanup();
@@ -629,10 +643,15 @@ ${dayLines}`;
         };
         functionCallResult?: {
           priorHistory: unknown[];
+          modelContent?: unknown;
           call: unknown;
           result: Record<string, unknown>;
         };
       };
+
+      const safeActiveQuests = Array.isArray(context?.activeQuests)
+        ? context.activeQuests.slice(0, 40)
+        : [];
 
       const systemInstruction = `You are an AI Coach in a Self-Improvement RPG app called "LifeQuest" (Aura).
 The user is a "Hero" leveling up their life.
@@ -640,7 +659,7 @@ Current Stats:
 Level: ${context?.level ?? 1}
 XP: ${context?.xp ?? 0}/${context?.xpToNextLevel ?? 100}
 Skills: ${JSON.stringify(context?.skills ?? {})}
-Active Quests: ${JSON.stringify(context?.activeQuests ?? [])}
+Active Quests: ${JSON.stringify(safeActiveQuests)}
 ${context?.recentMoodSummary ? `Recent Mood Context: ${context.recentMoodSummary}` : ''}
 
 The user has access to "Lebensziele" (Visions), a Pomodoro "Fokus Timer", a daily 1-5 star mood tracker, and weekly mood summaries.
@@ -649,9 +668,16 @@ IMPORTANT: Respond in GERMAN. Use "Du" to address the user.
 You have the ability to create quests for the user using the createQuest tool. Use it when the user explicitly asks you to create a quest, or when they agree to a quest you suggested.`;
 
       if (functionCallResult) {
+        const modelTurn =
+          functionCallResult.modelContent &&
+          typeof functionCallResult.modelContent === 'object' &&
+          Array.isArray((functionCallResult.modelContent as { parts?: unknown[] }).parts)
+            ? functionCallResult.modelContent
+            : { role: 'model', parts: [{ functionCall: functionCallResult.call }] };
+
         const followUpContents = [
           ...(Array.isArray(functionCallResult.priorHistory) ? functionCallResult.priorHistory : []),
-          { role: 'model', parts: [{ functionCall: functionCallResult.call }] },
+          modelTurn,
           {
             role: 'user',
             parts: [
@@ -680,13 +706,13 @@ You have the ability to create quests for the user using the createQuest tool. U
         return;
       }
 
-      if (!userMessage || typeof userMessage !== 'string') {
+      if (!userMessage || typeof userMessage !== 'string' || !userMessage.trim()) {
         res.status(400).json({ error: 'Nachricht darf nicht leer sein.' });
         return;
       }
 
-      // Normalize history so Gemini contents always start with a user turn and have non-empty text
-      const rawHistory = (history || [])
+      // Normalize history so Gemini contents always start with a user turn, alternate roles, and have non-empty text
+      const rawHistory = (Array.isArray(history) ? history.slice(-24) : [])
         .filter((msg) => msg && typeof msg.content === 'string' && msg.content.trim().length > 0)
         .map((msg) => ({
           role: msg.role === 'coach' ? 'model' : 'user',
@@ -694,8 +720,16 @@ You have the ability to create quests for the user using the createQuest tool. U
         }));
 
       const firstUserIdx = rawHistory.findIndex((m) => m.role === 'user');
-      const geminiHistory = firstUserIdx >= 0 ? rawHistory.slice(firstUserIdx) : [];
-      geminiHistory.push({ role: 'user', parts: [{ text: userMessage.trim() }] });
+      const slicedHistory = firstUserIdx >= 0 ? rawHistory.slice(firstUserIdx) : [];
+      const geminiHistory: Array<{ role: string; parts: Array<{ text: string }> }> = [];
+      for (const turn of [...slicedHistory, { role: 'user', parts: [{ text: userMessage.trim() }] }]) {
+        const last = geminiHistory[geminiHistory.length - 1];
+        if (last && last.role === turn.role) {
+          last.parts[0].text = `${last.parts[0].text}\n\n${turn.parts[0].text}`;
+        } else {
+          geminiHistory.push({ role: turn.role, parts: [{ text: turn.parts[0].text }] });
+        }
+      }
 
       const response = await generateWithResilience(ai, {
         contents: geminiHistory,
@@ -710,6 +744,7 @@ You have the ability to create quests for the user using the createQuest tool. U
         const call = response.functionCalls[0];
         res.json({
           functionCall: call,
+          modelContent: response.candidates?.[0]?.content,
           priorHistory: geminiHistory,
         });
         return;

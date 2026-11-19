@@ -28,15 +28,28 @@ const QUICK_PROMPTS = [
   'Schlage mir eine passende Quest für heute vor',
 ];
 
+function toSafeDate(value: unknown): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 export function AICoach() {
   const {
     stats,
-    quests,
-    diaryEntries,
-    weeklyCoachSummaries,
-    weeklyRetrospectives,
-    healthRecords,
-    foodEntries,
+    quests = [],
+    diaryEntries = [],
+    weeklyCoachSummaries = [],
+    weeklyRetrospectives = [],
+    healthRecords = [],
+    foodEntries = [],
     addQuest,
   } = useStore();
 
@@ -45,7 +58,16 @@ export function AICoach() {
       const saved = sessionStorage.getItem(CHAT_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          const valid = parsed.filter(
+            (m): m is ChatMessage =>
+              Boolean(m) &&
+              typeof m === 'object' &&
+              (m.role === 'user' || m.role === 'coach') &&
+              typeof m.content === 'string'
+          );
+          if (valid.length > 0) return valid;
+        }
       }
     } catch {
       // ignore invalid storage
@@ -72,12 +94,17 @@ export function AICoach() {
     const today = new Date();
     const todayKey = format(today, 'yyyy-MM-dd');
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const recentMoods = diaryEntries.filter((e) => e.date >= sevenDaysAgo && e.mood >= 1);
-    const latestSummary = [...weeklyCoachSummaries].sort((a, b) => b.weekStart - a.weekStart)[0];
-    const latestRetro = [...weeklyRetrospectives].sort((a, b) => b.weekStart - a.weekStart)[0];
+    const recentMoods = diaryEntries.filter(
+      (e) => typeof e.date === 'number' && e.date >= sevenDaysAgo && typeof e.mood === 'number' && e.mood >= 1
+    );
+    const latestSummary = [...weeklyCoachSummaries].sort((a, b) => (b.weekStart || 0) - (a.weekStart || 0))[0];
+    const latestRetro = [...weeklyRetrospectives].sort((a, b) => (b.weekStart || 0) - (a.weekStart || 0))[0];
     const todayHealth = healthRecords.find((r) => r.id === todayKey);
     const todayCalories = foodEntries
-      .filter((f) => isSameDay(new Date(f.date), today))
+      .filter((f) => {
+        const fd = toSafeDate(f.date);
+        return fd ? isSameDay(fd, today) : false;
+      })
       .reduce((sum, f) => sum + (f.calories || 0), 0);
 
     const avg =
@@ -89,8 +116,8 @@ export function AICoach() {
       avg ? `7-Tage Ø-Stimmung: ${avg}/5 Sterne (${recentMoods.length} Einträge)` : null,
       todayHealth
         ? `Heutige Erholung: ${todayHealth.recoveryScore}/100 (${todayHealth.recoveryState}), Schlaf ${Math.round(
-            todayHealth.sleepDurationMinutes / 60 * 10
-          ) / 10}h, Aktivität ${todayHealth.activityDurationMinutes}m`
+            (todayHealth.sleepDurationMinutes || 0) / 60 * 10
+          ) / 10}h, Aktivität ${todayHealth.activityDurationMinutes || 0}m`
         : null,
       todayCalories > 0 ? `Heutige Ernährung: ${todayCalories} kcal` : null,
       latestRetro
@@ -133,11 +160,11 @@ export function AICoach() {
     setIsLoading(true);
 
     const context = {
-      level: stats.level,
-      xp: stats.xp,
-      xpToNextLevel: stats.xpToNextLevel,
-      skills: stats.skills,
-      activeQuests: quests.filter((q) => !q.completed).map((q) => q.title),
+      level: stats?.level ?? 1,
+      xp: stats?.xp ?? 0,
+      xpToNextLevel: stats?.xpToNextLevel ?? 100,
+      skills: stats?.skills ?? {},
+      activeQuests: quests.filter((q) => !q.completed).map((q) => q.title).slice(0, 40),
       recentMoodSummary,
     };
 
@@ -157,8 +184,9 @@ export function AICoach() {
           type?: 'daily' | 'habit';
         };
         const questType = args.type === 'habit' ? 'habit' : 'daily';
+        const questTitle = args.title || 'Neue Coach-Quest';
         addQuest({
-          title: args.title || 'Neue Coach-Quest',
+          title: questTitle,
           description: args.description || '',
           skill: args.skill || 'Disziplin',
           xpReward: typeof args.xpReward === 'number' ? args.xpReward : 20,
@@ -166,19 +194,30 @@ export function AICoach() {
           ...(questType === 'habit' ? { habitDirection: 'positive' as const } : {}),
         });
 
-        const followUp = await sendCoachChatMessage({
-          context,
-          functionCallResult: {
-            priorHistory: response.priorHistory || [],
-            call: response.functionCall,
-            result: { success: true },
-          },
-        });
+        try {
+          const followUp = await sendCoachChatMessage({
+            context,
+            functionCallResult: {
+              priorHistory: response.priorHistory || [],
+              modelContent: response.modelContent,
+              call: response.functionCall,
+              result: { success: true },
+            },
+          });
 
-        setMessages((prev) => [
-          ...prev,
-          { role: 'coach', content: followUp.text || 'Die Quest wurde erfolgreich erstellt!' },
-        ]);
+          setMessages((prev) => [
+            ...prev,
+            { role: 'coach', content: followUp.text || `Die Quest **${questTitle}** wurde erfolgreich erstellt!` },
+          ]);
+        } catch {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'coach',
+              content: `Ich habe die Quest **${questTitle}** direkt zu deinen Quests hinzugefügt!`,
+            },
+          ]);
+        }
       } else {
         setMessages((prev) => [
           ...prev,
