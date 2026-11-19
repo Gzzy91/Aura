@@ -146,7 +146,7 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest,
       ...prev,
       recurrenceDays: prev.recurrenceDays.includes(day)
         ? prev.recurrenceDays.filter(d => d !== day)
-        : [...prev.recurrenceDays, day].sort()
+        : [...prev.recurrenceDays, day].sort((a, b) => a - b)
     }));
   };
 
@@ -159,8 +159,7 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest,
       if (newQuest.hasTime && newQuest.dueTime) {
         finalDueDate = new Date(`${newQuest.dueDate}T${newQuest.dueTime}`).getTime();
       } else {
-        // Just date, set to end of day or start of day? Let's use 23:59:59
-        finalDueDate = new Date(`${newQuest.dueDate}T23:59:59`).getTime();
+        finalDueDate = new Date(`${newQuest.dueDate}T23:59:59.999`).getTime();
       }
     }
 
@@ -173,8 +172,14 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest,
       }
     }
 
+    const cleanedRecurrenceDays =
+      newQuest.recurrence === 'weekly' || newQuest.recurrence === 'monthly'
+        ? [...newQuest.recurrenceDays].sort((a, b) => a - b)
+        : [];
+
     onSave({
       ...newQuest,
+      recurrenceDays: cleanedRecurrenceDays,
       dueDate: finalDueDate,
       hasTime: newQuest.hasTime,
       completedAt: finalCompletedAt
@@ -410,7 +415,17 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest,
                     <label className="block text-sm font-medium text-neutral-400 mb-1">Wiederholung</label>
                     <select 
                       value={newQuest.recurrence}
-                      onChange={e => setNewQuest({...newQuest, recurrence: e.target.value as Recurrence})}
+                      onChange={e => {
+                        const nextRecurrence = e.target.value as Recurrence;
+                        setNewQuest({
+                          ...newQuest,
+                          recurrence: nextRecurrence,
+                          recurrenceDays:
+                            nextRecurrence === 'weekly' || nextRecurrence === 'monthly'
+                              ? newQuest.recurrenceDays
+                              : []
+                        });
+                      }}
                       className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-amber-500"
                     >
                       <option value="none">Einmalig</option>
@@ -418,6 +433,11 @@ export function QuestModal({ isOpen, onClose, onSave, initialDate, initialQuest,
                       <option value="weekly">Wöchentlich</option>
                       <option value="monthly">Monatlich</option>
                     </select>
+                    {newQuest.recurrence !== 'none' && !newQuest.dueDate && (
+                      <p className="text-[11px] text-amber-400/80 mt-1.5">
+                        Ohne festes Datum startet die Serie automatisch heute bzw. am nächsten gewählten Termin.
+                      </p>
+                    )}
                   </div>
                   {newQuest.recurrence === 'weekly' && (
                     <div className="space-y-2">

@@ -5,7 +5,7 @@ import { User } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { toast } from 'sonner';
 import { triggerHapticFeedback } from '@/lib/utils';
-import { isSameDay, format, startOfDay } from 'date-fns';
+import { isSameDay, format } from 'date-fns';
 import {
   ALL_SKILLS,
   OVERALL_BASE_XP,
@@ -27,8 +27,24 @@ import {
   query, 
   where,
   getDoc,
-  deleteField
+  deleteField,
+  writeBatch
 } from 'firebase/firestore';
+import {
+  createNextRecurringInstance,
+  findDuplicateActiveRecurringQuestIds,
+  findOpenSuccessorsForReopen,
+  getInitialDueDateForRecurringQuest,
+  getQuestSeriesId,
+  getStartOfDayMs,
+  isQuestOverdueForAutoFail,
+  isValidTimestamp,
+  normalizeDueDateTime,
+} from '../lib/questLifecycle';
+
+const recentlyAutoFailedIds = new Map<string, number>();
+let isAutoFailRunning = false;
+let isDeduplicatingQuests = false;
 
 const cleanData = <T>(data: T): T => {
   if (data === null || data === undefined) {
@@ -109,6 +125,7 @@ interface AppState {
   completeQuest: (id: string, isNegativeHabit?: boolean, customDate?: number) => number | void;
   failQuest: (id: string) => void;
   autoFailOverdueQuests: () => number;
+  deduplicateQuests: () => number;
   toggleSubtask: (questId: string, subtaskId: string) => void;
   deleteQuest: (id: string) => void;
   reopenQuest: (id: string) => void;
@@ -432,81 +449,7 @@ export function calculateStatsFromHistory(
   };
 }
 
-function computeSingleNextRecurrence(
-  baseTimestamp: number,
-  recurrence: 'daily' | 'weekly' | 'monthly',
-  recurrenceDays?: number[]
-): number {
-  const base = new Date(baseTimestamp);
-  if (recurrence === 'daily') {
-    const next = new Date(base);
-    next.setDate(next.getDate() + 1);
-    return next.getTime();
-  }
-  if (recurrence === 'weekly') {
-    if (recurrenceDays && recurrenceDays.length > 0) {
-      for (let i = 1; i <= 7; i++) {
-        const nextDate = new Date(base);
-        nextDate.setDate(base.getDate() + i);
-        if (recurrenceDays.includes(nextDate.getDay())) {
-          return nextDate.getTime();
-        }
-      }
-    }
-    const fallback = new Date(base);
-    fallback.setDate(fallback.getDate() + 7);
-    return fallback.getTime();
-  }
-  // monthly
-  if (recurrenceDays && recurrenceDays.length > 0) {
-    const sortedDays = [...recurrenceDays].sort((a, b) => a - b);
-    for (let i = 0; i <= 12; i++) {
-      const monthStart = new Date(
-        base.getFullYear(),
-        base.getMonth() + i,
-        1,
-        base.getHours(),
-        base.getMinutes(),
-        base.getSeconds(),
-        base.getMilliseconds()
-      );
-      const lastDayOfMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
-      for (const day of sortedDays) {
-        const candidate = new Date(monthStart);
-        candidate.setDate(Math.min(day, lastDayOfMonth));
-        if (candidate.getTime() > base.getTime()) {
-          return candidate.getTime();
-        }
-      }
-    }
-  }
-  const nextMonth = new Date(base);
-  const targetDay = base.getDate();
-  nextMonth.setDate(1);
-  nextMonth.setMonth(nextMonth.getMonth() + 1);
-  const lastDay = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
-  nextMonth.setDate(Math.min(targetDay, lastDay));
-  return nextMonth.getTime();
-}
 
-function getNextRecurrenceTimestamp(
-  baseTimestamp: number,
-  recurrence: 'daily' | 'weekly' | 'monthly',
-  recurrenceDays?: number[],
-  minTimestamp?: number
-): number {
-  let nextTs = computeSingleNextRecurrence(baseTimestamp, recurrence, recurrenceDays);
-  if (minTimestamp !== undefined) {
-    let safety = 0;
-    while (nextTs < minTimestamp && safety < 1000) {
-      const advanced = computeSingleNextRecurrence(nextTs, recurrence, recurrenceDays);
-      if (advanced <= nextTs) break;
-      nextTs = advanced;
-      safety++;
-    }
-  }
-  return nextTs;
-}
 
 export const useStore = create<AppState>()(
   persist(
@@ -663,8 +606,39 @@ export const useStore = create<AppState>()(
 
       addQuest: (questData) => {
         const id = crypto.randomUUID();
-        const quest: Quest = { ...questData, id, completed: false, createdAt: Date.now() };
-        
+        const now = Date.now();
+        const isRecurring =
+          questData.type !== 'habit' &&
+          Boolean(questData.recurrence) &&
+          questData.recurrence !== 'none';
+
+        let resolvedDueDate = isValidTimestamp(questData.dueDate)
+          ? normalizeDueDateTime(questData.dueDate, questData.hasTime)
+          : undefined;
+
+        if (isRecurring && resolvedDueDate === undefined) {
+          resolvedDueDate = getInitialDueDateForRecurringQuest(
+            questData.recurrence,
+            questData.recurrenceDays,
+            now
+          );
+        }
+
+        const cleanedRecurrenceDays =
+          questData.recurrence === 'weekly' || questData.recurrence === 'monthly'
+            ? [...(questData.recurrenceDays || [])].sort((a, b) => a - b)
+            : [];
+
+        const quest: Quest = {
+          ...questData,
+          id,
+          dueDate: resolvedDueDate,
+          recurrenceDays: cleanedRecurrenceDays,
+          ...(isRecurring ? { seriesId: questData.seriesId || id } : {}),
+          completed: false,
+          createdAt: now,
+        };
+
         set((state) => ({
           quests: [...state.quests, quest]
         }));
@@ -1080,49 +1054,72 @@ export const useStore = create<AppState>()(
           }
           return actionTimestamp;
         } else {
-          nextQuests = state.quests.map(q => q.id === id ? { ...q, completed: true, completedAt: Date.now() } : q);
-          
+          const completedAt = actionTimestamp;
+          const isRecurring = Boolean(quest.recurrence && quest.recurrence !== 'none');
+          const resolvedSeriesId = isRecurring ? getQuestSeriesId(quest) : quest.seriesId;
+
+          const baseNextQuests = state.quests.map(q =>
+            q.id === id
+              ? {
+                  ...q,
+                  completed: true,
+                  failed: false,
+                  completedAt,
+                  ...(resolvedSeriesId ? { seriesId: resolvedSeriesId } : {}),
+                }
+              : q
+          );
+
+          const recurringQuest = isRecurring
+            ? createNextRecurringInstance({
+                sourceQuest: {
+                  ...quest,
+                  ...(resolvedSeriesId ? { seriesId: resolvedSeriesId } : {}),
+                },
+                existingQuests: baseNextQuests,
+                mode: 'manual',
+                now: completedAt,
+              })
+            : null;
+
+          nextQuests = baseNextQuests.map(q =>
+            q.id === id && recurringQuest
+              ? { ...q, spawnedNextQuestId: recurringQuest.id }
+              : q
+          );
+          if (recurringQuest) {
+            nextQuests.push(recurringQuest);
+          }
+
+          set({ quests: nextQuests, stats: newStats });
+
           if (user) {
-            updateDoc(doc(db, 'users', user.uid, 'quests', id), cleanUpdateData({
-              completed: true,
-              completedAt: Date.now()
-            })).catch(error => {
-              console.error("Firestore update failed:", error);
-              toast.error("Fehler beim Speichern der Quest");
+            const batch = writeBatch(db);
+            batch.update(
+              doc(db, 'users', user.uid, 'quests', id),
+              cleanUpdateData({
+                completed: true,
+                failed: false,
+                completedAt,
+                ...(resolvedSeriesId ? { seriesId: resolvedSeriesId } : {}),
+                ...(recurringQuest ? { spawnedNextQuestId: recurringQuest.id } : {}),
+              })
+            );
+            if (recurringQuest) {
+              batch.set(
+                doc(db, 'users', user.uid, 'quests', recurringQuest.id),
+                cleanData(recurringQuest)
+              );
+            }
+            batch.update(
+              doc(db, 'users', user.uid),
+              cleanUpdateData({ stats: newStats })
+            );
+            batch.commit().catch((error) => {
+              console.error('Firestore batch completeQuest failed:', error);
+              toast.error('Fehler beim Speichern der Quest');
             });
           }
-
-          if (quest.recurrence && quest.recurrence !== 'none') {
-            const nextDueDate = getNextRecurrenceTimestamp(
-              quest.dueDate || Date.now(),
-              quest.recurrence,
-              quest.recurrenceDays
-            );
-
-            const recurringQuest: Quest = {
-              ...quest,
-              id: crypto.randomUUID(),
-              completed: false,
-              completedAt: undefined,
-              createdAt: Date.now(),
-              dueDate: nextDueDate,
-              subtasks: quest.subtasks?.map(s => ({ ...s, completed: false }))
-            };
-            nextQuests.push(recurringQuest);
-            
-            if (user) {
-              setDoc(doc(db, 'users', user.uid, 'quests', recurringQuest.id), cleanData(recurringQuest)).catch((error) => {
-                handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/quests/${recurringQuest.id}`);
-              });
-            }
-          }
-        }
-
-        set({ quests: nextQuests, stats: newStats });
-        if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats })).catch((error) => {
-            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
-          });
         }
       },
 
@@ -1134,151 +1131,212 @@ export const useStore = create<AppState>()(
         triggerHapticFeedback([40, 40]);
 
         const { user } = get();
-        let nextQuests = state.quests.map(q => q.id === id ? {
-          ...q,
-          completed: true,
-          failed: true,
-          completedAt: Date.now()
-        } : q);
+        const completedAt = Date.now();
+        const isRecurring =
+          quest.type !== 'habit' && Boolean(quest.recurrence && quest.recurrence !== 'none');
+        const resolvedSeriesId = isRecurring ? getQuestSeriesId(quest) : quest.seriesId;
 
-        if (user) {
-          updateDoc(doc(db, 'users', user.uid, 'quests', id), cleanUpdateData({
-            completed: true,
-            failed: true,
-            completedAt: Date.now()
-          })).catch(error => {
-            console.error("Firestore update failed:", error);
-            toast.error("Fehler beim Aktualisieren der Quest");
-          });
-        }
-
-        if (quest.recurrence && quest.recurrence !== 'none') {
-          const nextDueDate = getNextRecurrenceTimestamp(
-            quest.dueDate || Date.now(),
-            quest.recurrence,
-            quest.recurrenceDays
-          );
-
-          const recurringQuest: Quest = {
-            ...quest,
-            id: crypto.randomUUID(),
-            completed: false,
-            failed: false,
-            completedAt: undefined,
-            createdAt: Date.now(),
-            dueDate: nextDueDate,
-            subtasks: quest.subtasks?.map(s => ({ ...s, completed: false }))
-          };
-          nextQuests.push(recurringQuest);
-
-          if (user) {
-            setDoc(doc(db, 'users', user.uid, 'quests', recurringQuest.id), cleanData(recurringQuest)).catch((error) => {
-              handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/quests/${recurringQuest.id}`);
-            });
-          }
-        }
-
-        set({ quests: nextQuests });
-      },
-
-      autoFailOverdueQuests: () => {
-        const state = get();
-        if (state.user && !state.questsSynced) return 0;
-
-        const startOfTodayMs = startOfDay(new Date()).getTime();
-        const overdueQuests = state.quests.filter(
-          (q) =>
-            q.type !== 'habit' &&
-            !q.completed &&
-            typeof q.dueDate === 'number' &&
-            q.dueDate < startOfTodayMs
-        );
-
-        if (overdueQuests.length === 0) return 0;
-
-        const overdueIds = new Set(overdueQuests.map((q) => q.id));
-        const { user } = state;
-
-        const nextQuests: Quest[] = state.quests.map((q) =>
-          overdueIds.has(q.id)
+        const baseNextQuests = state.quests.map(q =>
+          q.id === id
             ? {
                 ...q,
                 completed: true,
                 failed: true,
-                completedAt: q.dueDate,
+                completedAt,
+                ...(resolvedSeriesId ? { seriesId: resolvedSeriesId } : {}),
               }
             : q
         );
 
-        const newRecurringQuests: Quest[] = [];
+        const recurringQuest = isRecurring
+          ? createNextRecurringInstance({
+              sourceQuest: {
+                ...quest,
+                ...(resolvedSeriesId ? { seriesId: resolvedSeriesId } : {}),
+              },
+              existingQuests: baseNextQuests,
+              mode: 'manual',
+              now: completedAt,
+            })
+          : null;
 
-        for (const q of overdueQuests) {
-          if (user) {
-            updateDoc(
-              doc(db, 'users', user.uid, 'quests', q.id),
-              cleanUpdateData({
-                completed: true,
-                failed: true,
-                completedAt: q.dueDate,
-              })
-            ).catch((error) => {
-              handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/quests/${q.id}`);
-            });
-          }
-
-          if (q.recurrence && q.recurrence !== 'none' && typeof q.dueDate === 'number') {
-            const nextDueDate = getNextRecurrenceTimestamp(
-              q.dueDate,
-              q.recurrence,
-              q.recurrenceDays,
-              startOfTodayMs
-            );
-
-            const alreadyExists = [...nextQuests, ...newRecurringQuests].some(
-              (existing) =>
-                !existing.completed &&
-                existing.type !== 'habit' &&
-                existing.title === q.title &&
-                existing.recurrence === q.recurrence &&
-                typeof existing.dueDate === 'number' &&
-                isSameDay(new Date(existing.dueDate), new Date(nextDueDate))
-            );
-
-            if (!alreadyExists) {
-              const recurringQuest: Quest = {
-                ...q,
-                id: crypto.randomUUID(),
-                completed: false,
-                failed: false,
-                completedAt: undefined,
-                createdAt: Date.now(),
-                dueDate: nextDueDate,
-                subtasks: q.subtasks?.map((s) => ({ ...s, completed: false })),
-              };
-              newRecurringQuests.push(recurringQuest);
-            }
-          }
+        const nextQuests = baseNextQuests.map(q =>
+          q.id === id && recurringQuest
+            ? { ...q, spawnedNextQuestId: recurringQuest.id }
+            : q
+        );
+        if (recurringQuest) {
+          nextQuests.push(recurringQuest);
         }
 
-        const finalQuests = [...nextQuests, ...newRecurringQuests];
-        set({ quests: finalQuests });
+        set({ quests: nextQuests });
 
         if (user) {
-          for (const recurringQuest of newRecurringQuests) {
-            setDoc(
+          const batch = writeBatch(db);
+          batch.update(
+            doc(db, 'users', user.uid, 'quests', id),
+            cleanUpdateData({
+              completed: true,
+              failed: true,
+              completedAt,
+              ...(resolvedSeriesId ? { seriesId: resolvedSeriesId } : {}),
+              ...(recurringQuest ? { spawnedNextQuestId: recurringQuest.id } : {}),
+            })
+          );
+          if (recurringQuest) {
+            batch.set(
               doc(db, 'users', user.uid, 'quests', recurringQuest.id),
               cleanData(recurringQuest)
-            ).catch((error) => {
-              handleFirestoreError(
-                error,
-                OperationType.CREATE,
-                `users/${user.uid}/quests/${recurringQuest.id}`
-              );
-            });
+            );
           }
+          batch.commit().catch((error) => {
+            console.error('Firestore batch failQuest failed:', error);
+            toast.error('Fehler beim Aktualisieren der Quest');
+          });
+        }
+      },
+
+      autoFailOverdueQuests: () => {
+        if (isAutoFailRunning) return 0;
+        const state = get();
+        if (state.user && !state.questsSynced) return 0;
+
+        const now = Date.now();
+        // Clean stale entries older than 5 seconds from in-flight cooldown cache
+        for (const [qid, ts] of recentlyAutoFailedIds.entries()) {
+          if (now - ts > 5000) recentlyAutoFailedIds.delete(qid);
         }
 
-        return overdueQuests.length;
+        const overdueQuests = state.quests.filter(
+          (q) => isQuestOverdueForAutoFail(q, now) && !recentlyAutoFailedIds.has(q.id)
+        );
+
+        if (overdueQuests.length === 0) return 0;
+
+        isAutoFailRunning = true;
+        try {
+          const overdueIds = new Set(overdueQuests.map((q) => q.id));
+          overdueQuests.forEach((q) => recentlyAutoFailedIds.set(q.id, now));
+
+          const { user } = state;
+          const nextQuests: Quest[] = state.quests.map((q) => {
+            if (!overdueIds.has(q.id)) return q;
+            const isRecurring = Boolean(q.recurrence && q.recurrence !== 'none');
+            return {
+              ...q,
+              completed: true,
+              failed: true,
+              completedAt: q.dueDate,
+              ...(isRecurring ? { seriesId: getQuestSeriesId(q) } : {}),
+            };
+          });
+
+          const newRecurringQuests: Quest[] = [];
+          const spawnedLinks = new Map<string, string>();
+
+          for (const q of overdueQuests) {
+            if (q.recurrence && q.recurrence !== 'none') {
+              const resolvedSeriesId = getQuestSeriesId(q);
+              const recurringQuest = createNextRecurringInstance({
+                sourceQuest: { ...q, seriesId: resolvedSeriesId },
+                existingQuests: [...nextQuests, ...newRecurringQuests],
+                mode: 'auto_fail',
+                now,
+              });
+              if (recurringQuest) {
+                newRecurringQuests.push(recurringQuest);
+                spawnedLinks.set(q.id, recurringQuest.id);
+              }
+            }
+          }
+
+          const finalQuests = [
+            ...nextQuests.map((q) =>
+              spawnedLinks.has(q.id)
+                ? { ...q, spawnedNextQuestId: spawnedLinks.get(q.id) }
+                : q
+            ),
+            ...newRecurringQuests,
+          ];
+
+          set({ quests: finalQuests });
+
+          if (user) {
+            // Firestore batches allow up to 500 ops; chunk safely at 400
+            const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [];
+
+            for (const q of overdueQuests) {
+              const isRecurring = Boolean(q.recurrence && q.recurrence !== 'none');
+              const spawnedId = spawnedLinks.get(q.id);
+              ops.push((batch) =>
+                batch.update(
+                  doc(db, 'users', user.uid, 'quests', q.id),
+                  cleanUpdateData({
+                    completed: true,
+                    failed: true,
+                    completedAt: q.dueDate,
+                    ...(isRecurring ? { seriesId: getQuestSeriesId(q) } : {}),
+                    ...(spawnedId ? { spawnedNextQuestId: spawnedId } : {}),
+                  })
+                )
+              );
+            }
+
+            for (const recurringQuest of newRecurringQuests) {
+              ops.push((batch) =>
+                batch.set(
+                  doc(db, 'users', user.uid, 'quests', recurringQuest.id),
+                  cleanData(recurringQuest)
+                )
+              );
+            }
+
+            for (let i = 0; i < ops.length; i += 400) {
+              const batch = writeBatch(db);
+              ops.slice(i, i + 400).forEach((fn) => fn(batch));
+              batch.commit().catch((error) => {
+                handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/quests`);
+              });
+            }
+          }
+
+          return overdueQuests.length;
+        } finally {
+          isAutoFailRunning = false;
+        }
+      },
+
+      deduplicateQuests: () => {
+        if (isDeduplicatingQuests) return 0;
+        const state = get();
+        if (state.user && !state.questsSynced) return 0;
+
+        const duplicateIds = findDuplicateActiveRecurringQuestIds(state.quests, Date.now());
+        if (duplicateIds.length === 0) return 0;
+
+        isDeduplicatingQuests = true;
+        try {
+          const dupSet = new Set(duplicateIds);
+          const remainingQuests = state.quests.filter((q) => !dupSet.has(q.id));
+          set({ quests: remainingQuests });
+
+          const { user } = state;
+          if (user) {
+            for (let i = 0; i < duplicateIds.length; i += 400) {
+              const batch = writeBatch(db);
+              duplicateIds.slice(i, i + 400).forEach((dupId) => {
+                batch.delete(doc(db, 'users', user.uid, 'quests', dupId));
+              });
+              batch.commit().catch((error) => {
+                handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/quests`);
+              });
+            }
+          }
+
+          return duplicateIds.length;
+        } finally {
+          isDeduplicatingQuests = false;
+        }
       },
 
       toggleSubtask: (questId, subtaskId) => {
@@ -1356,9 +1414,9 @@ export const useStore = create<AppState>()(
         const quest = state.quests.find(q => q.id === id);
         if (!quest || !quest.completed) return;
 
-        const startOfTodayMs = startOfDay(new Date()).getTime();
+        const startOfTodayMs = getStartOfDayMs();
         let updatedDueDate = quest.dueDate;
-        if (typeof quest.dueDate === 'number' && quest.dueDate < startOfTodayMs) {
+        if (isValidTimestamp(quest.dueDate) && quest.dueDate < startOfTodayMs) {
           const newDue = new Date();
           if (quest.hasTime) {
             const oldDue = new Date(quest.dueDate);
@@ -1369,13 +1427,20 @@ export const useStore = create<AppState>()(
           updatedDueDate = newDue.getTime();
         }
 
-        const newQuests = state.quests.map(q => q.id === id ? {
-          ...q,
-          completed: false,
-          failed: false,
-          completedAt: undefined,
-          dueDate: updatedDueDate
-        } : q);
+        // Remove any untouched open successor spawned by this recurring quest so reopening doesn't create duplicates
+        const openSuccessors = findOpenSuccessorsForReopen(quest, state.quests);
+        const successorIds = new Set(openSuccessors.map((s) => s.id));
+
+        const newQuests = state.quests
+          .filter((q) => !successorIds.has(q.id))
+          .map(q => q.id === id ? {
+            ...q,
+            completed: false,
+            failed: false,
+            completedAt: undefined,
+            spawnedNextQuestId: undefined,
+            dueDate: updatedDueDate
+          } : q);
 
         let newStats = { ...state.stats, skills: { ...state.stats.skills } };
         if (!quest.failed) {
@@ -1406,28 +1471,69 @@ export const useStore = create<AppState>()(
 
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid, 'quests', id), {
+          const batch = writeBatch(db);
+          batch.update(doc(db, 'users', user.uid, 'quests', id), {
             completed: false,
             failed: false,
             completedAt: deleteField(),
+            spawnedNextQuestId: deleteField(),
             ...(updatedDueDate !== quest.dueDate ? { dueDate: updatedDueDate } : {})
-          }).catch((error) => {
-            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/quests/${id}`);
           });
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats })).catch((error) => {
-            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+          for (const succ of openSuccessors) {
+            batch.delete(doc(db, 'users', user.uid, 'quests', succ.id));
+          }
+          if (!quest.failed) {
+            batch.update(doc(db, 'users', user.uid), cleanUpdateData({ stats: newStats }));
+          }
+          batch.commit().catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/quests/${id}`);
           });
         }
       },
 
       updateQuest: (id, updates) => {
-        set((state) => ({
-          quests: state.quests.map(q => q.id === id ? { ...q, ...updates } : q)
+        const state = get();
+        const existing = state.quests.find((q) => q.id === id);
+        if (!existing) return;
+
+        const mergedRecurrence = updates.recurrence !== undefined ? updates.recurrence : existing.recurrence;
+        const mergedRecurrenceDays =
+          mergedRecurrence === 'weekly' || mergedRecurrence === 'monthly'
+            ? [...(updates.recurrenceDays !== undefined ? updates.recurrenceDays : existing.recurrenceDays || [])].sort(
+                (a, b) => a - b
+              )
+            : [];
+        const mergedHasTime = updates.hasTime !== undefined ? updates.hasTime : existing.hasTime;
+
+        const rawDueDate = 'dueDate' in updates ? updates.dueDate : existing.dueDate;
+        let finalDueDate = isValidTimestamp(rawDueDate)
+          ? normalizeDueDateTime(rawDueDate, mergedHasTime)
+          : undefined;
+
+        const isRecurring =
+          existing.type !== 'habit' && Boolean(mergedRecurrence) && mergedRecurrence !== 'none';
+        if (isRecurring && finalDueDate === undefined && !existing.completed) {
+          finalDueDate = getInitialDueDateForRecurringQuest(
+            mergedRecurrence,
+            mergedRecurrenceDays,
+            Date.now()
+          );
+        }
+
+        const normalizedUpdates: Partial<Quest> = {
+          ...updates,
+          recurrenceDays: mergedRecurrenceDays,
+          dueDate: finalDueDate,
+          ...(isRecurring && !existing.seriesId ? { seriesId: getQuestSeriesId(existing) } : {}),
+        };
+
+        set((prevState) => ({
+          quests: prevState.quests.map((q) => (q.id === id ? { ...q, ...normalizedUpdates } : q))
         }));
 
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid, 'quests', id), cleanUpdateData(updates)).catch((error) => {
+          updateDoc(doc(db, 'users', user.uid, 'quests', id), cleanUpdateData(normalizedUpdates)).catch((error) => {
             handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/quests/${id}`);
           });
         }
@@ -1850,7 +1956,11 @@ export const useStore = create<AppState>()(
           try {
             const safeSettings = sanitizeSettings(state.settings);
             const safeStats = sanitizeStats(state.stats);
-            const safeQuests = Array.isArray(state.quests) ? state.quests : [];
+            const rawSafeQuests = Array.isArray(state.quests) ? state.quests : [];
+            const dupIds = new Set(findDuplicateActiveRecurringQuestIds(rawSafeQuests));
+            const safeQuests = dupIds.size > 0
+              ? rawSafeQuests.filter((q) => !dupIds.has(q.id))
+              : rawSafeQuests;
             const safeFocus = Array.isArray(state.focusSessions) ? state.focusSessions : [];
             const safeDiary = Array.isArray(state.diaryEntries) ? state.diaryEntries : [];
             const safeVisions = Array.isArray(state.visions) ? state.visions : [];

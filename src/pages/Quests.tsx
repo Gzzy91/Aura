@@ -31,6 +31,13 @@ import {
 } from '@/services/healthSyncService';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, SKILL_COLORS, SKILL_BG_COLORS, SKILL_BORDER_COLORS } from '@/lib/utils';
+import {
+  getEndOfDayMs,
+  isQuestActive,
+  isQuestHistory,
+  isQuestOverdueBadge,
+  isQuestPlanned,
+} from '@/lib/questLifecycle';
 import { QuestDetailsModal } from '@/components/QuestDetailsModal';
 import { DeleteConfirmationModal } from '@/components/DeleteConfirmationModal';
 import { QuestModal } from '@/components/QuestModal';
@@ -101,18 +108,12 @@ export function Quests() {
 
   const allTags = Array.from(new Set(quests.filter(q => q.type !== 'habit').flatMap(q => q.tags || []))).sort();
 
-  const isDueTodayOrEarlier = (dueDate: number) => {
-    const due = new Date(dueDate);
-    const today = new Date(now);
-    today.setHours(23, 59, 59, 999);
-    return due.getTime() <= today.getTime();
-  };
-
-  const formatDueDateCompact = (dueDate: number, hasTime?: boolean) => {
-    const due = new Date(dueDate);
+  const formatDueDateCompact = (quest: Quest) => {
+    if (!quest.dueDate) return null;
+    const due = new Date(quest.dueDate);
     const current = new Date(now);
 
-    if (dueDate < now) {
+    if (isQuestOverdueBadge(quest, now)) {
       const overdueDateLabel = !isSameDay(due, current)
         ? ` · ${due.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}`
         : '';
@@ -122,14 +123,14 @@ export function Quests() {
       };
     }
     if (isSameDay(due, current)) {
-      const timeStr = hasTime ? due.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
+      const timeStr = quest.hasTime ? due.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
       return { 
         label: timeStr ? `Heute ${timeStr}` : 'Heute', 
         style: 'text-amber-400 bg-amber-500/15 border-amber-500/30' 
       };
     }
     if (isTomorrow(due)) {
-      const timeStr = hasTime ? due.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
+      const timeStr = quest.hasTime ? due.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
       return { 
         label: timeStr ? `Morgen ${timeStr}` : 'Morgen', 
         style: 'text-sky-400 bg-sky-500/15 border-sky-500/30' 
@@ -154,14 +155,21 @@ export function Quests() {
     let matchesTime = true;
     const shouldApplyTimeFilter = timeFilter !== 'all' && !(view === 'history' && historyViewMode === 'day');
     if (shouldApplyTimeFilter) {
-      const dateToCompare = q.completedAt || q.dueDate || q.createdAt;
-      if (dateToCompare) {
-        const date = new Date(dateToCompare);
-        const today = new Date(now);
-        if (timeFilter === 'today') matchesTime = isSameDay(date, today);
-        else if (timeFilter === 'week') matchesTime = isSameWeek(date, today, { weekStartsOn: 1 });
-        else if (timeFilter === 'month') matchesTime = isSameMonth(date, today);
-        else if (timeFilter === 'year') matchesTime = isSameYear(date, today);
+      if (view === 'active' && !q.dueDate) {
+        // Undated active quests are always actionable in the current period
+        matchesTime = true;
+      } else {
+        const dateToCompare = q.completedAt || q.dueDate || q.createdAt;
+        if (dateToCompare) {
+          const date = new Date(dateToCompare);
+          const today = new Date(now);
+          if (timeFilter === 'today') {
+            matchesTime =
+              isSameDay(date, today) || (view === 'active' && !q.completed && dateToCompare <= getEndOfDayMs(now));
+          } else if (timeFilter === 'week') matchesTime = isSameWeek(date, today, { weekStartsOn: 1 });
+          else if (timeFilter === 'month') matchesTime = isSameMonth(date, today);
+          else if (timeFilter === 'year') matchesTime = isSameYear(date, today);
+        }
       }
     }
 
@@ -185,9 +193,9 @@ export function Quests() {
     });
   };
 
-  const activeQuests = sortQuests(filteredQuests.filter(q => !q.completed && (!q.dueDate || isDueTodayOrEarlier(q.dueDate))), 'active');
-  const upcomingQuests = sortQuests(filteredQuests.filter(q => !q.completed && q.dueDate && !isDueTodayOrEarlier(q.dueDate)), 'upcoming');
-  const allCompletedQuests = sortQuests(filteredQuests.filter(q => q.completed), 'history');
+  const activeQuests = sortQuests(filteredQuests.filter(q => isQuestActive(q, now)), 'active');
+  const upcomingQuests = sortQuests(filteredQuests.filter(q => isQuestPlanned(q, now)), 'upcoming');
+  const allCompletedQuests = sortQuests(filteredQuests.filter(q => isQuestHistory(q)), 'history');
 
   // Completed quests for the selected history day
   const dayCompletedQuests = useMemo(() => {
@@ -287,9 +295,9 @@ export function Quests() {
     return dates.length > 0 ? dates[0] : null;
   }, [quests]);
 
-  const totalActiveCount = quests.filter(q => q.type !== 'habit' && !q.completed && (!q.dueDate || isDueTodayOrEarlier(q.dueDate))).length;
-  const totalUpcomingCount = quests.filter(q => q.type !== 'habit' && !q.completed && q.dueDate && !isDueTodayOrEarlier(q.dueDate)).length;
-  const totalHistoryCount = quests.filter(q => q.type !== 'habit' && q.completed).length;
+  const totalActiveCount = quests.filter(q => isQuestActive(q, now)).length;
+  const totalUpcomingCount = quests.filter(q => isQuestPlanned(q, now)).length;
+  const totalHistoryCount = quests.filter(q => isQuestHistory(q)).length;
 
   const activeFilterCount = (filterSkills.length > 0 ? 1 : 0) + 
                             (timeFilter !== 'all' ? 1 : 0) + 
@@ -400,31 +408,48 @@ export function Quests() {
   };
 
   const handleRepeat = (quest: Quest) => {
-    const { id, completed, failed, createdAt, completedAt, subtasks, ...rest } = quest;
+    const {
+      id: _id,
+      completed: _completed,
+      failed: _failed,
+      createdAt: _createdAt,
+      completedAt: _completedAt,
+      subtasks,
+      seriesId: _seriesId,
+      spawnedNextQuestId: _spawnedNextQuestId,
+      recurrence: _recurrence,
+      recurrenceDays: _recurrenceDays,
+      ...rest
+    } = quest;
     const resetSubtasks = subtasks?.map(s => ({ ...s, completed: false, id: crypto.randomUUID() }));
     
+    // Repeating from history creates an actionable one-off quest for today without starting a duplicate recurring chain
     addQuest({
       ...rest,
       subtasks: resetSubtasks,
-      dueDate: undefined,
+      dueDate: getEndOfDayMs(),
+      hasTime: false,
+      recurrence: 'none',
+      recurrenceDays: [],
       reminderTiming: 'none'
     });
     
     setView('active');
-    toast.success(`"${quest.title}" als neue Quest übernommen`);
+    toast.success(`"${quest.title}" als einmalige Quest für heute übernommen`);
   };
 
   const handleToggleSubtask = (questId: string, subtaskId: string) => {
     toggleSubtask(questId, subtaskId);
     
-    const quest = quests.find(q => q.id === questId);
-    if (quest && quest.subtasks) {
-      const updatedSubtasks = quest.subtasks.map(s => 
-        s.id === subtaskId ? { ...s, completed: !s.completed } : s
-      );
-      if (updatedSubtasks.length > 0 && updatedSubtasks.every(s => s.completed)) {
-        handleCompleteSuccess(quest);
-      }
+    const latestQuest = useStore.getState().quests.find(q => q.id === questId);
+    if (
+      latestQuest &&
+      !latestQuest.completed &&
+      latestQuest.subtasks &&
+      latestQuest.subtasks.length > 0 &&
+      latestQuest.subtasks.every(s => s.completed)
+    ) {
+      handleCompleteSuccess(latestQuest);
     }
   };
 
@@ -976,7 +1001,7 @@ export function Quests() {
                 const isCompleting = completingId === quest.id;
                 const isFailedAction = completingType === 'failed' && isCompleting;
                 const isSuccessAction = completingType === 'success' && isCompleting;
-                const dueInfo = quest.dueDate ? formatDueDateCompact(quest.dueDate, quest.hasTime) : null;
+                const dueInfo = formatDueDateCompact(quest);
                 const completedSubtasksCount = quest.subtasks?.filter(s => s.completed).length || 0;
                 const totalSubtasksCount = quest.subtasks?.length || 0;
                 const isSubtasksExpanded = expandedSubtasksId === quest.id;

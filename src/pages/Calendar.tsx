@@ -32,6 +32,7 @@ import { Quest } from '@/types';
 import { QuestDetailsModal } from '@/components/QuestDetailsModal';
 import { DeleteConfirmationModal } from '@/components/DeleteConfirmationModal';
 import { QuestModal } from '@/components/QuestModal';
+import { isQuestOverdueBadge } from '@/lib/questLifecycle';
 import { downloadICS } from '@/lib/calendarSync';
 import { toast } from 'sonner';
 
@@ -98,10 +99,10 @@ export function Calendar() {
     const diff = quest.dueDate - now;
 
     if (!quest.hasTime) {
-      if (diff < 0) return 'Überfällig';
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      if (days === 0) return 'Heute fällig';
-      if (days === 1) return 'Morgen fällig';
+      if (isQuestOverdueBadge(quest, now)) return 'Überfällig';
+      const days = Math.floor((diff) / (1000 * 60 * 60 * 24));
+      if (isSameDay(new Date(quest.dueDate), new Date(now))) return 'Heute fällig';
+      if (days <= 1) return 'Morgen fällig';
       return `In ${days} Tagen`;
     }
 
@@ -405,7 +406,8 @@ export function Calendar() {
                             )}
                             <span>·</span>
                             <span>{quest.skill}</span>
-                            {quest.dueDate &&
+                            {!quest.completed &&
+                              quest.dueDate &&
                               selectedDay &&
                               isSameDay(new Date(quest.dueDate), selectedDay) && (
                                 <>
@@ -413,7 +415,7 @@ export function Calendar() {
                                   <span
                                     className={cn(
                                       'flex items-center gap-1 font-bold',
-                                      quest.dueDate - now < 0 ? 'text-rose-400' : 'text-amber-400'
+                                      isQuestOverdueBadge(quest, now) ? 'text-rose-400' : 'text-amber-400'
                                     )}
                                   >
                                     <Timer className="w-3 h-3" />

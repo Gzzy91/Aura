@@ -197,6 +197,8 @@ export interface Quest {
   reminderTiming?: ReminderTiming;
   recurrence?: Recurrence;
   recurrenceDays?: number[]; // 0-6, where 0 is Sunday
+  seriesId?: string;
+  spawnedNextQuestId?: string;
   tags?: string[];
   completions?: { date: number; direction: 'positive' | 'negative' }[];
   visionId?: string;

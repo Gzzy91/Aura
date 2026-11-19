@@ -67,6 +67,9 @@
         "hasTime": { "type": "boolean" },
         "reminderTiming": { "type": "string" },
         "recurrence": { "type": "string" },
+        "recurrenceDays": { "type": "array", "items": { "type": "integer" } },
+        "seriesId": { "type": "string" },
+        "spawnedNextQuestId": { "type": "string" },
         "tags": { "type": "array", "items": { "type": "string" } },
         "priority": { "type": "string", "enum": ["low", "medium", "high"] },
         "subtasks": {

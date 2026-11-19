@@ -181,21 +181,15 @@ function AppContent() {
     const {
       user: currentUser,
       questsSynced: synced,
-      quests: currentQuests,
+      deduplicateQuests,
       autoFailOverdueQuests,
     } = useStore.getState();
     if (currentUser && !synced) return;
 
-    const startOfTodayMs = startOfDay(new Date()).getTime();
-    const hasOverduePastQuests = currentQuests.some(
-      (q) =>
-        q.type !== 'habit' &&
-        !q.completed &&
-        typeof q.dueDate === 'number' &&
-        q.dueDate < startOfTodayMs
-    );
-    if (!hasOverduePastQuests) return;
+    // 1. First clean up any existing duplicate active/same-day recurring quests
+    deduplicateQuests();
 
+    // 2. Then auto-fail any overdue quests from earlier calendar days and spawn at most one next occurrence
     const count = autoFailOverdueQuests();
     if (count > 0) {
       toast.info(
@@ -241,6 +235,34 @@ function AppContent() {
   useEffect(() => {
     runAutoFailCheck();
   }, [user, questsSynced, quests]);
+
+  // Also re-check when tab becomes visible or when local midnight passes while app remains open
+  useEffect(() => {
+    let lastDayKey = startOfDay(new Date()).getTime();
+    const checkRollover = () => {
+      const currentDayKey = startOfDay(new Date()).getTime();
+      if (currentDayKey !== lastDayKey) {
+        lastDayKey = currentDayKey;
+        runAutoFailCheck();
+        runSkillDecayCheck();
+      } else {
+        runAutoFailCheck();
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkRollover();
+      }
+    };
+    window.addEventListener('focus', checkRollover);
+    document.addEventListener('visibilitychange', handleVisibility);
+    const interval = setInterval(checkRollover, 60_000);
+    return () => {
+      window.removeEventListener('focus', checkRollover);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     runSkillDecayCheck();
