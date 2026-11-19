@@ -1,6 +1,7 @@
 import 'dotenv/config';
+import http from 'node:http';
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
@@ -781,13 +782,43 @@ Write in GERMAN. Address the user as "Du".`;
     res.sendFile(path.join(__dirname, 'public', 'favicon.svg'));
   });
 
+  const httpServer = http.createServer(app);
+
   if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
+    let viteMiddlewares: ((req: Request, res: Response, next: NextFunction) => void) | null = null;
+    const viteReady = (async () => {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: process.env.DISABLE_HMR === 'true' ? false : { server: httpServer },
+        },
+        appType: 'spa',
+      });
+      viteMiddlewares = vite.middlewares as unknown as (
+        req: Request,
+        res: Response,
+        next: NextFunction
+      ) => void;
+      return vite;
+    })();
+    viteReady.catch((err) => {
+      console.error('Vite middleware initialization failed:', err);
     });
-    app.use(vite.middlewares);
+    app.use(async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        if (!viteMiddlewares) {
+          await viteReady;
+        }
+        if (viteMiddlewares) {
+          viteMiddlewares(req, res, next);
+          return;
+        }
+        next();
+      } catch (err) {
+        next(err);
+      }
+    });
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
@@ -805,7 +836,7 @@ Write in GERMAN. Address the user as "Du".`;
     process.env.DEFAULT_APP_PORT
       ? Number(process.env.DEFAULT_APP_PORT)
       : Number(process.env.PORT) || 3000);
-  app.listen(port, '0.0.0.0', () => {
+  httpServer.listen(port, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${port}`);
   });
 }

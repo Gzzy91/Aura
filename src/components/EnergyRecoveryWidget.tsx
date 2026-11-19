@@ -177,8 +177,24 @@ function CustomHealthHistoryTooltip({
   return null;
 }
 
+function safeDate(val: unknown): Date | null {
+  if (val instanceof Date) {
+    return Number.isNaN(val.getTime()) ? null : val;
+  }
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    const d = new Date(val);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof val === 'string' && val.trim()) {
+    const d = new Date(val);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 function formatHistoryDateLabel(ts: number): string {
-  const dateObj = new Date(ts);
+  const dateObj = safeDate(ts);
+  if (!dateObj) return 'Unbekannt';
   if (isToday(dateObj)) return 'Heute';
   if (isYesterday(dateObj)) return 'Gestern';
   return format(dateObj, 'EEE, dd.MM.', { locale: de });
@@ -192,10 +208,10 @@ export function EnergyRecoveryWidget({
   onNavigateToSettings?: () => void;
 }) {
   const {
-    quests,
-    diaryEntries,
-    focusSessions,
-    healthRecords,
+    quests = [],
+    diaryEntries = [],
+    focusSessions = [],
+    healthRecords = [],
     settings,
     updateSettings,
     saveHealthRecord,
@@ -212,8 +228,8 @@ export function EnergyRecoveryWidget({
   const todayKey = format(new Date(), 'yyyy-MM-dd');
 
   const visibleSet = useMemo(
-    () => getVisibleHealthMetricsSet(settings.visibleHealthMetrics),
-    [settings.visibleHealthMetrics]
+    () => getVisibleHealthMetricsSet(settings?.visibleHealthMetrics),
+    [settings?.visibleHealthMetrics]
   );
 
   const visibleKeysList = useMemo(() => Array.from(visibleSet), [visibleSet]);
@@ -242,7 +258,10 @@ export function EnergyRecoveryWidget({
   }, [storedTodayRecord, focusSessions, quests, diaryEntries]);
 
   const sortedHistory = useMemo<HealthDailyRecord[]>(() => {
-    return [...healthRecords].sort((a, b) => b.date - a.date).slice(0, 14);
+    return [...healthRecords]
+      .filter((r) => safeDate(r.date) !== null)
+      .sort((a, b) => (b.date || 0) - (a.date || 0))
+      .slice(0, 14);
   }, [healthRecords]);
 
   const historySummary = useMemo(() => {
@@ -285,14 +304,19 @@ export function EnergyRecoveryWidget({
   const historyChartData = useMemo(() => {
     return [...sortedHistory]
       .sort((a, b) => a.date - b.date)
-      .map((r) => ({
-        dateKey: r.id,
-        label: format(new Date(r.date), 'dd.MM.'),
-        fullDate: format(new Date(r.date), 'EEEE, dd.MM.yyyy', { locale: de }),
-        sleepHours: Number((r.sleepDurationMinutes / 60).toFixed(2)),
-        recoveryScore: r.recoveryScore,
-        record: r,
-      }));
+      .map((r) => {
+        const d = safeDate(r.date);
+        if (!d) return null;
+        return {
+          dateKey: r.id,
+          label: format(d, 'dd.MM.'),
+          fullDate: format(d, 'EEEE, dd.MM.yyyy', { locale: de }),
+          sleepHours: Number(((r.sleepDurationMinutes || 0) / 60).toFixed(2)),
+          recoveryScore: typeof r.recoveryScore === 'number' ? r.recoveryScore : 0,
+          record: r,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
   }, [sortedHistory]);
 
   const refreshProviderStatus = useCallback(async () => {
@@ -343,11 +367,16 @@ export function EnergyRecoveryWidget({
       };
 
       for (const day of targetDays) {
+        if (!day?.dateKey) continue;
         const [y, m, d] = day.dateKey.split('-').map(Number);
         const dayDate = new Date(y, m - 1, d, 12, 0, 0);
+        if (Number.isNaN(dayDate.getTime())) continue;
         const existing = useStore.getState().healthRecords.find((r) => r.id === day.dateKey);
         const dayMood =
-          state.diaryEntries.find((e) => isSameDay(new Date(e.date), dayDate))?.mood ?? null;
+          state.diaryEntries.find((e) => {
+            const ed = safeDate(e.date);
+            return ed ? isSameDay(ed, dayDate) : false;
+          })?.mood ?? null;
 
         if (day.dateKey === todayKey) {
           touchedToday = true;
@@ -500,13 +529,19 @@ export function EnergyRecoveryWidget({
   );
 
   const todayMood = useMemo(() => {
-    return diaryEntries.find((e) => isSameDay(new Date(e.date), new Date()))?.mood ?? null;
+    return diaryEntries.find((e) => {
+      const ed = safeDate(e.date);
+      return ed ? isSameDay(ed, new Date()) : false;
+    })?.mood ?? null;
   }, [diaryEntries]);
 
   const todayFocusMinutes = useMemo(() => {
     const today = new Date();
     return focusSessions
-      .filter((f) => isSameDay(new Date(f.completedAt), today))
+      .filter((f) => {
+        const fd = safeDate(f.completedAt);
+        return fd ? isSameDay(fd, today) : false;
+      })
       .reduce((sum, f) => sum + (f.durationMinutes || 0), 0);
   }, [focusSessions]);
 
@@ -521,7 +556,7 @@ export function EnergyRecoveryWidget({
     [todayRecord, todayMood, todayFocusMinutes, quests]
   );
 
-  const recoveryMeta = RECOVERY_STATE_META[todayRecord.recoveryState];
+  const recoveryMeta = RECOVERY_STATE_META[todayRecord.recoveryState] ?? RECOVERY_STATE_META.balanced;
 
   const handleSyncNow = async () => {
     setIsSyncing(true);
@@ -754,7 +789,7 @@ export function EnergyRecoveryWidget({
             </button>
           </div>
           <HealthMetricsPicker
-            visibleMetrics={settings.visibleHealthMetrics}
+            visibleMetrics={settings?.visibleHealthMetrics}
             onChange={handleChangeVisibleMetrics}
             currentRecord={todayRecord}
             historyRecords={sortedHistory}
@@ -1242,9 +1277,10 @@ export function EnergyRecoveryWidget({
               {/* Daily History Breakdown */}
               <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
                 {sortedHistory.map((item) => {
-                  const meta = RECOVERY_STATE_META[item.recoveryState];
-                  const visibleSources = item.sources.filter(
-                    (s) => s !== 'browser_idle' || item.sources.length === 1
+                  const meta = RECOVERY_STATE_META[item.recoveryState] ?? RECOVERY_STATE_META.balanced;
+                  const itemSources = Array.isArray(item.sources) ? item.sources : [];
+                  const visibleSources = itemSources.filter(
+                    (s) => s !== 'browser_idle' || itemSources.length === 1
                   );
                   const rowMetrics = HEALTH_METRICS_CATALOG.filter(
                     (m) =>
@@ -1263,7 +1299,7 @@ export function EnergyRecoveryWidget({
                             {formatHistoryDateLabel(item.date)}
                           </span>
                           <span className="text-[11px] text-neutral-500 ml-2">
-                            {visibleSources.map((s) => SOURCE_LABELS[s]).join(' · ')}
+                            {visibleSources.map((s) => SOURCE_LABELS[s] || s).join(' · ')}
                           </span>
                         </div>
                         {showRecoveryPrimary && (
@@ -1349,14 +1385,15 @@ export function EnergyRecoveryWidget({
       <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-500 mt-auto">
         <span>
           Letzter Sync:{' '}
-          {storedTodayRecord
-            ? format(new Date(storedTodayRecord.syncedAt), 'HH:mm') + ' Uhr'
-            : 'Live-Vorschau'}
+          {(() => {
+            const syncDate = safeDate(storedTodayRecord?.syncedAt);
+            return syncDate ? `${format(syncDate, 'HH:mm')} Uhr` : 'Live-Vorschau';
+          })()}
         </span>
         <span>
-          {todayRecord.sources
-            .filter((s) => s !== 'browser_idle' || todayRecord.sources.length === 1)
-            .map((s) => SOURCE_LABELS[s])
+          {(Array.isArray(todayRecord.sources) ? todayRecord.sources : [])
+            .filter((s) => s !== 'browser_idle' || (todayRecord.sources || []).length === 1)
+            .map((s) => SOURCE_LABELS[s] || s)
             .join(' · ')}
         </span>
       </div>

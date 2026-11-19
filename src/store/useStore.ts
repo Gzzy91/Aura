@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserStats, SkillStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry, WeeklyCoachSummary, WeeklyRetrospective, HealthDailyRecord, HealthMetricKey } from '../types';
+import { UserStats, SkillStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry, WeeklyCoachSummary, WeeklyRetrospective, HealthDailyRecord, HealthDataSource, HealthMetricKey } from '../types';
 import { User } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { toast } from 'sonner';
@@ -143,6 +143,73 @@ interface AppState {
 }
 
 
+const DEFAULT_WIDGET_ORDER = [
+  'level',
+  'streak',
+  'mood',
+  'energy_recovery',
+  'weekly_summary',
+  'weekly_retrospective',
+  'food_mood_correlation',
+  'chart',
+  'recurring_chart',
+  'calendar',
+  'today',
+  'reminders',
+];
+
+const toEpochMs = (val: unknown, fallback = Date.now()): number => {
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (val && typeof val === 'object') {
+    const maybeTs = val as { toMillis?: () => number; seconds?: number };
+    if (typeof maybeTs.toMillis === 'function') {
+      const ms = maybeTs.toMillis();
+      if (Number.isFinite(ms)) return ms;
+    }
+    if (typeof maybeTs.seconds === 'number' && Number.isFinite(maybeTs.seconds)) {
+      return Math.round(maybeTs.seconds * 1000);
+    }
+  }
+  if (val instanceof Date && Number.isFinite(val.getTime())) return val.getTime();
+  if (typeof val === 'string') {
+    const parsed = Date.parse(val);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+};
+
+const sanitizeWidgetOrder = (raw: unknown): string[] => {
+  if (!Array.isArray(raw)) return [...DEFAULT_WIDGET_ORDER];
+  const filtered = raw.filter((item): item is string => typeof item === 'string' && item !== 'settings');
+  return filtered.length > 0 ? filtered : [...DEFAULT_WIDGET_ORDER];
+};
+
+const sanitizeSettings = (
+  raw: unknown,
+  fallback?: AppState['settings']
+): AppState['settings'] => {
+  const base = fallback || { isPinEnabled: false, pin: null };
+  if (!raw || typeof raw !== 'object') {
+    return {
+      isPinEnabled: Boolean(base.isPinEnabled),
+      pin: typeof base.pin === 'string' ? base.pin : null,
+      ...(Array.isArray(base.visibleHealthMetrics)
+        ? { visibleHealthMetrics: base.visibleHealthMetrics }
+        : {}),
+    };
+  }
+  const obj = raw as Record<string, unknown>;
+  const visibleMetrics = Array.isArray(obj.visibleHealthMetrics)
+    ? obj.visibleHealthMetrics.filter((k): k is HealthMetricKey => typeof k === 'string')
+    : base.visibleHealthMetrics;
+
+  return {
+    isPinEnabled: typeof obj.isPinEnabled === 'boolean' ? obj.isPinEnabled : Boolean(base.isPinEnabled),
+    pin: typeof obj.pin === 'string' || obj.pin === null ? (obj.pin as string | null) : base.pin ?? null,
+    ...(Array.isArray(visibleMetrics) ? { visibleHealthMetrics: visibleMetrics } : {}),
+  };
+};
+
 const INITIAL_STATS: UserStats = {
   level: 1,
   xp: 0,
@@ -165,6 +232,73 @@ const INITIAL_STATS: UserStats = {
     accessory: null,
   },
   activeSkinId: 'default',
+};
+
+const sanitizeStats = (raw: unknown): UserStats => {
+  if (!raw || typeof raw !== 'object') return INITIAL_STATS;
+  const obj = raw as Partial<UserStats>;
+  const rawSkills = (obj.skills && typeof obj.skills === 'object' ? obj.skills : {}) as Record<
+    string,
+    Partial<SkillStats> | undefined
+  >;
+  const skills: Record<SkillType, SkillStats> = {
+    Fitness: { ...INITIAL_STATS.skills.Fitness, ...(rawSkills.Fitness || {}) },
+    Fokus: { ...INITIAL_STATS.skills.Fokus, ...(rawSkills.Fokus || {}) },
+    Disziplin: { ...INITIAL_STATS.skills.Disziplin, ...(rawSkills.Disziplin || {}) },
+    Wissen: { ...INITIAL_STATS.skills.Wissen, ...(rawSkills.Wissen || {}) },
+    Soziales: { ...INITIAL_STATS.skills.Soziales, ...(rawSkills.Soziales || {}) },
+  };
+  return {
+    level: typeof obj.level === 'number' && Number.isFinite(obj.level) && obj.level >= 1 ? obj.level : 1,
+    xp: typeof obj.xp === 'number' && Number.isFinite(obj.xp) && obj.xp >= 0 ? obj.xp : 0,
+    xpToNextLevel:
+      typeof obj.xpToNextLevel === 'number' &&
+      Number.isFinite(obj.xpToNextLevel) &&
+      obj.xpToNextLevel > 0
+        ? obj.xpToNextLevel
+        : 100,
+    streak: typeof obj.streak === 'number' && Number.isFinite(obj.streak) ? obj.streak : 0,
+    skills,
+    equippedItems: {
+      ...INITIAL_STATS.equippedItems,
+      ...(obj.equippedItems && typeof obj.equippedItems === 'object' ? obj.equippedItems : {}),
+    },
+    activeSkinId: typeof obj.activeSkinId === 'string' && obj.activeSkinId ? obj.activeSkinId : 'default',
+  };
+};
+
+const sanitizeHealthRecordItem = (raw: unknown): HealthDailyRecord | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Partial<HealthDailyRecord>;
+  if (typeof r.id !== 'string' || !r.id) return null;
+  const validStates = new Set(['depleted', 'strained', 'balanced', 'charged']);
+  return {
+    ...(r as HealthDailyRecord),
+    id: r.id,
+    date: toEpochMs(r.date, Date.now()),
+    sleepDurationMinutes:
+      typeof r.sleepDurationMinutes === 'number' && Number.isFinite(r.sleepDurationMinutes)
+        ? Math.max(0, r.sleepDurationMinutes)
+        : 0,
+    activityDurationMinutes:
+      typeof r.activityDurationMinutes === 'number' && Number.isFinite(r.activityDurationMinutes)
+        ? Math.max(0, r.activityDurationMinutes)
+        : 0,
+    avgHeartRate:
+      typeof r.avgHeartRate === 'number' && Number.isFinite(r.avgHeartRate) ? r.avgHeartRate : null,
+    sources: Array.isArray(r.sources) ? r.sources : (['aura_activity'] as HealthDataSource[]),
+    recoveryScore:
+      typeof r.recoveryScore === 'number' && Number.isFinite(r.recoveryScore)
+        ? Math.max(0, Math.min(100, Math.round(r.recoveryScore)))
+        : 50,
+    recoveryState:
+      typeof r.recoveryState === 'string' && validStates.has(r.recoveryState)
+        ? r.recoveryState
+        : 'balanced',
+    acceptedSuggestionIds: Array.isArray(r.acceptedSuggestionIds) ? r.acceptedSuggestionIds : [],
+    dismissedSuggestionIds: Array.isArray(r.dismissedSuggestionIds) ? r.dismissedSuggestionIds : [],
+    syncedAt: toEpochMs(r.syncedAt, Date.now()),
+  };
 };
 
 export function calculateStatsFromHistory(
@@ -419,7 +553,7 @@ export const useStore = create<AppState>()(
         set({ lastTrainingGeneratedDate: dateStr });
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ lastTrainingGeneratedDate: dateStr })).catch((error) => {
+          setDoc(doc(db, 'users', user.uid), cleanData({ lastTrainingGeneratedDate: dateStr }), { merge: true }).catch((error) => {
             handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
           });
         }
@@ -427,21 +561,22 @@ export const useStore = create<AppState>()(
 
       updateSettings: (updates) => {
         const { user, settings } = get();
-        const newSettings = { ...settings, ...updates };
+        const newSettings = sanitizeSettings({ ...settings, ...updates }, settings);
         set({ settings: newSettings });
         triggerHapticFeedback();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ settings: newSettings })).catch((error) => {
+          setDoc(doc(db, 'users', user.uid), cleanData({ settings: newSettings }), { merge: true }).catch((error) => {
             handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
           });
         }
       },
 
       updateWidgetOrder: (order) => {
-        set({ widgetOrder: order });
+        const safeOrder = sanitizeWidgetOrder(order);
+        set({ widgetOrder: safeOrder });
         const { user } = get();
         if (user) {
-          updateDoc(doc(db, 'users', user.uid), cleanUpdateData({ widgetOrder: order })).catch((error) => {
+          setDoc(doc(db, 'users', user.uid), cleanData({ widgetOrder: safeOrder }), { merge: true }).catch((error) => {
             handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
           });
         }
@@ -740,11 +875,25 @@ export const useStore = create<AppState>()(
           return Math.max(min, Math.min(max, Math.round(val * factor) / factor));
         };
 
+        const validStates = new Set(['depleted', 'strained', 'balanced', 'charged']);
+        const rawSleep =
+          typeof record.sleepDurationMinutes === 'number' && Number.isFinite(record.sleepDurationMinutes)
+            ? record.sleepDurationMinutes
+            : 0;
+        const rawActivity =
+          typeof record.activityDurationMinutes === 'number' && Number.isFinite(record.activityDurationMinutes)
+            ? record.activityDurationMinutes
+            : 0;
+        const rawRecovery =
+          typeof record.recoveryScore === 'number' && Number.isFinite(record.recoveryScore)
+            ? record.recoveryScore
+            : 50;
+
         const sanitized: HealthDailyRecord = {
           id: record.id,
-          date: Math.round(record.date),
-          sleepDurationMinutes: Math.max(0, Math.min(1440, Math.round(record.sleepDurationMinutes))),
-          activityDurationMinutes: Math.max(0, Math.min(1440, Math.round(record.activityDurationMinutes))),
+          date: Math.round(toEpochMs(record.date, Date.now())),
+          sleepDurationMinutes: Math.max(0, Math.min(1440, Math.round(rawSleep))),
+          activityDurationMinutes: Math.max(0, Math.min(1440, Math.round(rawActivity))),
           avgHeartRate: optInt(record.avgHeartRate, 25, 240),
           sleepDeepMinutes: optInt(record.sleepDeepMinutes, 0, 1440),
           sleepLightMinutes: optInt(record.sleepLightMinutes, 0, 1440),
@@ -766,12 +915,16 @@ export const useStore = create<AppState>()(
           weightKg: optFloat(record.weightKg, 20, 400, 1),
           bodyFatPercent: optFloat(record.bodyFatPercent, 1, 75, 1),
           hydrationMl: optInt(record.hydrationMl, 0, 30000),
-          sources: Array.from(new Set(record.sources || [])).slice(0, 8),
-          recoveryScore: Math.max(0, Math.min(100, Math.round(record.recoveryScore))),
-          recoveryState: record.recoveryState,
-          acceptedSuggestionIds: (record.acceptedSuggestionIds || []).slice(0, 25),
-          dismissedSuggestionIds: (record.dismissedSuggestionIds || []).slice(0, 25),
-          syncedAt: Math.round(record.syncedAt || Date.now()),
+          sources: Array.from(
+            new Set<HealthDataSource>(
+              Array.isArray(record.sources) ? record.sources : ['aura_activity']
+            )
+          ).slice(0, 8),
+          recoveryScore: Math.max(0, Math.min(100, Math.round(rawRecovery))),
+          recoveryState: validStates.has(record.recoveryState) ? record.recoveryState : 'balanced',
+          acceptedSuggestionIds: Array.isArray(record.acceptedSuggestionIds) ? record.acceptedSuggestionIds.slice(0, 25) : [],
+          dismissedSuggestionIds: Array.isArray(record.dismissedSuggestionIds) ? record.dismissedSuggestionIds.slice(0, 25) : [],
+          syncedAt: Math.round(toEpochMs(record.syncedAt, Date.now())),
         };
 
         set((s) => {
@@ -1458,45 +1611,70 @@ export const useStore = create<AppState>()(
 
         const unsubUser = onSnapshot(userDocRef, (doc) => {
           if (doc.exists()) {
-            const data = doc.data();
+            const data = doc.data() || {};
+            const state = get();
+            const mergedSettings = sanitizeSettings(data.settings, state.settings);
             // Only auto-lock once on initial load if pin is enabled
-            if (data.settings?.isPinEnabled && !get().isInitialized) {
+            if (mergedSettings.isPinEnabled && !state.isInitialized) {
               set({ isLocked: true });
             }
 
-            const state = get();
-            const loadedStats = data.stats || state.stats;
+            const loadedStats = sanitizeStats(data.stats || state.stats);
             const newStats = calculateStatsFromHistory(state.quests, state.focusSessions, loadedStats);
 
             set({ 
               stats: newStats,
               widgetOrder: Array.isArray(data.widgetOrder)
-                ? data.widgetOrder.filter((w: string) => w !== 'settings')
-                : state.widgetOrder,
-              notifiedQuestIds: data.notifiedQuestIds || state.notifiedQuestIds,
-              settings: data.settings || state.settings,
-              lastTrainingGeneratedDate: data.lastTrainingGeneratedDate || state.lastTrainingGeneratedDate
+                ? sanitizeWidgetOrder(data.widgetOrder)
+                : sanitizeWidgetOrder(state.widgetOrder),
+              notifiedQuestIds: Array.isArray(data.notifiedQuestIds) ? data.notifiedQuestIds : state.notifiedQuestIds,
+              settings: mergedSettings,
+              lastTrainingGeneratedDate: typeof data.lastTrainingGeneratedDate === 'string'
+                ? data.lastTrainingGeneratedDate
+                : state.lastTrainingGeneratedDate
             });
             
+            set({ isInitialized: true });
+          } else {
             set({ isInitialized: true });
           }
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${userId}`);
+          set({ isInitialized: true });
         });
 
         const unsubQuests = onSnapshot(questsColRef, (snapshot) => {
           const quests: Quest[] = [];
-          snapshot.forEach((doc) => quests.push(doc.data() as Quest));
+          snapshot.forEach((doc) => {
+            const raw = doc.data() as Quest;
+            if (raw && typeof raw === 'object') {
+              quests.push({
+                ...raw,
+                createdAt: toEpochMs(raw.createdAt, Date.now()),
+                ...(raw.dueDate !== undefined ? { dueDate: toEpochMs(raw.dueDate, Date.now()) } : {}),
+                ...(raw.completedAt !== undefined ? { completedAt: toEpochMs(raw.completedAt, Date.now()) } : {}),
+              });
+            }
+          });
           const state = get();
           const newStats = calculateStatsFromHistory(quests, state.focusSessions, state.stats);
           set({ quests, stats: newStats, questsSynced: true });
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/quests`);
+          set({ questsSynced: true });
         });
 
         const unsubDiary = onSnapshot(diaryColRef, (snapshot) => {
           const diaryEntries: DiaryEntry[] = [];
-          snapshot.forEach((doc) => diaryEntries.push(doc.data() as DiaryEntry));
+          snapshot.forEach((doc) => {
+            const raw = doc.data() as DiaryEntry;
+            if (raw && typeof raw === 'object') {
+              diaryEntries.push({
+                ...raw,
+                date: toEpochMs(raw.date, Date.now()),
+              });
+            }
+          });
           set({ diaryEntries: diaryEntries.sort((a, b) => b.date - a.date) });
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/diaryEntries`);
@@ -1512,12 +1690,21 @@ export const useStore = create<AppState>()(
 
         const unsubFocus = onSnapshot(focusColRef, (snapshot) => {
           const focusSessions: FocusSession[] = [];
-          snapshot.forEach((doc) => focusSessions.push(doc.data() as FocusSession));
+          snapshot.forEach((doc) => {
+            const raw = doc.data() as FocusSession;
+            if (raw && typeof raw === 'object') {
+              focusSessions.push({
+                ...raw,
+                completedAt: toEpochMs(raw.completedAt, Date.now()),
+              });
+            }
+          });
           const state = get();
           const newStats = calculateStatsFromHistory(state.quests, focusSessions, state.stats);
           set({ focusSessions, stats: newStats, focusSynced: true });
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/focusSessions`);
+          set({ focusSynced: true });
         });
 
         const unsubDeep = onSnapshot(deepColRef, (snapshot) => {
@@ -1530,7 +1717,15 @@ export const useStore = create<AppState>()(
 
         const unsubFood = onSnapshot(foodColRef, (snapshot) => {
           const foodEntries: FoodEntry[] = [];
-          snapshot.forEach((doc) => foodEntries.push(doc.data() as FoodEntry));
+          snapshot.forEach((doc) => {
+            const raw = doc.data() as FoodEntry;
+            if (raw && typeof raw === 'object') {
+              foodEntries.push({
+                ...raw,
+                date: toEpochMs(raw.date, Date.now()),
+              });
+            }
+          });
           set({ foodEntries: foodEntries.sort((a, b) => b.date - a.date) });
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/foodEntries`);
@@ -1538,7 +1733,16 @@ export const useStore = create<AppState>()(
 
         const unsubWeeklyCoachSummaries = onSnapshot(weeklyCoachSummariesColRef, (snapshot) => {
           const weeklyCoachSummaries: WeeklyCoachSummary[] = [];
-          snapshot.forEach((doc) => weeklyCoachSummaries.push(doc.data() as WeeklyCoachSummary));
+          snapshot.forEach((doc) => {
+            const raw = doc.data() as WeeklyCoachSummary;
+            if (raw && typeof raw === 'object') {
+              weeklyCoachSummaries.push({
+                ...raw,
+                weekStart: toEpochMs(raw.weekStart, Date.now()),
+                generatedAt: toEpochMs(raw.generatedAt, Date.now()),
+              });
+            }
+          });
           set({ weeklyCoachSummaries: weeklyCoachSummaries.sort((a, b) => b.weekStart - a.weekStart) });
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/weeklyCoachSummaries`);
@@ -1546,7 +1750,17 @@ export const useStore = create<AppState>()(
 
         const unsubWeeklyRetrospectives = onSnapshot(weeklyRetrospectivesColRef, (snapshot) => {
           const weeklyRetrospectives: WeeklyRetrospective[] = [];
-          snapshot.forEach((doc) => weeklyRetrospectives.push(doc.data() as WeeklyRetrospective));
+          snapshot.forEach((doc) => {
+            const raw = doc.data() as WeeklyRetrospective;
+            if (raw && typeof raw === 'object') {
+              weeklyRetrospectives.push({
+                ...raw,
+                weekStart: toEpochMs(raw.weekStart, Date.now()),
+                weekEnd: toEpochMs(raw.weekEnd, Date.now()),
+                generatedAt: toEpochMs(raw.generatedAt, Date.now()),
+              });
+            }
+          });
           set({ weeklyRetrospectives: weeklyRetrospectives.sort((a, b) => b.weekStart - a.weekStart) });
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/weeklyRetrospectives`);
@@ -1554,7 +1768,10 @@ export const useStore = create<AppState>()(
 
         const unsubHealthRecords = onSnapshot(healthRecordsColRef, (snapshot) => {
           const healthRecords: HealthDailyRecord[] = [];
-          snapshot.forEach((doc) => healthRecords.push(doc.data() as HealthDailyRecord));
+          snapshot.forEach((doc) => {
+            const clean = sanitizeHealthRecordItem(doc.data());
+            if (clean) healthRecords.push(clean);
+          });
           set({ healthRecords: healthRecords.sort((a, b) => b.date - a.date) });
         }, (error) => {
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/healthRecords`);
@@ -1628,15 +1845,48 @@ export const useStore = create<AppState>()(
         return persistedState;
       },
       onRehydrateStorage: () => (state) => {
-        if (state) {
-          if (state.settings && state.settings.isPinEnabled) {
-            state.setLocked(true);
+        if (!state) return;
+        queueMicrotask(() => {
+          try {
+            const safeSettings = sanitizeSettings(state.settings);
+            const safeStats = sanitizeStats(state.stats);
+            const safeQuests = Array.isArray(state.quests) ? state.quests : [];
+            const safeFocus = Array.isArray(state.focusSessions) ? state.focusSessions : [];
+            const safeDiary = Array.isArray(state.diaryEntries) ? state.diaryEntries : [];
+            const safeVisions = Array.isArray(state.visions) ? state.visions : [];
+            const safeFood = Array.isArray(state.foodEntries) ? state.foodEntries : [];
+            const safeDeep = Array.isArray(state.deepTrainings) ? state.deepTrainings : [];
+            const safeSummaries = Array.isArray(state.weeklyCoachSummaries) ? state.weeklyCoachSummaries : [];
+            const safeRetros = Array.isArray(state.weeklyRetrospectives) ? state.weeklyRetrospectives : [];
+            const safeNotified = Array.isArray(state.notifiedQuestIds) ? state.notifiedQuestIds : [];
+            const safeOrder = sanitizeWidgetOrder(state.widgetOrder);
+            const safeHealth = Array.isArray(state.healthRecords)
+              ? state.healthRecords
+                  .map(sanitizeHealthRecordItem)
+                  .filter((r): r is HealthDailyRecord => r !== null)
+              : [];
+
+            const recalculated = calculateStatsFromHistory(safeQuests, safeFocus, safeStats);
+            useStore.setState({
+              settings: safeSettings,
+              stats: recalculated,
+              quests: safeQuests,
+              focusSessions: safeFocus,
+              diaryEntries: safeDiary,
+              visions: safeVisions,
+              foodEntries: safeFood,
+              deepTrainings: safeDeep,
+              weeklyCoachSummaries: safeSummaries,
+              weeklyRetrospectives: safeRetros,
+              notifiedQuestIds: safeNotified,
+              widgetOrder: safeOrder,
+              healthRecords: safeHealth,
+              ...(safeSettings.isPinEnabled ? { isLocked: true } : {}),
+            });
+          } catch (err) {
+            console.error('Store rehydration normalization error:', err);
           }
-          if (state.quests || state.focusSessions) {
-            const recalculated = calculateStatsFromHistory(state.quests || [], state.focusSessions || [], state.stats);
-            useStore.setState({ stats: recalculated });
-          }
-        }
+        });
       }
     }
   )

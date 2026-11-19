@@ -443,8 +443,40 @@ const WeeklyXpChart = memo(function WeeklyXpChart({ data }: { data: any[] }) {
 
 import { AvatarVisual } from '@/components/AvatarVisual';
 
+function toSafeDate(value: unknown): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
-  const { user, isInitialized, stats, quests, diaryEntries, focusSessions, foodEntries, weeklyCoachSummaries, widgetOrder, updateWidgetOrder, updateQuest, setDailyMood, saveWeeklyCoachSummary } = useStore();
+  const {
+    user,
+    isInitialized,
+    stats,
+    quests = [],
+    diaryEntries = [],
+    focusSessions = [],
+    foodEntries = [],
+    weeklyCoachSummaries = [],
+    widgetOrder: rawWidgetOrder,
+    updateWidgetOrder,
+    updateQuest,
+    setDailyMood,
+    saveWeeklyCoachSummary,
+  } = useStore();
+
+  const widgetOrder = useMemo(
+    () => (Array.isArray(rawWidgetOrder) ? rawWidgetOrder : DEFAULT_WIDGET_ORDER),
+    [rawWidgetOrder]
+  );
   
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>(() => {
@@ -486,7 +518,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
     const hasDeprecatedSettings = widgetOrder.includes('settings');
     const cleanedOrder = widgetOrder.filter(w => w !== 'settings');
     const missingWidgets = allWidgets.filter(w => !cleanedOrder.includes(w));
-    if (hasDeprecatedSettings || missingWidgets.length > 0) {
+    if (!Array.isArray(rawWidgetOrder) || hasDeprecatedSettings || missingWidgets.length > 0) {
       const nextOrder = [...cleanedOrder];
       if (missingWidgets.includes('mood')) {
         const streakIdx = nextOrder.indexOf('streak');
@@ -550,7 +582,10 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
 
   const todayMoodEntry = useMemo(() => {
     const today = new Date();
-    return diaryEntries.find(e => isSameDay(new Date(e.date), today)) || null;
+    return diaryEntries.find(e => {
+      const d = toSafeDate(e.date);
+      return d ? isSameDay(d, today) : false;
+    }) || null;
   }, [diaryEntries]);
 
   const handleSelectDailyMood = async (rating: number) => {
@@ -571,18 +606,23 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
   // Calculate streak dynamically
   const activeDates = new Set<number>();
   quests.forEach(q => {
-    if (q.completed && q.completedAt) {
-      activeDates.add(startOfDay(new Date(q.completedAt)).getTime());
+    const completedDate = toSafeDate(q.completedAt);
+    if (q.completed && completedDate) {
+      activeDates.add(startOfDay(completedDate).getTime());
     }
-    if (q.completions) {
+    if (Array.isArray(q.completions)) {
       q.completions.forEach(c => {
-        activeDates.add(startOfDay(new Date(c.date)).getTime());
+        const compDate = toSafeDate(c.date);
+        if (compDate) {
+          activeDates.add(startOfDay(compDate).getTime());
+        }
       });
     }
   });
   diaryEntries.forEach(e => {
-    if (e.date) {
-      activeDates.add(startOfDay(new Date(e.date)).getTime());
+    const entryDate = toSafeDate(e.date);
+    if (entryDate) {
+      activeDates.add(startOfDay(entryDate).getTime());
     }
   });
 
@@ -625,16 +665,22 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
     end: calendarEnd,
   });
 
-  const progress = (stats.xp / stats.xpToNextLevel) * 100;
+  const safeLevel = stats?.level ?? 1;
+  const safeXp = stats?.xp ?? 0;
+  const safeXpToNextLevel = stats?.xpToNextLevel && stats.xpToNextLevel > 0 ? stats.xpToNextLevel : 100;
+  const progress = Math.min(100, Math.max(0, (safeXp / safeXpToNextLevel) * 100));
 
   const upcomingReminders = quests
-    .filter(q => !q.completed && q.dueDate)
+    .filter(q => !q.completed && typeof q.dueDate === 'number' && Number.isFinite(q.dueDate))
     .sort((a, b) => (a.dueDate || 0) - (b.dueDate || 0))
     .slice(0, 3);
 
   const needsDiaryEntryToday = useMemo(() => {
     const today = new Date();
-    return !diaryEntries.some(e => isSameDay(new Date(e.date), today));
+    return !diaryEntries.some(e => {
+      const d = toSafeDate(e.date);
+      return d ? isSameDay(d, today) : false;
+    });
   }, [diaryEntries]);
 
   const todayCompletedQuests = useMemo(() => {
@@ -642,12 +688,14 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
     const completed: Quest[] = [];
     
     quests.forEach(q => {
-      if (q.completed && q.completedAt && isSameDay(new Date(q.completedAt), today)) {
+      const completedDate = toSafeDate(q.completedAt);
+      if (q.completed && completedDate && isSameDay(completedDate, today)) {
         completed.push(q);
       }
-      if (q.completions) {
+      if (Array.isArray(q.completions)) {
         q.completions.forEach((c, index) => {
-          if (isSameDay(new Date(c.date), today)) {
+          const compDate = toSafeDate(c.date);
+          if (compDate && isSameDay(compDate, today)) {
             completed.push({
               ...q,
               id: `${q.id}-completion-${index}`,
@@ -737,16 +785,18 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
       };
 
       quests.forEach(q => {
-        if (q.completed && q.completedAt && isSameDay(new Date(q.completedAt), day)) {
+        const completedDate = toSafeDate(q.completedAt);
+        if (q.completed && completedDate && isSameDay(completedDate, day)) {
           if (q.type === 'habit' && q.habitDirection === 'negative') {
             dayData[q.skill] -= q.xpReward;
           } else {
             dayData[q.skill] += q.xpReward;
           }
         }
-        if (q.completions) {
+        if (Array.isArray(q.completions)) {
           q.completions.forEach(c => {
-            if (isSameDay(new Date(c.date), day)) {
+            const compDate = toSafeDate(c.date);
+            if (compDate && isSameDay(compDate, day)) {
               if (c.direction === 'negative') {
                 dayData[q.skill] -= q.xpReward;
               } else {
@@ -826,13 +876,17 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
       };
 
       const dailyBreakdown = days.map((day) => {
-        const entry = diaryEntries.find((e) => isSameDay(new Date(e.date), day)) || null;
+        const entry = diaryEntries.find((e) => {
+          const ed = toSafeDate(e.date);
+          return ed ? isSameDay(ed, day) : false;
+        }) || null;
         let dayXp = 0;
         let completedCount = 0;
         let focusMinutes = 0;
 
         quests.forEach((q) => {
-          if (q.completed && !q.failed && q.completedAt && isSameDay(new Date(q.completedAt), day)) {
+          const completedDate = toSafeDate(q.completedAt);
+          if (q.completed && !q.failed && completedDate && isSameDay(completedDate, day)) {
             if (q.type === 'habit' && q.habitDirection === 'negative') {
               dayXp -= q.xpReward;
               skillXp[q.skill] -= q.xpReward;
@@ -842,9 +896,10 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
               completedCount += 1;
             }
           }
-          if (q.completions) {
+          if (Array.isArray(q.completions)) {
             q.completions.forEach((c) => {
-              if (isSameDay(new Date(c.date), day)) {
+              const compDate = toSafeDate(c.date);
+              if (compDate && isSameDay(compDate, day)) {
                 if (c.direction === 'negative') {
                   dayXp -= q.xpReward;
                   skillXp[q.skill] -= q.xpReward;
@@ -859,7 +914,8 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
         });
 
         focusSessions.forEach((f) => {
-          if (f.completedAt && isSameDay(new Date(f.completedAt), day)) {
+          const focusDate = toSafeDate(f.completedAt);
+          if (focusDate && isSameDay(focusDate, day)) {
             const mins = f.durationMinutes || 0;
             focusMinutes += mins;
             dayXp += mins;
@@ -1009,7 +1065,7 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
             notes: d.entry?.notes || '',
             progress: d.entry?.progress || '',
           })),
-          userLevel: stats.level,
+          userLevel: safeLevel,
         });
 
         await saveWeeklyCoachSummary({
@@ -1081,7 +1137,9 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
     const moodByDay = new Map<string, { sum: number; count: number; avg: number }>();
     diaryEntries.forEach((entry) => {
       if (typeof entry.mood !== 'number' || entry.mood < 1 || entry.mood > 5) return;
-      const dayKey = format(new Date(entry.date), 'yyyy-MM-dd');
+      const entryDate = toSafeDate(entry.date);
+      if (!entryDate) return;
+      const dayKey = format(entryDate, 'yyyy-MM-dd');
       const existing = moodByDay.get(dayKey);
       if (existing) {
         const sum = existing.sum + entry.mood;
@@ -1126,7 +1184,8 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
     const mealMap = new Map<string, MealAccumulator>();
 
     filteredFoods.forEach((food) => {
-      const foodDate = new Date(food.date);
+      const foodDate = toSafeDate(food.date);
+      if (!foodDate) return;
       const targetDate = foodCorrelationTiming === 'next_day' ? addDays(foodDate, 1) : foodDate;
       const targetKey = format(targetDate, 'yyyy-MM-dd');
       const moodInfo = moodByDay.get(targetKey);
@@ -1402,12 +1461,12 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                     <SortableWidget key="avatar" id="avatar" className="col-span-1">
                       <div className="bg-neutral-900 p-4 sm:p-6 rounded-2xl border border-neutral-800 flex flex-col items-center justify-between text-center h-full gap-4">
                         <div className="flex flex-col items-center pt-2">
-                          <AvatarVisual level={stats.level} size="md" className="mb-3" />
+                          <AvatarVisual level={safeLevel} size="md" className="mb-3" />
                           <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-widest mb-0.5">
                             Dein Rang
                           </div>
                           <div className="text-xl font-black text-white tabular-nums">
-                            Level {stats.level}
+                            Level {safeLevel}
                           </div>
                         </div>
                         <button
@@ -1429,12 +1488,12 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                             Aktuelles Level
                           </div>
                           <div className="text-6xl sm:text-7xl font-black mb-4 tabular-nums">
-                            {stats.level}
+                            {safeLevel}
                           </div>
                           <div className="w-full max-w-md mx-auto space-y-2">
                             <div className="flex justify-between text-sm text-neutral-400 font-mono tabular-nums">
-                              <span>{stats.xp} EP</span>
-                              <span>{stats.xpToNextLevel} EP</span>
+                              <span>{safeXp} EP</span>
+                              <span>{safeXpToNextLevel} EP</span>
                             </div>
                             <ProgressBar progress={progress} colorClass="bg-amber-500" className="h-3" />
                           </div>
@@ -1829,7 +1888,12 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                               </div>
                               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-800/70 text-[11px] text-neutral-500">
                                 <span>
-                                  Erstellt am {format(new Date(currentWeekCoachSummary.generatedAt), 'dd.MM.yyyy, HH:mm', { locale: de })} Uhr
+                                  {(() => {
+                                    const genDate = toSafeDate(currentWeekCoachSummary.generatedAt);
+                                    return genDate
+                                      ? `Erstellt am ${format(genDate, 'dd.MM.yyyy, HH:mm', { locale: de })} Uhr`
+                                      : 'Erstellt';
+                                  })()}
                                 </span>
                                 <button
                                   type="button"
@@ -2496,7 +2560,10 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                             </div>
                           ))}
                           {calendarDays.map((day, i) => {
-                            const entry = diaryEntries.find(e => isSameDay(new Date(e.date), day));
+                            const entry = diaryEntries.find(e => {
+                              const ed = toSafeDate(e.date);
+                              return ed ? isSameDay(ed, day) : false;
+                            });
                             const isCurrentMonth = day.getMonth() === viewDate.getMonth();
                             const isToday = isSameDay(day, new Date());
                             const isCurrentWeek = isSameWeek(day, new Date(), { weekStartsOn: 1 });
@@ -2710,7 +2777,12 @@ export function Dashboard({ setActiveTab }: { setActiveTab: (tab: string) => voi
                     <h3 className="font-bold text-base sm:text-lg truncate">
                       Tagebucheintrag • {(MOOD_ICONS[selectedEntry.mood] || MOOD_ICONS[3]).label}
                     </h3>
-                    <p className="text-xs text-neutral-500">{format(selectedEntry.date, 'dd. MMMM yyyy', { locale: de })}</p>
+                    <p className="text-xs text-neutral-500">
+                      {(() => {
+                        const sd = toSafeDate(selectedEntry.date);
+                        return sd ? format(sd, 'dd. MMMM yyyy', { locale: de }) : 'Datum unbekannt';
+                      })()}
+                    </p>
                   </div>
                 </div>
                 <button 

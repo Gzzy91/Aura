@@ -60,12 +60,25 @@ const SOURCE_LABELS: Record<HealthDataSource, string> = {
   manual: 'Manuell',
 };
 
+function safeDate(val: unknown): Date | null {
+  if (val instanceof Date) return Number.isNaN(val.getTime()) ? null : val;
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    const d = new Date(val);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof val === 'string' && val.trim()) {
+    const d = new Date(val);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 export function HealthSourcesSettings() {
   const {
-    quests,
-    diaryEntries,
-    focusSessions,
-    healthRecords,
+    quests = [],
+    diaryEntries = [],
+    focusSessions = [],
+    healthRecords = [],
     settings,
     updateSettings,
     saveHealthRecord,
@@ -185,11 +198,16 @@ export function HealthSourcesSettings() {
       };
 
       for (const day of targetDays) {
+        if (!day?.dateKey) continue;
         const [y, m, d] = day.dateKey.split('-').map(Number);
         const dayDate = new Date(y, m - 1, d, 12, 0, 0);
+        if (Number.isNaN(dayDate.getTime())) continue;
         const existing = useStore.getState().healthRecords.find((r) => r.id === day.dateKey);
         const dayMood =
-          state.diaryEntries.find((e) => isSameDay(new Date(e.date), dayDate))?.mood ?? null;
+          state.diaryEntries.find((e) => {
+            const ed = safeDate(e.date);
+            return ed ? isSameDay(ed, dayDate) : false;
+          })?.mood ?? null;
 
         if (day.dateKey === todayKey) {
           touchedToday = true;
@@ -563,11 +581,16 @@ export function HealthSourcesSettings() {
 
       const recentDays = parsedDays.slice(0, 14);
       for (const day of recentDays) {
+        if (!day?.dateKey) continue;
         const [y, m, d] = day.dateKey.split('-').map(Number);
         const dayDate = new Date(y, m - 1, d, 12, 0, 0);
+        if (Number.isNaN(dayDate.getTime())) continue;
         const existing = healthRecords.find((r) => r.id === day.dateKey);
         const dayMood =
-          diaryEntries.find((e) => isSameDay(new Date(e.date), dayDate))?.mood ?? null;
+          diaryEntries.find((e) => {
+            const ed = safeDate(e.date);
+            return ed ? isSameDay(ed, dayDate) : false;
+          })?.mood ?? null;
 
         const sleepMin = day.sleepDurationMinutes || existing?.sleepDurationMinutes || 0;
         const activityMin = day.activityDurationMinutes || existing?.activityDurationMinutes || 0;
@@ -692,9 +715,9 @@ export function HealthSourcesSettings() {
           </span>
           <span className="text-neutral-400">
             Aktive Quellen:{' '}
-            {todayRecord.sources
-              .filter((s) => s !== 'browser_idle' || todayRecord.sources.length === 1)
-              .map((s) => SOURCE_LABELS[s])
+            {(Array.isArray(todayRecord.sources) ? todayRecord.sources : [])
+              .filter((s) => s !== 'browser_idle' || (todayRecord.sources || []).length === 1)
+              .map((s) => SOURCE_LABELS[s] || s)
               .join(' · ')}
           </span>
         </div>
@@ -1087,7 +1110,7 @@ export function HealthSourcesSettings() {
 
       {/* Sichtbare Kennzahlen (User Configuration for all 24 metrics) */}
       {(() => {
-        const visibleSet = getVisibleHealthMetricsSet(settings.visibleHealthMetrics);
+        const visibleSet = getVisibleHealthMetricsSet(settings?.visibleHealthMetrics);
         const handleUpdateVisible = (next: HealthMetricKey[]) => {
           updateSettings({ visibleHealthMetrics: next });
         };
@@ -1122,7 +1145,7 @@ export function HealthSourcesSettings() {
               {showMetricsSection && (
                 <div className="rounded-xl border border-neutral-800 bg-neutral-950/80 p-3.5 sm:p-4">
                   <HealthMetricsPicker
-                    visibleMetrics={settings.visibleHealthMetrics}
+                    visibleMetrics={settings?.visibleHealthMetrics}
                     onChange={handleUpdateVisible}
                     currentRecord={todayRecord}
                     historyRecords={healthRecords}
@@ -1151,17 +1174,19 @@ export function HealthSourcesSettings() {
               ) : (
                 <div className="max-h-72 overflow-y-auto pr-1 space-y-1.5">
                   {[...healthRecords]
-                    .sort((a, b) => b.date - a.date)
+                    .filter((rec) => safeDate(rec.date) !== null)
+                    .sort((a, b) => (b.date || 0) - (a.date || 0))
                     .slice(0, 14)
                     .map((rec) => {
-                      const dateObj = new Date(rec.date);
+                      const dateObj = safeDate(rec.date)!;
                       const label = isToday(dateObj)
                         ? 'Heute'
                         : isYesterday(dateObj)
                         ? 'Gestern'
                         : format(dateObj, 'EEE, dd.MM.', { locale: de });
-                      const visibleSources = rec.sources.filter(
-                        (s) => s !== 'browser_idle' || rec.sources.length === 1
+                      const recSources = Array.isArray(rec.sources) ? rec.sources : [];
+                      const visibleSources = recSources.filter(
+                        (s) => s !== 'browser_idle' || recSources.length === 1
                       );
                       const enabledValues = HEALTH_METRICS_CATALOG.filter(
                         (m) =>
@@ -1179,7 +1204,7 @@ export function HealthSourcesSettings() {
                             <div className="min-w-0">
                               <span className="font-semibold text-white">{label}</span>
                               <span className="text-neutral-500 text-[11px] ml-2">
-                                {visibleSources.map((s) => SOURCE_LABELS[s]).join(' · ')}
+                                {visibleSources.map((s) => SOURCE_LABELS[s] || s).join(' · ')}
                               </span>
                             </div>
                             {visibleSet.has('recoveryScore') && (
