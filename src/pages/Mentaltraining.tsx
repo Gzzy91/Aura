@@ -26,6 +26,7 @@ import { de } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store/useStore';
 import { generateDailyTraining } from '@/services/coachService';
+import { TrainingCalendarView } from '@/components/TrainingCalendarView';
 import { toast } from 'sonner';
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -304,7 +305,7 @@ function renderMarkdown(text: string) {
 export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
   const { deepTrainings, lastTrainingGeneratedDate, addDeepTraining, setLastTrainingGeneratedDate, quests, addQuest } = useStore();
   const [currentDate] = useState(() => new Date());
-  const [activeSubTab, setActiveSubTab] = useState<'impulse' | 'tiefentraining' | 'archiv'>('impulse');
+  const [activeSubTab, setActiveSubTab] = useState<'impulse' | 'tiefentraining' | 'kalender' | 'archiv'>('impulse');
   const [expandedTraining, setExpandedTraining] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const attemptedTrainingDateRef = useRef<string | null>(null);
@@ -422,7 +423,7 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className={cn('mx-auto space-y-6 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500', activeSubTab === 'kalender' ? 'max-w-6xl' : 'max-w-5xl')}>
       <header className="mb-4 sm:mb-6">
         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2 flex items-center gap-2.5 sm:gap-3">
           <Lightbulb className="w-7 h-7 sm:w-8 sm:h-8 text-amber-400 shrink-0" />
@@ -435,11 +436,12 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
       </header>
 
       {/* Tabs */}
-      <div className="flex gap-1.5 sm:gap-2 p-1 bg-neutral-900 rounded-xl w-full max-w-md mb-6 border border-neutral-800">
+      <div className="flex gap-1.5 sm:gap-2 p-1 bg-neutral-900 rounded-xl w-full max-w-2xl mb-6 border border-neutral-800 overflow-x-auto">
         <button
+          type="button"
           onClick={() => setActiveSubTab('impulse')}
           className={cn(
-            "flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
+            "flex-1 py-2 px-2.5 text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
             activeSubTab === 'impulse' 
               ? "bg-amber-500 text-black shadow-md shadow-amber-500/20" 
               : "text-neutral-400 hover:text-white"
@@ -448,9 +450,10 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
           Daily Impulse
         </button>
         <button
+          type="button"
           onClick={() => setActiveSubTab('tiefentraining')}
           className={cn(
-            "flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
+            "flex-1 py-2 px-2.5 text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
             activeSubTab === 'tiefentraining' 
               ? "bg-amber-500 text-black shadow-md shadow-amber-500/20" 
               : "text-neutral-400 hover:text-white"
@@ -459,9 +462,22 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
           Tiefentraining
         </button>
         <button
+          type="button"
+          onClick={() => setActiveSubTab('kalender')}
+          className={cn(
+            "flex-1 py-2 px-2.5 text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
+            activeSubTab === 'kalender' 
+              ? "bg-amber-500 text-black shadow-md shadow-amber-500/20" 
+              : "text-neutral-400 hover:text-white"
+          )}
+        >
+          Trainings-Kalender
+        </button>
+        <button
+          type="button"
           onClick={() => setActiveSubTab('archiv')}
           className={cn(
-            "flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
+            "flex-1 py-2 px-2.5 text-xs sm:text-sm font-medium rounded-lg transition-all whitespace-nowrap",
             activeSubTab === 'archiv' 
               ? "bg-amber-500 text-black shadow-md shadow-amber-500/20" 
               : "text-neutral-400 hover:text-white"
@@ -470,6 +486,12 @@ export function Mentaltraining({ setActiveTab }: { setActiveTab: (tab: string) =
           Archiv
         </button>
       </div>
+
+      {activeSubTab === 'kalender' && (
+        <div className="animate-in fade-in duration-300">
+          <TrainingCalendarView compactHeader />
+        </div>
+      )}
 
       {activeSubTab === 'impulse' && (
         <div className="animate-in fade-in duration-300">

@@ -14,7 +14,6 @@ import { triggerLevelUpConfetti } from './lib/confetti';
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { format, startOfDay } from 'date-fns';
-import { recordBrowserActivityHeartbeat } from './services/healthSyncService';
 import {
   computeWeeklyRetrospectiveMetrics,
   getWeekBounds,
@@ -63,6 +62,7 @@ const Diary = lazyWithRetry(() => import('./pages/Diary').then((m) => ({ default
 const Visions = lazyWithRetry(() => import('./pages/Visions').then((m) => ({ default: m.Visions })));
 const Focus = lazyWithRetry(() => import('./pages/Focus').then((m) => ({ default: m.Focus })));
 const Mentaltraining = lazyWithRetry(() => import('./pages/Mentaltraining').then((m) => ({ default: m.Mentaltraining })));
+const TrainingCalendar = lazyWithRetry(() => import('./pages/TrainingCalendar').then((m) => ({ default: m.TrainingCalendar })));
 const FoodJournal = lazyWithRetry(() => import('./pages/FoodJournal').then((m) => ({ default: m.FoodJournal })));
 const Settings = lazyWithRetry(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 
@@ -388,44 +388,25 @@ function AppContent() {
   }, [user, isInitialized, questsSynced, navigate]);
 
   useEffect(() => {
-    recordBrowserActivityHeartbeat();
-
-    let lastBeat = Date.now();
-    const handleBeat = () => {
-      const now = Date.now();
-      if (now - lastBeat >= 30_000) {
-        lastBeat = now;
-        recordBrowserActivityHeartbeat(now);
-      }
-    };
-
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible') {
         runAutoFailCheck();
         runSkillDecayCheck();
-        recordBrowserActivityHeartbeat();
       }
     };
 
     const interval = setInterval(() => {
       runAutoFailCheck();
       runSkillDecayCheck();
-      if (document.visibilityState === 'visible') {
-        recordBrowserActivityHeartbeat();
-      }
     }, 60000);
 
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
-    document.addEventListener('pointerdown', handleBeat, { passive: true });
-    document.addEventListener('keydown', handleBeat, { passive: true });
 
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
-      document.removeEventListener('pointerdown', handleBeat);
-      document.removeEventListener('keydown', handleBeat);
     };
   }, []);
 
@@ -471,6 +452,7 @@ function AppContent() {
             <Route path="/diary" element={<Diary />} />
             <Route path="/food" element={<FoodJournal />} />
             <Route path="/mentaltraining" element={<Mentaltraining setActiveTab={handleSetActiveTab} />} />
+            <Route path="/training-calendar" element={<TrainingCalendar />} />
             <Route path="/coach" element={<AICoach />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -299,6 +299,20 @@ service cloud.firestore {
              data.triggerType in ['sunday_auto', 'manual'];
     }
 
+    function isValidMentalTrainingEntry(data, entryId) {
+      return hasRequiredFields(['id', 'date', 'dateKey', 'title', 'category', 'durationMinutes', 'createdAt']) &&
+             hasOnlyAllowedFields(['id', 'date', 'dateKey', 'title', 'category', 'durationMinutes', 'focusRating', 'notes', 'createdAt']) &&
+             data.id is string && data.id == entryId && isValidId(data.id) &&
+             data.date is int &&
+             data.dateKey is string && data.dateKey.size() == 10 && data.dateKey.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 160 &&
+             data.category in ['Meditation', 'Atemarbeit', 'Visualisierung', 'Fokus-Session', 'Reflexion', 'Mindset-Übung', 'Sonstiges'] &&
+             data.durationMinutes is int && data.durationMinutes >= 1 && data.durationMinutes <= 600 &&
+             (!('focusRating' in data) || data.focusRating == null || (data.focusRating is int && data.focusRating >= 1 && data.focusRating <= 5)) &&
+             (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 2000)) &&
+             data.createdAt is int;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -369,6 +383,15 @@ service cloud.firestore {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidId(retroId) && isValidWeeklyRetrospective(request.resource.data, retroId);
         allow update: if isOwner(userId) && isValidId(retroId) && isValidWeeklyRetrospective(request.resource.data, retroId);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /mentalTrainingEntries/{entryId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidId(entryId) && isValidMentalTrainingEntry(request.resource.data, entryId);
+        allow update: if isOwner(userId) && isValidId(entryId) && isValidMentalTrainingEntry(request.resource.data, entryId) &&
+                         request.resource.data.id == resource.data.id &&
+                         request.resource.data.createdAt == resource.data.createdAt;
         allow delete: if isOwner(userId) || isAdmin();
       }
     }

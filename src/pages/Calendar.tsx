@@ -25,6 +25,7 @@ import {
   Download,
   X,
   Star,
+  Dumbbell,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,7 @@ import { DeleteConfirmationModal } from '@/components/DeleteConfirmationModal';
 import { QuestModal } from '@/components/QuestModal';
 import { isQuestOverdueBadge } from '@/lib/questLifecycle';
 import { downloadICS } from '@/lib/calendarSync';
+import { TrainingCalendarView } from '@/components/TrainingCalendarView';
 import { toast } from 'sonner';
 
 const MOOD_LABELS: Record<number, { label: string; color: string }> = {
@@ -63,6 +65,7 @@ export function Calendar() {
   const [editingQuest, setEditingQuest] = useState<Quest | null>(null);
   const [now, setNow] = useState(Date.now());
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [calendarViewTab, setCalendarViewTab] = useState<'quests' | 'training'>('quests');
 
   // Update every 30s instead of every 1s to avoid re-rendering 42 day cells every second
   useEffect(() => {
@@ -176,55 +179,94 @@ export function Calendar() {
   return (
     <div className="space-y-6 sm:space-y-8 max-w-6xl mx-auto">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Kalender</h2>
-          <p className="text-xs sm:text-sm text-neutral-400">Verfolge deine Quest-Historie, Planung &amp; Tagesstimmung</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
-          <button
-            type="button"
-            onClick={handleExportCalendar}
-            className="flex items-center gap-2 px-3 py-2 bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 rounded-xl text-sm font-medium transition-colors text-neutral-300 hover:text-white min-h-[42px]"
-            title="Kalender exportieren (.ics)"
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Export</span>
-          </button>
-
-          {(!isViewingCurrentMonth || (selectedDay && !isToday(selectedDay))) && (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Kalender</h2>
+            <p className="text-xs sm:text-sm text-neutral-400">
+              {calendarViewTab === 'quests'
+                ? 'Verfolge deine Quest-Historie, Planung & Tagesstimmung'
+                : 'Monatliche Übersicht deiner Garmin-Workouts & Mentaltraining-Einheiten'}
+            </p>
+          </div>
+          <div className="inline-flex items-center gap-1 p-1 bg-neutral-900 border border-neutral-800 rounded-xl">
             <button
               type="button"
-              onClick={jumpToToday}
-              className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors min-h-[42px]"
+              onClick={() => setCalendarViewTab('quests')}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors',
+                calendarViewTab === 'quests'
+                  ? 'bg-amber-500 text-neutral-950 font-semibold'
+                  : 'text-neutral-400 hover:text-white'
+              )}
             >
-              Heute
+              <CalendarIcon className="w-3.5 h-3.5" />
+              Quests &amp; Stimmung
             </button>
-          )}
-
-          <div className="flex flex-1 min-w-0 sm:flex-none items-center justify-between gap-1 bg-neutral-900 p-1 rounded-xl border border-neutral-800">
             <button
               type="button"
-              onClick={prevMonth}
-              className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
-              aria-label="Vorheriger Monat"
+              onClick={() => setCalendarViewTab('training')}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors',
+                calendarViewTab === 'training'
+                  ? 'bg-amber-500 text-neutral-950 font-semibold'
+                  : 'text-neutral-400 hover:text-white'
+              )}
             >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <span className="px-1.5 sm:px-4 font-bold flex-1 sm:flex-none sm:min-w-[150px] text-center text-xs sm:text-base capitalize truncate">
-              {format(currentMonth, 'MMMM yyyy', { locale: de })}
-            </span>
-            <button
-              type="button"
-              onClick={nextMonth}
-              className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
-              aria-label="Nächster Monat"
-            >
-              <ChevronRight className="w-5 h-5" />
+              <Dumbbell className="w-3.5 h-3.5" />
+              Trainings-Kalender
             </button>
           </div>
         </div>
+        {calendarViewTab === 'quests' && (
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={handleExportCalendar}
+              className="flex items-center gap-2 px-3 py-2 bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 rounded-xl text-sm font-medium transition-colors text-neutral-300 hover:text-white min-h-[42px]"
+              title="Kalender exportieren (.ics)"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Export</span>
+            </button>
+
+            {(!isViewingCurrentMonth || (selectedDay && !isToday(selectedDay))) && (
+              <button
+                type="button"
+                onClick={jumpToToday}
+                className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors min-h-[42px]"
+              >
+                Heute
+              </button>
+            )}
+
+            <div className="flex flex-1 min-w-0 sm:flex-none items-center justify-between gap-1 bg-neutral-900 p-1 rounded-xl border border-neutral-800">
+              <button
+                type="button"
+                onClick={prevMonth}
+                className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
+                aria-label="Vorheriger Monat"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <span className="px-1.5 sm:px-4 font-bold flex-1 sm:flex-none sm:min-w-[150px] text-center text-xs sm:text-base capitalize truncate">
+                {format(currentMonth, 'MMMM yyyy', { locale: de })}
+              </span>
+              <button
+                type="button"
+                onClick={nextMonth}
+                className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-white transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
+                aria-label="Nächster Monat"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
+      {calendarViewTab === 'training' ? (
+        <TrainingCalendarView compactHeader />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Calendar Grid */}
         <div className="lg:col-span-2 bg-neutral-900 rounded-2xl border border-neutral-800 overflow-hidden shadow-xl">
@@ -434,6 +476,7 @@ export function Calendar() {
           </div>
         </div>
       </div>
+      )}
 
       {selectedQuest && (
         <QuestDetailsModal

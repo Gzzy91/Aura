@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UserStats, SkillStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry, WeeklyCoachSummary, WeeklyRetrospective, HealthDailyRecord, HealthDataSource, HealthMetricKey } from '../types';
+import { UserStats, SkillStats, Quest, SkillType, DiaryEntry, Vision, FocusSession, DeepTraining, FoodEntry, WeeklyCoachSummary, WeeklyRetrospective, HealthDailyRecord, HealthDataSource, HealthMetricKey, MentalTrainingEntry, MentalTrainingCategory, GarminWorkoutActivity } from '../types';
 import { User } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { toast } from 'sonner';
@@ -116,6 +116,8 @@ interface AppState {
   weeklyCoachSummaries: WeeklyCoachSummary[];
   weeklyRetrospectives: WeeklyRetrospective[];
   healthRecords: HealthDailyRecord[];
+  mentalTrainingEntries: MentalTrainingEntry[];
+  garminActivities: GarminWorkoutActivity[];
   lastTrainingGeneratedDate: string | null;
   setUser: (user: User | null) => void;
   setInitialized: (val: boolean) => void;
@@ -151,6 +153,10 @@ interface AppState {
   deleteVision: (id: string) => void;
   addFocusSession: (session: Omit<FocusSession, 'id'>) => void;
   addDeepTraining: (training: DeepTraining) => void;
+  addMentalTrainingEntry: (entry: Omit<MentalTrainingEntry, 'id' | 'createdAt'>) => void;
+  updateMentalTrainingEntry: (id: string, updates: Partial<Omit<MentalTrainingEntry, 'id' | 'createdAt'>>) => void;
+  deleteMentalTrainingEntry: (id: string) => void;
+  mergeGarminActivities: (activities: GarminWorkoutActivity[]) => void;
   setLastTrainingGeneratedDate: (dateStr: string) => void;
   updateWidgetOrder: (order: string[]) => void;
   equipItem: (category: 'head' | 'body' | 'legs' | 'feet' | 'weapon' | 'shield' | 'accessory', itemId: string | null) => void;
@@ -303,7 +309,7 @@ const sanitizeHealthRecordItem = (raw: unknown): HealthDailyRecord | null => {
         : 0,
     avgHeartRate:
       typeof r.avgHeartRate === 'number' && Number.isFinite(r.avgHeartRate) ? r.avgHeartRate : null,
-    sources: Array.isArray(r.sources) ? r.sources : (['aura_activity'] as HealthDataSource[]),
+    sources: Array.isArray(r.sources) ? r.sources : ([] as HealthDataSource[]),
     recoveryScore:
       typeof r.recoveryScore === 'number' && Number.isFinite(r.recoveryScore)
         ? Math.max(0, Math.min(100, Math.round(r.recoveryScore)))
@@ -476,6 +482,8 @@ export const useStore = create<AppState>()(
       weeklyCoachSummaries: [],
       weeklyRetrospectives: [],
       healthRecords: [],
+      mentalTrainingEntries: [],
+      garminActivities: [],
       lastTrainingGeneratedDate: null,
       
       setUser: (user) => set({ user, loading: false, ...(user ? {} : { questsSynced: false, focusSynced: false }) }),
@@ -500,6 +508,153 @@ export const useStore = create<AppState>()(
             handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
           });
         }
+      },
+
+      addMentalTrainingEntry: (entryData) => {
+        const id = crypto.randomUUID();
+        const createdAt = Math.round(Date.now());
+        const VALID_CATS: MentalTrainingCategory[] = [
+          'Meditation',
+          'Atemarbeit',
+          'Visualisierung',
+          'Fokus-Session',
+          'Reflexion',
+          'Mindset-Übung',
+          'Sonstiges',
+        ];
+        const category = VALID_CATS.includes(entryData.category) ? entryData.category : 'Sonstiges';
+        const dateMs = Math.round(toEpochMs(entryData.date, Date.now()));
+        const dateKey =
+          typeof entryData.dateKey === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entryData.dateKey)
+            ? entryData.dateKey
+            : format(new Date(dateMs), 'yyyy-MM-dd');
+        const durationMinutes = Math.max(1, Math.min(600, Math.round(Number(entryData.durationMinutes) || 10)));
+        const title = String(entryData.title || category).trim().slice(0, 160) || category;
+        const focusRating =
+          typeof entryData.focusRating === 'number' && Number.isFinite(entryData.focusRating)
+            ? Math.max(1, Math.min(5, Math.round(entryData.focusRating)))
+            : null;
+        const notes = typeof entryData.notes === 'string' ? entryData.notes.trim().slice(0, 2000) : '';
+
+        const entry: MentalTrainingEntry = {
+          id,
+          date: dateMs,
+          dateKey,
+          title,
+          category,
+          durationMinutes,
+          focusRating,
+          notes,
+          createdAt,
+        };
+
+        set((state) => ({
+          mentalTrainingEntries: [entry, ...state.mentalTrainingEntries].sort((a, b) => b.date - a.date),
+        }));
+
+        const { user } = get();
+        if (user) {
+          setDoc(doc(db, 'users', user.uid, 'mentalTrainingEntries', id), cleanData(entry)).catch((error) => {
+            handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/mentalTrainingEntries/${id}`);
+          });
+        }
+      },
+
+      updateMentalTrainingEntry: (id, updates) => {
+        const existing = get().mentalTrainingEntries.find((e) => e.id === id);
+        if (!existing) return;
+
+        const VALID_CATS: MentalTrainingCategory[] = [
+          'Meditation',
+          'Atemarbeit',
+          'Visualisierung',
+          'Fokus-Session',
+          'Reflexion',
+          'Mindset-Übung',
+          'Sonstiges',
+        ];
+        const nextDate = updates.date !== undefined ? Math.round(toEpochMs(updates.date, existing.date)) : existing.date;
+        const nextDateKey =
+          typeof updates.dateKey === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(updates.dateKey)
+            ? updates.dateKey
+            : updates.date !== undefined
+            ? format(new Date(nextDate), 'yyyy-MM-dd')
+            : existing.dateKey;
+        const nextCategory =
+          updates.category && VALID_CATS.includes(updates.category)
+            ? updates.category
+            : existing.category;
+        const nextTitle =
+          updates.title !== undefined
+            ? String(updates.title).trim().slice(0, 160) || existing.title
+            : existing.title;
+        const nextDuration =
+          updates.durationMinutes !== undefined
+            ? Math.max(1, Math.min(600, Math.round(Number(updates.durationMinutes) || existing.durationMinutes)))
+            : existing.durationMinutes;
+        const nextRating =
+          updates.focusRating !== undefined
+            ? typeof updates.focusRating === 'number' && Number.isFinite(updates.focusRating)
+              ? Math.max(1, Math.min(5, Math.round(updates.focusRating)))
+              : null
+            : existing.focusRating ?? null;
+        const nextNotes =
+          updates.notes !== undefined
+            ? String(updates.notes || '').trim().slice(0, 2000)
+            : existing.notes ?? '';
+
+        const updated: MentalTrainingEntry = {
+          ...existing,
+          date: nextDate,
+          dateKey: nextDateKey,
+          category: nextCategory,
+          title: nextTitle,
+          durationMinutes: nextDuration,
+          focusRating: nextRating,
+          notes: nextNotes,
+        };
+
+        set((state) => ({
+          mentalTrainingEntries: state.mentalTrainingEntries
+            .map((e) => (e.id === id ? updated : e))
+            .sort((a, b) => b.date - a.date),
+        }));
+
+        const { user } = get();
+        if (user) {
+          setDoc(doc(db, 'users', user.uid, 'mentalTrainingEntries', id), cleanData(updated)).catch((error) => {
+            handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/mentalTrainingEntries/${id}`);
+          });
+        }
+      },
+
+      deleteMentalTrainingEntry: (id) => {
+        set((state) => ({
+          mentalTrainingEntries: state.mentalTrainingEntries.filter((e) => e.id !== id),
+        }));
+        const { user } = get();
+        if (user) {
+          deleteDoc(doc(db, 'users', user.uid, 'mentalTrainingEntries', id)).catch((error) => {
+            handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/mentalTrainingEntries/${id}`);
+          });
+        }
+      },
+
+      mergeGarminActivities: (activities) => {
+        if (!Array.isArray(activities) || activities.length === 0) return;
+        set((state) => {
+          const map = new Map<string, GarminWorkoutActivity>();
+          for (const existing of state.garminActivities) {
+            if (existing?.id) map.set(existing.id, existing);
+          }
+          for (const next of activities) {
+            if (next?.id && next?.dateKey) map.set(next.id, next);
+          }
+          const merged = Array.from(map.values())
+            .sort((a, b) => (b.startTimeLocal || b.dateKey).localeCompare(a.startTimeLocal || a.dateKey))
+            .slice(0, 200);
+          return { garminActivities: merged };
+        });
       },
 
       updateSettings: (updates) => {
@@ -891,7 +1046,7 @@ export const useStore = create<AppState>()(
           hydrationMl: optInt(record.hydrationMl, 0, 30000),
           sources: Array.from(
             new Set<HealthDataSource>(
-              Array.isArray(record.sources) ? record.sources : ['aura_activity']
+              Array.isArray(record.sources) ? record.sources : []
             )
           ).slice(0, 8),
           recoveryScore: Math.max(0, Math.min(100, Math.round(rawRecovery))),
@@ -1683,6 +1838,7 @@ export const useStore = create<AppState>()(
         const weeklyCoachSummariesColRef = collection(db, 'users', userId, 'weeklyCoachSummaries');
         const weeklyRetrospectivesColRef = collection(db, 'users', userId, 'weeklyRetrospectives');
         const healthRecordsColRef = collection(db, 'users', userId, 'healthRecords');
+        const mentalTrainingColRef = collection(db, 'users', userId, 'mentalTrainingEntries');
 
         // Initial check: if user doc doesn't exist, upload current local state
         getDoc(userDocRef)
@@ -1709,6 +1865,7 @@ export const useStore = create<AppState>()(
               state.weeklyCoachSummaries.forEach(w => setDoc(doc(weeklyCoachSummariesColRef, w.id), cleanData(w)).catch(handleSeedError(`users/${userId}/weeklyCoachSummaries/${w.id}`)));
               state.weeklyRetrospectives.forEach(r => setDoc(doc(weeklyRetrospectivesColRef, r.id), cleanData(r)).catch(handleSeedError(`users/${userId}/weeklyRetrospectives/${r.id}`)));
               state.healthRecords.forEach(h => setDoc(doc(healthRecordsColRef, h.id), cleanData(h)).catch(handleSeedError(`users/${userId}/healthRecords/${h.id}`)));
+              state.mentalTrainingEntries.forEach(m => setDoc(doc(mentalTrainingColRef, m.id), cleanData(m)).catch(handleSeedError(`users/${userId}/mentalTrainingEntries/${m.id}`)));
             }
           })
           .catch((error) => {
@@ -1883,6 +2040,28 @@ export const useStore = create<AppState>()(
           handleFirestoreError(error, OperationType.LIST, `users/${userId}/healthRecords`);
         });
 
+        const unsubMentalTraining = onSnapshot(mentalTrainingColRef, (snapshot) => {
+          const mentalTrainingEntries: MentalTrainingEntry[] = [];
+          snapshot.forEach((doc) => {
+            const raw = doc.data() as MentalTrainingEntry;
+            if (raw && typeof raw === 'object' && typeof raw.id === 'string' && typeof raw.title === 'string') {
+              const dateMs = toEpochMs(raw.date, Date.now());
+              mentalTrainingEntries.push({
+                ...raw,
+                date: dateMs,
+                dateKey:
+                  typeof raw.dateKey === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.dateKey)
+                    ? raw.dateKey
+                    : format(new Date(dateMs), 'yyyy-MM-dd'),
+                createdAt: toEpochMs(raw.createdAt, dateMs),
+              });
+            }
+          });
+          set({ mentalTrainingEntries: mentalTrainingEntries.sort((a, b) => b.date - a.date) });
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, `users/${userId}/mentalTrainingEntries`);
+        });
+
         return () => {
           unsubUser();
           unsubQuests();
@@ -1894,6 +2073,7 @@ export const useStore = create<AppState>()(
           unsubWeeklyCoachSummaries();
           unsubWeeklyRetrospectives();
           unsubHealthRecords();
+          unsubMentalTraining();
         };
       }
     }),
@@ -1975,6 +2155,12 @@ export const useStore = create<AppState>()(
                   .map(sanitizeHealthRecordItem)
                   .filter((r): r is HealthDailyRecord => r !== null)
               : [];
+            const safeMentalEntries = Array.isArray(state.mentalTrainingEntries)
+              ? state.mentalTrainingEntries.filter((e) => e && typeof e.id === 'string')
+              : [];
+            const safeGarminActivities = Array.isArray(state.garminActivities)
+              ? state.garminActivities.filter((a) => a && typeof a.id === 'string')
+              : [];
 
             const recalculated = calculateStatsFromHistory(safeQuests, safeFocus, safeStats);
             useStore.setState({
@@ -1991,6 +2177,8 @@ export const useStore = create<AppState>()(
               notifiedQuestIds: safeNotified,
               widgetOrder: safeOrder,
               healthRecords: safeHealth,
+              mentalTrainingEntries: safeMentalEntries,
+              garminActivities: safeGarminActivities,
               ...(safeSettings.isPinEnabled ? { isLocked: true } : {}),
             });
           } catch (err) {

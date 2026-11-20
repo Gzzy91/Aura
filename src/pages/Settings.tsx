@@ -84,11 +84,11 @@ export function Settings() {
         <div className="border-b border-neutral-800 pb-4">
           <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2 text-white">
             <HeartPulse className="w-5 h-5 text-amber-500 shrink-0" />
-            <span>Energie &amp; Erholung · Quellen &amp; Kalibrierung</span>
+            <span>Energie &amp; Erholung · Garmin Connect</span>
           </h3>
           <p className="text-xs text-neutral-400 mt-1">
-            Verbinde Garmin Connect, Google Health / Google Fit, Browser-Sensoren oder importiere
-            Export-Dateien. Der aktuelle Recovery-Score erscheint automatisch im Dashboard.
+            Verbinde Garmin Connect über deinen Personal API Key. Der aktuelle Recovery-Score
+            erscheint automatisch im Dashboard.
           </p>
         </div>
 

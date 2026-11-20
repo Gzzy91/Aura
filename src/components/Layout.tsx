@@ -6,6 +6,7 @@ import {
   Brain,
   Sparkles,
   Calendar,
+  CalendarDays,
   Book,
   Repeat,
   LogIn,
@@ -58,6 +59,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'food', icon: Utensils, label: 'Food Journal' },
       { id: 'diary', icon: Book, label: 'Tagebuch' },
       { id: 'mentaltraining', icon: Lightbulb, label: 'Mentaltraining' },
+      { id: 'training-calendar', icon: CalendarDays, label: 'Trainings-Kalender' },
     ],
   },
   {

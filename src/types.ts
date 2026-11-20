@@ -268,3 +268,38 @@ export interface EnergyRecoverySuggestion {
   tags: string[];
 }
 
+export type MentalTrainingCategory =
+  | 'Meditation'
+  | 'Atemarbeit'
+  | 'Visualisierung'
+  | 'Fokus-Session'
+  | 'Reflexion'
+  | 'Mindset-Übung'
+  | 'Sonstiges';
+
+export interface MentalTrainingEntry {
+  id: string;
+  date: number;
+  dateKey: string; // YYYY-MM-DD
+  title: string;
+  category: MentalTrainingCategory;
+  durationMinutes: number;
+  focusRating?: number | null; // 1-5
+  notes?: string;
+  createdAt: number;
+}
+
+export interface GarminWorkoutActivity {
+  id: string;
+  dateKey: string; // YYYY-MM-DD
+  name: string;
+  sportType: string;
+  startTimeLocal: string | null;
+  durationMinutes: number;
+  distanceMeters: number | null;
+  calories: number | null;
+  avgHeartRate: number | null;
+  maxHeartRate: number | null;
+}
+
+
